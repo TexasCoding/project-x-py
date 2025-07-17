@@ -15,28 +15,30 @@ import polars as pl
 import pytz
 import requests
 
+from .config import ConfigManager
 from .exceptions import (
-    ProjectXError,
     ProjectXAuthenticationError,
-    ProjectXServerError,
-    ProjectXRateLimitError,
     ProjectXConnectionError,
     ProjectXDataError,
-    ProjectXOrderError,
+    ProjectXError,
     ProjectXInstrumentError,
+    ProjectXOrderError,
+    ProjectXRateLimitError,
+    ProjectXServerError,
 )
 from .models import (
-    Instrument,
     Account,
+    BracketOrderResponse,
+    Instrument,
     Order,
     OrderPlaceResponse,
     Position,
-    Trade,
-    BracketOrderResponse,
     ProjectXConfig,
+    Trade,
 )
-from .utils import get_polars_rows, get_polars_last_value, extract_symbol_from_contract_id
-from .config import ConfigManager
+from .utils import (
+    extract_symbol_from_contract_id,
+)
 
 
 class ProjectX:
@@ -65,10 +67,8 @@ class ProjectX:
     Example:
         >>> # Using environment variables (recommended)
         >>> project_x = ProjectX.from_env()
-        >>> 
         >>> # Using explicit credentials
         >>> project_x = ProjectX(username="your_username", api_key="your_api_key")
-        >>> 
         >>> # Get market data
         >>> instruments = project_x.search_instruments("MGC")
         >>> data = project_x.get_data("MGC", days=5, interval=15)
@@ -79,7 +79,7 @@ class ProjectX:
         self,
         username: str,
         api_key: str,
-        config: Optional[ProjectXConfig] = None,
+        config: ProjectXConfig | None = None,
     ):
         """
         Initialize the ProjectX client.
@@ -100,11 +100,11 @@ class ProjectX:
         if config is None:
             config_manager = ConfigManager()
             config = config_manager.load_config()
-        
+
         self.config = config
         self.api_key = api_key
         self.username = username
-        
+
         # Set up timezone and URLs from config
         self.timezone = pytz.timezone(config.timezone)
         self.base_url = config.api_url
@@ -130,7 +130,7 @@ class ProjectX:
         self.logger = logging.getLogger(__name__)
 
     @classmethod
-    def from_env(cls, config: Optional[ProjectXConfig] = None) -> "ProjectX":
+    def from_env(cls, config: ProjectXConfig | None = None) -> "ProjectX":
         """
         Create ProjectX client using environment variables.
 
@@ -149,17 +149,17 @@ class ProjectX:
 
         Example:
             >>> import os
-            >>> os.environ['PROJECT_X_API_KEY'] = 'your_api_key_here'
-            >>> os.environ['PROJECT_X_USERNAME'] = 'your_username_here'
+            >>> os.environ["PROJECT_X_API_KEY"] = "your_api_key_here"
+            >>> os.environ["PROJECT_X_USERNAME"] = "your_username_here"
             >>> project_x = ProjectX.from_env()
         """
         config_manager = ConfigManager()
         auth_config = config_manager.get_auth_config()
-        
+
         return cls(
-            username=auth_config['username'],
-            api_key=auth_config['api_key'],
-            config=config
+            username=auth_config["username"],
+            api_key=auth_config["api_key"],
+            config=config,
         )
 
     @classmethod
@@ -176,11 +176,11 @@ class ProjectX:
         config_manager = ConfigManager(config_file)
         config = config_manager.load_config()
         auth_config = config_manager.get_auth_config()
-        
+
         return cls(
-            username=auth_config['username'],
-            api_key=auth_config['api_key'],
-            config=config
+            username=auth_config["username"],
+            api_key=auth_config["api_key"],
+            config=config,
         )
 
     def _ensure_authenticated(self):
@@ -255,22 +255,30 @@ class ProjectX:
             response = requests.post(
                 url, headers=headers, json=payload, timeout=self.timeout_seconds
             )
-            
+
             # Handle different HTTP status codes
             if response.status_code == 503:
-                raise ProjectXServerError(f"Server temporarily unavailable (503): {response.text}")
+                raise ProjectXServerError(
+                    f"Server temporarily unavailable (503): {response.text}"
+                )
             elif response.status_code == 429:
-                raise ProjectXRateLimitError(f"Rate limit exceeded (429): {response.text}")
+                raise ProjectXRateLimitError(
+                    f"Rate limit exceeded (429): {response.text}"
+                )
             elif response.status_code >= 500:
-                raise ProjectXServerError(f"Server error ({response.status_code}): {response.text}")
+                raise ProjectXServerError(
+                    f"Server error ({response.status_code}): {response.text}"
+                )
             elif response.status_code >= 400:
-                raise ProjectXAuthenticationError(f"Authentication failed ({response.status_code}): {response.text}")
-            
+                raise ProjectXAuthenticationError(
+                    f"Authentication failed ({response.status_code}): {response.text}"
+                )
+
             response.raise_for_status()
 
             data = response.json()
             if not data.get("success", False):
-                error_msg = data.get('errorMessage', 'Unknown authentication error')
+                error_msg = data.get("errorMessage", "Unknown authentication error")
                 raise ProjectXAuthenticationError(f"Authentication failed: {error_msg}")
 
             self.session_token = data["token"]
@@ -341,7 +349,7 @@ class ProjectX:
 
             data = response.json()
             if not data.get("success", False):
-                error_msg = data.get('errorMessage', 'Unknown error')
+                error_msg = data.get("errorMessage", "Unknown error")
                 self.logger.error(f"Account search failed: {error_msg}")
                 raise ProjectXError(f"Account search failed: {error_msg}")
 
@@ -361,13 +369,13 @@ class ProjectX:
     def _handle_response_errors(self, response: requests.Response):
         """
         Handle HTTP response errors consistently.
-        
+
         Args:
             response: requests.Response object
-            
+
         Raises:
             ProjectXServerError: For 5xx errors
-            ProjectXRateLimitError: For 429 errors  
+            ProjectXRateLimitError: For 429 errors
             ProjectXError: For other 4xx errors
         """
         if response.status_code == 503:
@@ -378,7 +386,7 @@ class ProjectX:
             raise ProjectXServerError(f"Server error ({response.status_code})")
         elif response.status_code >= 400:
             raise ProjectXError(f"Client error ({response.status_code})")
-        
+
         response.raise_for_status()
 
     def get_instrument(self, symbol: str) -> Optional[Instrument]:
@@ -412,7 +420,7 @@ class ProjectX:
 
             data = response.json()
             if not data.get("success", False):
-                error_msg = data.get('errorMessage', 'Unknown error')
+                error_msg = data.get("errorMessage", "Unknown error")
                 self.logger.error(f"Contract search failed: {error_msg}")
                 raise ProjectXInstrumentError(f"Contract search failed: {error_msg}")
 
@@ -460,7 +468,7 @@ class ProjectX:
 
             data = response.json()
             if not data.get("success", False):
-                error_msg = data.get('errorMessage', 'Unknown error')
+                error_msg = data.get("errorMessage", "Unknown error")
                 self.logger.error(f"Contract search failed: {error_msg}")
                 raise ProjectXInstrumentError(f"Contract search failed: {error_msg}")
 
@@ -489,7 +497,7 @@ class ProjectX:
             instrument: Symbol of the instrument (e.g., "MGC", "MNQ")
             days: Number of days of historical data. Defaults to 8.
             interval: Interval in minutes between bars. Defaults to 5.
-            unit: Unit of time for the interval. Defaults to 2 (minutes). 
+            unit: Unit of time for the interval. Defaults to 2 (minutes).
                   1=Second, 2=Minute, 3=Hour, 4=Day, 5=Week, 6=Month.
             limit: Number of bars to retrieve. Defaults to calculated value.
             partial: Include partial bars. Defaults to True.
@@ -556,7 +564,7 @@ class ProjectX:
 
             data = response.json()
             if not data.get("success", False):
-                error_msg = data.get('errorMessage', 'Unknown error')
+                error_msg = data.get("errorMessage", "Unknown error")
                 self.logger.error(f"History retrieval failed: {error_msg}")
                 raise ProjectXDataError(f"History retrieval failed: {error_msg}")
 
@@ -694,7 +702,9 @@ class ProjectX:
 
         Example:
             >>> # Place a limit order - price will be auto-aligned to tick size
-            >>> response = project_x.place_order("CON.F.US.MGC.M25", 1, 0, 1, limit_price=2050.15)
+            >>> response = project_x.place_order(
+            ...     "CON.F.US.MGC.M25", 1, 0, 1, limit_price=2050.15
+            ... )
         """
         self._ensure_authenticated()
 
@@ -733,7 +743,7 @@ class ProjectX:
 
             data = response.json()
             if not data.get("success", False):
-                error_msg = data.get('errorMessage', 'Unknown error')
+                error_msg = data.get("errorMessage", "Unknown error")
                 self.logger.error(f"Order placement failed: {error_msg}")
                 raise ProjectXOrderError(f"Order placement failed: {error_msg}")
 
@@ -870,7 +880,7 @@ class ProjectX:
 
             data = response.json()
             if not data.get("success", False):
-                error_msg = data.get('errorMessage', 'Unknown error')
+                error_msg = data.get("errorMessage", "Unknown error")
                 self.logger.error(f"Position search failed: {error_msg}")
                 raise ProjectXError(f"Position search failed: {error_msg}")
 
@@ -887,7 +897,7 @@ class ProjectX:
     def get_health_status(self) -> dict:
         """
         Get client health status.
-        
+
         Returns:
             Dict with health status information
         """
@@ -901,5 +911,5 @@ class ProjectX:
                 "timeout_seconds": self.timeout_seconds,
                 "retry_attempts": self.retry_attempts,
                 "requests_per_minute": self.requests_per_minute,
-            }
-        } 
+            },
+        }

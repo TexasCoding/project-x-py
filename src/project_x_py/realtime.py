@@ -70,14 +70,15 @@ class ProjectXRealtimeClient:
         >>> client = ProjectXRealtimeClient(jwt_token, account_id)
         >>>
         >>> # Add callbacks for events
-        >>> client.add_callback("position_update", lambda data: print(f"Position: {data}"))
+        >>> client.add_callback(
+        ...     "position_update", lambda data: print(f"Position: {data}")
+        ... )
         >>> client.add_callback("order_filled", lambda data: print(f"Fill: {data}"))
         >>>
         >>> # Connect and subscribe
         >>> if client.connect():
         ...     client.subscribe_user_updates()
         ...     client.subscribe_market_data(["CON.F.US.MGC.M25"])
-        ...
         >>> # Use real-time data
         >>> current_price = client.get_current_price("CON.F.US.MGC.M25")
         >>> is_filled = client.is_order_filled("12345")
@@ -122,7 +123,7 @@ class ProjectXRealtimeClient:
         """Initialize TopStepX real-time client with SignalR connections."""
         self.jwt_token = jwt_token
         self.account_id = account_id
-        
+
         # Append JWT token to URLs for authentication
         self.user_hub_url = f"{user_hub_url}?access_token={jwt_token}"
         self.market_hub_url = f"{market_hub_url}?access_token={jwt_token}"

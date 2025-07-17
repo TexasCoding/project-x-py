@@ -24,7 +24,9 @@ class Instrument:
 
     Example:
         >>> print(f"Trading {instrument.name}")
-        >>> print(f"Tick size: ${instrument.tickSize}, Tick value: ${instrument.tickValue}")
+        >>> print(
+        ...     f"Tick size: ${instrument.tickSize}, Tick value: ${instrument.tickValue}"
+        ... )
     """
 
     id: str
@@ -142,7 +144,9 @@ class Position:
 
     Example:
         >>> direction = "LONG" if position.type == 1 else "SHORT"
-        >>> print(f"{direction} {position.size} {position.contractId} @ ${position.averagePrice}")
+        >>> print(
+        ...     f"{direction} {position.size} {position.contractId} @ ${position.averagePrice}"
+        ... )
     """
 
     id: int
@@ -218,7 +222,9 @@ class BracketOrderResponse:
         ...     print(f"Bracket order placed successfully:")
         ...     print(f"  Entry: {response.entry_order_id} @ ${response.entry_price}")
         ...     print(f"  Stop: {response.stop_order_id} @ ${response.stop_loss_price}")
-        ...     print(f"  Target: {response.target_order_id} @ ${response.take_profit_price}")
+        ...     print(
+        ...         f"  Target: {response.target_order_id} @ ${response.take_profit_price}"
+        ...     )
         ... else:
         ...     print(f"Bracket order failed: {response.error_message}")
     """
@@ -241,7 +247,7 @@ class BracketOrderResponse:
 class ProjectXConfig:
     """
     Configuration settings for the ProjectX client.
-    
+
     Attributes:
         api_url (str): Base URL for the API endpoints
         realtime_url (str): URL for real-time WebSocket connections
@@ -254,7 +260,7 @@ class ProjectXConfig:
         requests_per_minute (int): Rate limiting - requests per minute
         burst_limit (int): Rate limiting - burst limit
     """
-    
+
     api_url: str = "https://api.topstepx.com/api"
     realtime_url: str = "wss://realtime.topstepx.com/api"
     user_hub_url: str = "https://rtc.topstepx.com/hubs/user"
@@ -264,4 +270,4 @@ class ProjectXConfig:
     retry_attempts: int = 3
     retry_delay_seconds: float = 2.0
     requests_per_minute: int = 60
-    burst_limit: int = 10 
+    burst_limit: int = 10
