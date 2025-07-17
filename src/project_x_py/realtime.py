@@ -122,8 +122,10 @@ class ProjectXRealtimeClient:
         """Initialize TopStepX real-time client with SignalR connections."""
         self.jwt_token = jwt_token
         self.account_id = account_id
-        self.user_hub_url = user_hub_url
-        self.market_hub_url = market_hub_url
+        
+        # Append JWT token to URLs for authentication
+        self.user_hub_url = f"{user_hub_url}?access_token={jwt_token}"
+        self.market_hub_url = f"{market_hub_url}?access_token={jwt_token}"
 
         # SignalR connection objects
         self.user_connection = None

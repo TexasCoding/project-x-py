@@ -34,11 +34,6 @@ from project_x_py import ProjectX
 from project_x_py.realtime import ProjectXRealtimeClient
 
 
-def _polars_rows(df) -> int:
-    """Get number of rows from polars DataFrame"""
-    return getattr(df, "n_rows", 0)
-
-
 class ProjectXRealtimeDataManager:
     """
     Advanced real-time data manager for efficient multi-timeframe trading data.
@@ -142,6 +137,7 @@ class ProjectXRealtimeDataManager:
         instrument: str,
         project_x: ProjectX,
         account_id: str,
+        timeframes: list[str] = ["5min"],
         user_hub_url: str = "https://rtc.topstepx.com/hubs/user",
         market_hub_url: str = "https://rtc.topstepx.com/hubs/market",
         timezone: str = "America/Chicago",
@@ -167,7 +163,7 @@ class ProjectXRealtimeDataManager:
         # Set timezone for consistent timestamp handling
         self.timezone = pytz.timezone(timezone)  # CME timezone
 
-        self.timeframes = {
+        TIMEFRAMES = {
             "1sec": {"interval": 1, "unit": 1, "name": "1sec"},
             "5sec": {"interval": 5, "unit": 1, "name": "5sec"},
             "10sec": {"interval": 10, "unit": 1, "name": "10sec"},
@@ -183,6 +179,17 @@ class ProjectXRealtimeDataManager:
             "1week": {"interval": 1, "unit": 5, "name": "1week"},
             "1month": {"interval": 1, "unit": 6, "name": "1month"},
         }
+
+        # Initialize timeframes as dict mapping timeframe names to configs
+        self.timeframes = {}
+        for tf in timeframes:
+            if tf not in TIMEFRAMES:
+                raise ValueError(f"Invalid timeframe: {tf}")
+            self.timeframes[tf] = TIMEFRAMES[tf]
+
+        
+
+
 
         # Data storage for each timeframe
         self.data: dict[str, pl.DataFrame] = {}
@@ -215,6 +222,43 @@ class ProjectXRealtimeDataManager:
             None  # Store latest Level 2 data for strategy access
         )
         self.level2_update_count = 0  # Track Level 2 updates for monitoring
+        
+        # Level 2 orderbook storage with Polars DataFrames
+        self.orderbook_bids: pl.DataFrame = pl.DataFrame({
+            "price": [],
+            "volume": [],
+            "timestamp": [],
+            "type": []
+        }, schema={"price": pl.Float64, "volume": pl.Int64, "timestamp": pl.Datetime, "type": pl.Utf8})
+        
+        self.orderbook_asks: pl.DataFrame = pl.DataFrame({
+            "price": [],
+            "volume": [],
+            "timestamp": [],
+            "type": []
+        }, schema={"price": pl.Float64, "volume": pl.Int64, "timestamp": pl.Datetime, "type": pl.Utf8})
+        
+        # Trade flow storage (Type 5 - actual executions)
+        self.recent_trades: pl.DataFrame = pl.DataFrame({
+            "price": [],
+            "volume": [],
+            "timestamp": [],
+            "side": []  # "buy" or "sell" inferred from price movement
+        }, schema={"price": pl.Float64, "volume": pl.Int64, "timestamp": pl.Datetime, "side": pl.Utf8})
+        
+        # Orderbook metadata
+        self.last_orderbook_update: datetime | None = None
+        self.orderbook_lock = threading.RLock()  # Separate lock for orderbook data
+        
+        # Statistics for different order types
+        self.order_type_stats = {
+            "type_1_count": 0,  # Ask updates
+            "type_2_count": 0,  # Bid updates  
+            "type_5_count": 0,  # Trade executions
+            "type_9_count": 0,  # Order modifications
+            "type_10_count": 0, # Order modifications/cancellations
+            "other_types": 0    # Unknown types
+        }
 
         self.logger.info(f"RealtimeDataManager initialized for {instrument}")
 
@@ -255,7 +299,7 @@ class ProjectXRealtimeDataManager:
                         self.logger.info(
                             f"🔄 Attempt {attempt + 1}/{max_retries} to load {self.instrument} {interval}-{unit_name} data..."
                         )
-
+                        
                         # Simplified data loading without threading (timeouts handled at higher level)
                         data = self.project_x.get_data(
                             instrument=self.instrument,
@@ -265,7 +309,9 @@ class ProjectXRealtimeDataManager:
                             partial=True,
                         )
 
-                        if data is not None and _polars_rows(data) > 0:
+                        print(data)
+
+                        if data is not None and len(data) > 0:
                             self.logger.info(
                                 f"✅ Successfully loaded {self.instrument} {interval}-{unit_name} data on attempt {attempt + 1}"
                             )
@@ -292,7 +338,7 @@ class ProjectXRealtimeDataManager:
                             time.sleep(2)
                         continue
 
-                if data is not None and _polars_rows(data) > 0:
+                if data is not None and len(data) > 0:
                     with self.data_lock:
                         # Data is already a polars DataFrame from get_data()
                         data_copy = data
@@ -309,13 +355,13 @@ class ProjectXRealtimeDataManager:
                                 )
 
                         self.data[tf_key] = data_copy
-                        if _polars_rows(data_copy) > 0:
+                        if len(data_copy) > 0:
                             self.last_bar_times[tf_key] = (
                                 data_copy.select(pl.col("timestamp")).tail(1).item()
                             )
 
                     self.logger.info(
-                        f"✅ Loaded {_polars_rows(data)} bars of {interval}-{unit_name} data"
+                        f"✅ Loaded {len(data)} bars of {interval}-{unit_name} data"
                     )
                 else:
                     self.logger.error(
@@ -354,6 +400,16 @@ class ProjectXRealtimeDataManager:
                 self.logger.error("❌ Cannot start real-time feed: No contract ID")
                 return False
 
+            # Basic JWT token validation
+            if not jwt_token or len(jwt_token) < 50:
+                self.logger.error(f"❌ Invalid JWT token: {jwt_token[:20] if jwt_token else 'None'}...")
+                return False
+                
+            # Check if token looks like a JWT (has two dots)
+            if jwt_token.count('.') != 2:
+                self.logger.error("❌ JWT token format appears invalid (should have 2 dots)")
+                return False
+
             self.logger.info("🚀 Starting real-time data feed...")
 
             # Initialize ProjectX client for real-time data
@@ -379,15 +435,38 @@ class ProjectXRealtimeDataManager:
                 self.logger.error(f"Failed to initialize ProjectX client: {e}")
                 raise
 
-            # Connect to WebSocket hubs
-            if not self.client.connect():
-                self.logger.error("❌ Failed to connect to real-time hubs")
+            # Connect to WebSocket hubs with better error reporting
+            self.logger.info(f"🔗 Attempting to connect with JWT token (length: {len(jwt_token)})")
+            self.logger.info(f"🔗 Account ID: {self.account_id}")
+            self.logger.info(f"🔗 Contract ID: {self.contract_id}")
+            
+            try:
+                connection_success = self.client.connect()
+                if not connection_success:
+                    self.logger.error("❌ Failed to connect to real-time hubs - connection returned False")
+                    self.logger.error("❌ This could be due to: invalid JWT token, network issues, or server problems")
+                    return False
+                else:
+                    self.logger.info("✅ Successfully connected to real-time hubs")
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Exception during WebSocket connection: {e}")
+                import traceback
+                self.logger.error(f"❌ Connection traceback: {traceback.format_exc()}")
                 return False
 
             # Subscribe to market data for our contract
-            success = self.client.subscribe_market_data([self.contract_id])
-            if not success:
-                self.logger.error("❌ Failed to subscribe to market data")
+            self.logger.info(f"📡 Subscribing to market data for contract: {self.contract_id}")
+            try:
+                success = self.client.subscribe_market_data([self.contract_id])
+                if not success:
+                    self.logger.error(f"❌ Failed to subscribe to market data for {self.contract_id}")
+                    self.logger.error("❌ This could be due to: invalid contract ID, insufficient permissions, or server issues")
+                    return False
+                else:
+                    self.logger.info(f"✅ Successfully subscribed to market data for {self.contract_id}")
+            except Exception as e:
+                self.logger.error(f"❌ Exception during market data subscription: {e}")
                 return False
 
             self.is_running = True
@@ -415,280 +494,166 @@ class ProjectXRealtimeDataManager:
 
     def _on_quote_update(self, data: dict):
         """
-        Handle real-time quote updates from WebSocket with enhanced TopStepX compatibility.
-
-        Addresses data format inconsistencies:
-        - Maps bestBid/bestAsk to standard bid/ask fields
-        - Handles partial updates (bid-only or ask-only)
-        - Estimates bid/ask sizes when missing
-        - Maintains quote state for proper mid-price calculation
+        Handle real-time quote updates from WebSocket.
         """
         try:
-            contract_id = data.get("contract_id")
+            contract_id = data.get("contract_id", "Unknown")
             quote_data = data.get("data", {})
 
-            if contract_id != self.contract_id:
-                return
-
-            # Extract price information with TopStepX field mapping
-            if isinstance(quote_data, dict):
-                # Handle TopStepX field name variations
-                current_bid = quote_data.get("bestBid") or quote_data.get("bid")
-                current_ask = quote_data.get("bestAsk") or quote_data.get("ask")
-
-                # Maintain quote state for handling partial updates
-                if not hasattr(self, "_last_quote_state"):
-                    self._last_quote_state: dict[str, float | None] = {
-                        "bid": None,
-                        "ask": None,
-                    }
-
-                # Update quote state with new data
-                if current_bid is not None:
-                    self._last_quote_state["bid"] = float(current_bid)
-                if current_ask is not None:
-                    self._last_quote_state["ask"] = float(current_ask)
-
-                # Use most recent bid/ask values
-                bid = self._last_quote_state["bid"]
-                ask = self._last_quote_state["ask"]
-
-                # Get last price for trade detection
-                last_price = (
-                    quote_data.get("lastPrice")
-                    or quote_data.get("last")
-                    or quote_data.get("price")
-                )
-
-                # Determine if this is a trade update or quote update
-                is_trade_update = last_price is not None and "volume" in quote_data
-
-                # Calculate price for tick processing
-                price = None
-                if is_trade_update and last_price is not None:
-                    price = float(last_price)
-                elif bid is not None and ask is not None:
-                    price = (bid + ask) / 2  # Mid price for quote updates
-                elif bid is not None:
-                    price = bid  # Use bid if only bid available
-                elif ask is not None:
-                    price = ask  # Use ask if only ask available
-
-                if price is not None:
-                    # Use timezone-aware timestamp
-                    current_time = datetime.now(self.timezone)
-
-                    # Enhanced tick data with better field mapping
-                    tick_data = {
-                        "timestamp": current_time,
-                        "price": float(price),
-                        "bid": bid,
-                        "ask": ask,
-                        "volume": 0,  # Always 0 for quote updates (trades handled separately)
-                        "type": "trade" if is_trade_update else "quote",
-                    }
-
-                    self._process_tick_data(tick_data)
-
-                    # Create enhanced quote data for market microstructure analysis (only if we have both bid and ask)
-                    if bid is not None and ask is not None:
-                        enhanced_quote_data = self._create_enhanced_quote_data(
-                            quote_data, bid, ask
-                        )
-
-                        # Trigger Level 2 quote callback with enhanced data
-                        self._trigger_callbacks(
-                            "quote_update",
-                            {"contract_id": contract_id, "data": enhanced_quote_data},
-                        )
+            self._trigger_callbacks(
+                "quote_update",
+                {"contract_id": contract_id, "data": quote_data},
+            )
 
         except Exception as e:
             self.logger.error(f"Error processing quote update: {e}")
 
-    def _create_enhanced_quote_data(
-        self, original_data: dict, bid: float, ask: float
-    ) -> dict:
-        """
-        Create enhanced quote data with estimated sizes and standardized fields.
-
-        Addresses TopStepX missing bid/ask size data by:
-        1. Using Level 2 data when available
-        2. Estimating sizes based on market conditions
-        3. Providing fallback values for liquidity assessment
-        """
-        enhanced_data = original_data.copy()
-
-        # Map TopStepX fields to standard names
-        enhanced_data["bid"] = bid
-        enhanced_data["ask"] = ask
-
-        # Estimate bid/ask sizes if not provided
-        if "bidSize" not in enhanced_data and "askSize" not in enhanced_data:
-            # Try to get sizes from Level 2 data if available
-            if hasattr(self, "last_level2_data") and self.last_level2_data:
-                level2_bids = self.last_level2_data.get("bids", [])
-                level2_asks = self.last_level2_data.get("asks", [])
-
-                # Find matching bid/ask sizes from Level 2 data
-                bid_size = 0
-                ask_size = 0
-
-                for level2_bid in level2_bids:
-                    if (
-                        abs(level2_bid.get("price", 0) - bid) < 0.01
-                    ):  # Match within 1 cent
-                        bid_size = level2_bid.get("volume", 0)
-                        break
-
-                for level2_ask in level2_asks:
-                    if (
-                        abs(level2_ask.get("price", 0) - ask) < 0.01
-                    ):  # Match within 1 cent
-                        ask_size = level2_ask.get("volume", 0)
-                        break
-
-                enhanced_data["bidSize"] = bid_size
-                enhanced_data["askSize"] = ask_size
-            else:
-                # Estimate sizes based on market conditions for MNQ futures
-                # Use conservative estimates that won't trigger false liquidity signals
-                spread_ticks = ((ask - bid) / 0.25) if bid and ask else 0
-
-                if spread_ticks <= 1:
-                    # Tight spread suggests good liquidity
-                    estimated_size = 150  # Conservative estimate for MNQ
-                elif spread_ticks <= 2:
-                    # Normal spread
-                    estimated_size = 100
-                else:
-                    # Wide spread suggests lower liquidity
-                    estimated_size = 50
-
-                enhanced_data["bidSize"] = estimated_size
-                enhanced_data["askSize"] = estimated_size
-
-        return enhanced_data
-
-    def _on_market_trade(self, data: dict):
-        """Handle real-time trade updates from WebSocket."""
-        try:
-            contract_id = data.get("contract_id")
-            trade_data = data.get("data", [])
-
-            if contract_id != self.contract_id:
-                return
-
-            # Process trade data (can be a list of trades)
-            if isinstance(trade_data, list):
-                for trade in trade_data:
-                    if isinstance(trade, dict):
-                        price = trade.get("price")
-                        # Use realistic default volume for futures when not provided
-                        raw_volume = trade.get("volume")
-                        volume = (
-                            raw_volume if raw_volume is not None else 25
-                        )  # More realistic default for MNQ futures
-
-                        # Extract timestamp_str and trade_type first
-                        timestamp_str = trade.get("timestamp")
-                        trade_type = trade.get("type", 0)
-
-                        # Convert type to standardized format for order flow analysis
-                        side = "sell" if trade_type == 0 else "buy"
-                        is_aggressive = True
-
-                        if price:
-                            # Parse timestamp if provided
-                            if timestamp_str:
-                                try:
-                                    from datetime import datetime as dt
-
-                                    timestamp = dt.fromisoformat(
-                                        timestamp_str.replace("Z", "+00:00")
-                                    )
-                                    # Ensure timezone-aware
-                                    if timestamp.tzinfo is None:
-                                        timestamp = self.timezone.localize(timestamp)
-                                    else:
-                                        timestamp = timestamp.astimezone(self.timezone)
-                                except Exception:
-                                    timestamp = datetime.now(self.timezone)
-                            else:
-                                timestamp = datetime.now(self.timezone)
-
-                            # DEBUG: Log very suspicious volume values only
-                            if (
-                                volume > 10000
-                            ):  # Only log extremely suspicious volumes (>10K contracts)
-                                self.logger.warning(
-                                    f"🔍 EXTREMELY HIGH TRADE VOLUME: {volume} contracts at price {price}"
-                                )
-
-                            # Process tick data for candlestick creation
-                            self._process_tick_data(
-                                {
-                                    "timestamp": timestamp,
-                                    "price": float(price),
-                                    "volume": int(volume),
-                                    "type": "trade",
-                                    "side": side,  # Add directional information
-                                    "is_aggressive": is_aggressive,  # Add aggressor information
-                                    "raw_type": trade_type,  # Keep original type for debugging
-                                }
-                            )
-
-                            # Prepare enhanced trade data for order flow analysis
-                            enhanced_trade_data = {
-                                "timestamp": timestamp,
-                                "price": float(price),
-                                "size": int(
-                                    volume
-                                ),  # OrderFlowAnalyzer expects 'size' not 'volume'
-                                "side": side,  # "buy" or "sell"
-                                "is_aggressive": is_aggressive,  # True for market orders
-                                "exchange": "ProjectX",  # Optional exchange identifier
-                                "trade_type": trade_type,  # Original type value for reference
-                            }
-
-                            # Trigger Level 2 trade callback for order flow analysis
-                            self._trigger_callbacks(
-                                "market_trade",
-                                {
-                                    "contract_id": contract_id,
-                                    "data": trade,  # Original trade data
-                                    "enhanced_data": enhanced_trade_data,  # Enhanced data for order flow
-                                },
-                            )
-
-        except Exception as e:
-            self.logger.error(f"Error processing trade update: {e}")
-
     def _on_market_depth(self, data: dict) -> None:
         """
-        Process market depth data from ProjectX WebSocket.
-
-        Handles real-time Level 2 order book data including bids, asks, and spread
-        information. Stores the data for immediate access by trading strategies.
-
+        Process market depth data from ProjectX WebSocket and update Level 2 orderbook.
+        
         Args:
-            data (dict): Market depth data containing:
-                - contract_id: Contract identifier
-                - data: Order book data with price levels, volumes, types
+            data: Market depth data containing price levels and volumes
         """
         try:
             contract_id = data.get("contract_id", "Unknown")
             depth_data = data.get("data", [])
 
+            # Only process data for our contract
+            if contract_id != self.contract_id:
+                return
+
             # Update statistics
             self.level2_update_count += 1
+            
+            # Process each market depth entry
+            with self.orderbook_lock:
+                current_time = datetime.now(self.timezone)
+                
+                bid_updates = []
+                ask_updates = []
+                trade_updates = []
+                
+                for entry in depth_data:
+                    price = entry.get("price", 0.0)
+                    volume = entry.get("volume", 0)
+                    entry_type = entry.get("type", 0)
+                    timestamp_str = entry.get("timestamp", "")
+                    
+                    # Update statistics
+                    if entry_type == 1:
+                        self.order_type_stats["type_1_count"] += 1
+                    elif entry_type == 2:
+                        self.order_type_stats["type_2_count"] += 1
+                    elif entry_type == 5:
+                        self.order_type_stats["type_5_count"] += 1
+                    elif entry_type == 9:
+                        self.order_type_stats["type_9_count"] += 1
+                    elif entry_type == 10:
+                        self.order_type_stats["type_10_count"] += 1
+                    else:
+                        self.order_type_stats["other_types"] += 1
+                    
+                    # Parse timestamp if provided, otherwise use current time
+                    if timestamp_str and timestamp_str != "0001-01-01T00:00:00+00:00":
+                        try:
+                            timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+                            if timestamp.tzinfo is None:
+                                timestamp = self.timezone.localize(timestamp)
+                            else:
+                                timestamp = timestamp.astimezone(self.timezone)
+                        except Exception:
+                            timestamp = current_time
+                    else:
+                        timestamp = current_time
+                    
+                    # Enhanced type mapping based on TopStepX format:
+                    # Type 1 = Ask/Offer (selling pressure)
+                    # Type 2 = Bid (buying pressure)
+                    # Type 5 = Trade (market execution) - record for trade flow analysis
+                    # Type 9 = Order modification (update existing order)
+                    # Type 10 = Order modification/cancellation (often volume=0 means cancel)
+                    
+                    if entry_type == 2:  # Bid
+                        bid_updates.append({
+                            "price": float(price),
+                            "volume": int(volume),
+                            "timestamp": timestamp,
+                            "type": "bid"
+                        })
+                    elif entry_type == 1:  # Ask
+                        ask_updates.append({
+                            "price": float(price), 
+                            "volume": int(volume),
+                            "timestamp": timestamp,
+                            "type": "ask"
+                        })
+                    elif entry_type == 5:  # Trade execution
+                        if volume > 0:  # Only record actual trades with volume
+                            trade_updates.append({
+                                "price": float(price),
+                                "volume": int(volume),
+                                "timestamp": timestamp
+                            })
+                    elif entry_type in [9, 10]:  # Order modifications
+                        # Type 9/10 can affect both bid and ask sides
+                        # We need to determine which side based on price relative to current mid
+                        # For now, we'll apply the update to the appropriate side based on existing orderbook
+                        
+                        best_prices = self.get_best_bid_ask()
+                        mid_price = best_prices.get("mid")
+                        
+                        if mid_price and price != 0:
+                            if price <= mid_price:  # Likely a bid modification
+                                bid_updates.append({
+                                    "price": float(price),
+                                    "volume": int(volume),  # Could be 0 for cancellation
+                                    "timestamp": timestamp,
+                                    "type": f"bid_mod_{entry_type}"
+                                })
+                            else:  # Likely an ask modification
+                                ask_updates.append({
+                                    "price": float(price),
+                                    "volume": int(volume),  # Could be 0 for cancellation
+                                    "timestamp": timestamp,
+                                    "type": f"ask_mod_{entry_type}"
+                                })
+                        else:
+                            # If we can't determine side, try both (safer approach)
+                            # The update logic will handle duplicates appropriately
+                            bid_updates.append({
+                                "price": float(price),
+                                "volume": int(volume),
+                                "timestamp": timestamp,
+                                "type": f"bid_mod_{entry_type}"
+                            })
+                            ask_updates.append({
+                                "price": float(price),
+                                "volume": int(volume),
+                                "timestamp": timestamp,
+                                "type": f"ask_mod_{entry_type}"
+                            })
+                
+                # Update bid levels
+                if bid_updates:
+                    self._update_orderbook_side(bid_updates, "bid")
+                
+                # Update ask levels  
+                if ask_updates:
+                    self._update_orderbook_side(ask_updates, "ask")
+                
+                # Update trade flow data
+                if trade_updates:
+                    self._update_trade_flow(trade_updates)
+                
+                # Update last update time
+                self.last_orderbook_update = current_time
 
-            # Extract bid and ask data
+            # Store the complete Level 2 data structure (existing functionality)
             processed_data = self._process_level2_data(depth_data)
-
-            # Store the complete Level 2 data structure
             self.last_level2_data = {
                 "contract_id": contract_id,
-                "timestamp": datetime.now(),
+                "timestamp": current_time,
                 "bids": processed_data["bids"],
                 "asks": processed_data["asks"],
                 "best_bid": processed_data["best_bid"],
@@ -703,47 +668,156 @@ class ProjectXRealtimeDataManager:
         except Exception as e:
             self.logger.error(f"❌ Error processing market depth: {e}")
             import traceback
-
             self.logger.error(f"❌ Market depth traceback: {traceback.format_exc()}")
+
+    def _update_orderbook_side(self, updates: list[dict], side: str) -> None:
+        """
+        Update bid or ask side of the orderbook with new price levels.
+        
+        Args:
+            updates: List of price level updates {price, volume, timestamp}
+            side: "bid" or "ask"
+        """
+        try:
+            if side == "bid":
+                current_df = self.orderbook_bids
+            else:
+                current_df = self.orderbook_asks
+            
+            # Create DataFrame from updates
+            if updates:
+                updates_df = pl.DataFrame(updates)
+                
+                # Combine with existing data
+                if len(current_df) > 0:
+                    combined_df = pl.concat([current_df, updates_df])
+                else:
+                    combined_df = updates_df
+                
+                # Group by price and take the latest update (last timestamp)
+                latest_df = (
+                    combined_df
+                    .group_by("price")
+                    .agg([
+                        pl.col("volume").last(),
+                        pl.col("timestamp").last(),
+                        pl.col("type").last()
+                    ])
+                )
+                
+                # Remove zero-volume levels (market depth deletions)
+                latest_df = latest_df.filter(pl.col("volume") > 0)
+                
+                # Sort appropriately (bids: high to low, asks: low to high)
+                if side == "bid":
+                    latest_df = latest_df.sort("price", descending=True)
+                    self.orderbook_bids = latest_df
+                else:
+                    latest_df = latest_df.sort("price", descending=False)
+                    self.orderbook_asks = latest_df
+                
+                # Keep only top 100 levels to manage memory
+                if side == "bid":
+                    self.orderbook_bids = self.orderbook_bids.head(100)
+                else:
+                    self.orderbook_asks = self.orderbook_asks.head(100)
+                    
+        except Exception as e:
+            self.logger.error(f"❌ Error updating {side} orderbook: {e}")
+
+    def _update_trade_flow(self, trade_updates: list[dict]) -> None:
+        """
+        Update trade flow data with new trade executions.
+        
+        Args:
+            trade_updates: List of trade executions {price, volume, timestamp}
+        """
+        try:
+            if not trade_updates:
+                return
+                
+            # Get current best bid/ask to determine trade direction
+            best_prices = self.get_best_bid_ask()
+            best_bid = best_prices.get("bid")
+            best_ask = best_prices.get("ask")
+            
+            # Enhance trade data with side detection
+            enhanced_trades = []
+            for trade in trade_updates:
+                price = trade["price"]
+                
+                # Determine trade side based on price relative to bid/ask
+                if best_bid and best_ask:
+                    if price >= best_ask:
+                        side = "buy"  # Trade at or above ask (aggressive buy)
+                    elif price <= best_bid:
+                        side = "sell"  # Trade at or below bid (aggressive sell)
+                    else:
+                        side = "unknown"  # Trade between bid/ask
+                else:
+                    side = "unknown"
+                
+                enhanced_trades.append({
+                    "price": trade["price"],
+                    "volume": trade["volume"],
+                    "timestamp": trade["timestamp"],
+                    "side": side
+                })
+            
+            # Create DataFrame from enhanced trades
+            if enhanced_trades:
+                trades_df = pl.DataFrame(enhanced_trades)
+                
+                # Combine with existing trade data
+                if len(self.recent_trades) > 0:
+                    combined_df = pl.concat([self.recent_trades, trades_df])
+                else:
+                    combined_df = trades_df
+                
+                # Keep only last 1000 trades to manage memory
+                self.recent_trades = combined_df.tail(1000)
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error updating trade flow: {e}")
 
     def _process_level2_data(self, depth_data: list) -> dict:
         """
         Process raw Level 2 data into structured bid/ask format.
-
+        
         Args:
             depth_data: List of market depth entries with price, volume, type
-
+            
         Returns:
             dict: Processed data with separate bids and asks
         """
         bids = []
         asks = []
-
+        
         for entry in depth_data:
             price = entry.get("price", 0)
             volume = entry.get("volume", 0)
             entry_type = entry.get("type", 0)
-
+            
             # Type mapping based on TopStepX format:
             # Type 1 = Ask/Offer (selling pressure)
             # Type 2 = Bid (buying pressure)
             # Type 5 = Trade (market execution)
             # Type 9/10 = Order modifications
-
+            
             if entry_type == 2 and volume > 0:  # Bid
                 bids.append({"price": price, "volume": volume})
             elif entry_type == 1 and volume > 0:  # Ask
                 asks.append({"price": price, "volume": volume})
-
+        
         # Sort bids (highest to lowest) and asks (lowest to highest)
         bids.sort(key=lambda x: x["price"], reverse=True)
         asks.sort(key=lambda x: x["price"])
-
+        
         # Calculate best bid/ask and spread
         best_bid = bids[0]["price"] if bids else 0
         best_ask = asks[0]["price"] if asks else 0
         spread = best_ask - best_bid if best_bid and best_ask else 0
-
+        
         return {
             "bids": bids,
             "asks": asks,
@@ -752,34 +826,17 @@ class ProjectXRealtimeDataManager:
             "spread": spread,
         }
 
-    def _process_tick_data(self, tick: dict):
+    def _on_market_trade(self, data: dict) -> None:
         """
-        Process incoming tick data and update all timeframes.
-
-        Args:
-            tick: Dictionary containing tick data (timestamp, price, volume, etc.)
+        Process market trade data from ProjectX WebSocket.
         """
         try:
-            if not self.is_running:
-                return
-
-            timestamp = tick["timestamp"]
-            price = tick["price"]
-            volume = tick.get("volume", 0)
-
-            # Update each timeframe
-            with self.data_lock:
-                for tf_key, tf_config in self.timeframes.items():
-                    self._update_timeframe_data(tf_key, timestamp, price, volume)
-
-            # Trigger callbacks for data updates
-            self._trigger_callbacks(
-                "data_update",
-                {"timestamp": timestamp, "price": price, "volume": volume},
-            )
+            self._trigger_callbacks("market_trade", data)
 
         except Exception as e:
-            self.logger.error(f"Error processing tick data: {e}")
+            self.logger.error(f"❌ Error processing market trade: {e}")
+
+
 
     def _update_timeframe_data(
         self, tf_key: str, timestamp: datetime, price: float, volume: int
@@ -807,7 +864,7 @@ class ProjectXRealtimeDataManager:
             current_data = self.data[tf_key]
 
             # Check if we need to create a new bar or update existing
-            if _polars_rows(current_data) == 0:
+            if len(current_data) == 0:
                 # First bar - ensure minimum volume for pattern detection
                 bar_volume = max(volume, 1) if volume > 0 else 1
                 new_bar = pl.DataFrame(
@@ -906,7 +963,7 @@ class ProjectXRealtimeDataManager:
                     )
 
             # Keep only recent data to manage memory (keep last 1000 bars per timeframe)
-            if _polars_rows(self.data[tf_key]) > 1000:
+            if len(self.data[tf_key]) > 1000:
                 self.data[tf_key] = self.data[tf_key].tail(1000)
 
         except Exception as e:
@@ -965,7 +1022,7 @@ class ProjectXRealtimeDataManager:
 
                 data = self.data[timeframe].clone()
 
-                if bars and _polars_rows(data) > bars:
+                if bars and len(data) > bars:
                     data = data.tail(bars)
 
                 return data
@@ -994,7 +1051,7 @@ class ProjectXRealtimeDataManager:
 
         for tf in timeframes:
             data = self.get_data(tf, bars)
-            if data is not None and _polars_rows(data) > 0:
+            if data is not None and len(data) > 0:
                 mtf_data[tf] = data
 
         return mtf_data
@@ -1004,7 +1061,7 @@ class ProjectXRealtimeDataManager:
         try:
             # Use 15-second data for current price (most recent/frequent updates)
             data_15s = self.get_data("15sec", bars=1)
-            if data_15s is not None and _polars_rows(data_15s) > 0:
+            if data_15s is not None and len(data_15s) > 0:
                 return float(data_15s.select(pl.col("close")).tail(1).item())
 
             return None
@@ -1012,6 +1069,338 @@ class ProjectXRealtimeDataManager:
         except Exception as e:
             self.logger.error(f"Error getting current price: {e}")
             return None
+
+    def get_orderbook_bids(self, levels: int = 10) -> pl.DataFrame:
+        """
+        Get the current bid side of the orderbook.
+        
+        Args:
+            levels: Number of price levels to return (default: 10)
+            
+        Returns:
+            pl.DataFrame: Bid levels sorted by price (highest to lowest)
+        """
+        try:
+            with self.orderbook_lock:
+                if len(self.orderbook_bids) == 0:
+                    return pl.DataFrame({
+                        "price": [],
+                        "volume": [],
+                        "timestamp": [],
+                        "type": []
+                    }, schema={"price": pl.Float64, "volume": pl.Int64, "timestamp": pl.Datetime, "type": pl.Utf8})
+                
+                return self.orderbook_bids.head(levels).clone()
+                
+        except Exception as e:
+            self.logger.error(f"Error getting orderbook bids: {e}")
+            return pl.DataFrame({
+                "price": [],
+                "volume": [],
+                "timestamp": [],
+                "type": []
+            }, schema={"price": pl.Float64, "volume": pl.Int64, "timestamp": pl.Datetime, "type": pl.Utf8})
+
+    def get_orderbook_asks(self, levels: int = 10) -> pl.DataFrame:
+        """
+        Get the current ask side of the orderbook.
+        
+        Args:
+            levels: Number of price levels to return (default: 10)
+            
+        Returns:
+            pl.DataFrame: Ask levels sorted by price (lowest to highest)
+        """
+        try:
+            with self.orderbook_lock:
+                if len(self.orderbook_asks) == 0:
+                    return pl.DataFrame({
+                        "price": [],
+                        "volume": [],
+                        "timestamp": [],
+                        "type": []
+                    }, schema={"price": pl.Float64, "volume": pl.Int64, "timestamp": pl.Datetime, "type": pl.Utf8})
+                
+                return self.orderbook_asks.head(levels).clone()
+                
+        except Exception as e:
+            self.logger.error(f"Error getting orderbook asks: {e}")
+            return pl.DataFrame({
+                "price": [],
+                "volume": [],
+                "timestamp": [],
+                "type": []
+            }, schema={"price": pl.Float64, "volume": pl.Int64, "timestamp": pl.Datetime, "type": pl.Utf8})
+
+    def get_orderbook_snapshot(self, levels: int = 10) -> dict[str, Any]:
+        """
+        Get a complete orderbook snapshot with both bids and asks.
+        
+        Args:
+            levels: Number of price levels to return for each side (default: 10)
+            
+        Returns:
+            dict: {"bids": DataFrame, "asks": DataFrame, "metadata": dict}
+        """
+        try:
+            with self.orderbook_lock:
+                bids = self.get_orderbook_bids(levels)
+                asks = self.get_orderbook_asks(levels)
+                
+                # Calculate metadata
+                best_bid = float(bids.select(pl.col("price")).head(1).item()) if len(bids) > 0 else None
+                best_ask = float(asks.select(pl.col("price")).head(1).item()) if len(asks) > 0 else None
+                spread = (best_ask - best_bid) if best_bid and best_ask else None
+                mid_price = ((best_bid + best_ask) / 2) if best_bid and best_ask else None
+                
+                # Calculate total volume at each side
+                total_bid_volume = int(bids.select(pl.col("volume").sum()).item()) if len(bids) > 0 else 0
+                total_ask_volume = int(asks.select(pl.col("volume").sum()).item()) if len(asks) > 0 else 0
+                
+                return {
+                    "bids": bids,
+                    "asks": asks,
+                    "metadata": {
+                        "best_bid": best_bid,
+                        "best_ask": best_ask,
+                        "spread": spread,
+                        "mid_price": mid_price,
+                        "total_bid_volume": total_bid_volume,
+                        "total_ask_volume": total_ask_volume,
+                        "last_update": self.last_orderbook_update,
+                        "levels_count": {"bids": len(bids), "asks": len(asks)}
+                    }
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Error getting orderbook snapshot: {e}")
+            return {
+                "bids": pl.DataFrame(schema={"price": pl.Float64, "volume": pl.Int64, "timestamp": pl.Datetime, "type": pl.Utf8}),
+                "asks": pl.DataFrame(schema={"price": pl.Float64, "volume": pl.Int64, "timestamp": pl.Datetime, "type": pl.Utf8}),
+                "metadata": {}
+            }
+
+    def get_best_bid_ask(self) -> dict[str, float | None]:
+        """
+        Get the current best bid and ask prices.
+        
+        Returns:
+            dict: {"bid": float, "ask": float, "spread": float, "mid": float}
+        """
+        try:
+            with self.orderbook_lock:
+                best_bid = None
+                best_ask = None
+                
+                if len(self.orderbook_bids) > 0:
+                    best_bid = float(self.orderbook_bids.select(pl.col("price")).head(1).item())
+                
+                if len(self.orderbook_asks) > 0:
+                    best_ask = float(self.orderbook_asks.select(pl.col("price")).head(1).item())
+                
+                spread = (best_ask - best_bid) if best_bid and best_ask else None
+                mid_price = ((best_bid + best_ask) / 2) if best_bid and best_ask else None
+                
+                return {
+                    "bid": best_bid,
+                    "ask": best_ask, 
+                    "spread": spread,
+                    "mid": mid_price
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Error getting best bid/ask: {e}")
+            return {"bid": None, "ask": None, "spread": None, "mid": None}
+
+    def get_orderbook_depth(self, price_range: float = 10.0) -> dict[str, int | float]:
+        """
+        Get orderbook depth within a price range of the mid price.
+        
+        Args:
+            price_range: Price range around mid to analyze (in price units)
+            
+        Returns:
+            dict: Volume and level counts within the range
+        """
+        try:
+            with self.orderbook_lock:
+                best_prices = self.get_best_bid_ask()
+                mid_price = best_prices.get("mid")
+                
+                if not mid_price:
+                    return {"bid_volume": 0, "ask_volume": 0, "bid_levels": 0, "ask_levels": 0}
+                
+                # Define price range
+                lower_bound = mid_price - price_range
+                upper_bound = mid_price + price_range
+                
+                # Filter bids in range
+                bids_in_range = self.orderbook_bids.filter(
+                    (pl.col("price") >= lower_bound) & (pl.col("price") <= mid_price)
+                )
+                
+                # Filter asks in range  
+                asks_in_range = self.orderbook_asks.filter(
+                    (pl.col("price") <= upper_bound) & (pl.col("price") >= mid_price)
+                )
+                
+                bid_volume = int(bids_in_range.select(pl.col("volume").sum()).item()) if len(bids_in_range) > 0 else 0
+                ask_volume = int(asks_in_range.select(pl.col("volume").sum()).item()) if len(asks_in_range) > 0 else 0
+                
+                return {
+                    "bid_volume": bid_volume,
+                    "ask_volume": ask_volume,
+                    "bid_levels": len(bids_in_range),
+                    "ask_levels": len(asks_in_range),
+                    "price_range": price_range,
+                    "mid_price": mid_price
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Error getting orderbook depth: {e}")
+            return {"bid_volume": 0, "ask_volume": 0, "bid_levels": 0, "ask_levels": 0}
+
+    def get_recent_trades(self, count: int = 100) -> pl.DataFrame:
+        """
+        Get recent trade executions (Type 5 data).
+        
+        Args:
+            count: Number of recent trades to return
+            
+        Returns:
+            pl.DataFrame: Recent trades with price, volume, timestamp, side
+        """
+        try:
+            with self.orderbook_lock:
+                if len(self.recent_trades) == 0:
+                    return pl.DataFrame({
+                        "price": [],
+                        "volume": [],
+                        "timestamp": [],
+                        "side": []
+                    }, schema={"price": pl.Float64, "volume": pl.Int64, "timestamp": pl.Datetime, "side": pl.Utf8})
+                
+                return self.recent_trades.tail(count).clone()
+                
+        except Exception as e:
+            self.logger.error(f"Error getting recent trades: {e}")
+            return pl.DataFrame(schema={"price": pl.Float64, "volume": pl.Int64, "timestamp": pl.Datetime, "side": pl.Utf8})
+
+    def clear_recent_trades(self) -> None:
+        """
+        Clear the recent trades history for fresh monitoring periods.
+        
+        This is useful when you want to measure trade flow for a specific
+        monitoring period without including pre-existing trade data.
+        """
+        try:
+            with self.orderbook_lock:
+                self.recent_trades = pl.DataFrame({
+                    "price": [],
+                    "volume": [],
+                    "timestamp": [],
+                    "side": []
+                }, schema={"price": pl.Float64, "volume": pl.Int64, "timestamp": pl.Datetime, "side": pl.Utf8})
+                
+                self.logger.info("🧹 Recent trades history cleared")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error clearing recent trades: {e}")
+
+    def get_trade_flow_summary(self, minutes: int = 5) -> dict[str, Any]:
+        """
+        Get trade flow summary for the last N minutes.
+        
+        Args:
+            minutes: Number of minutes to analyze
+            
+        Returns:
+            dict: Trade flow statistics
+        """
+        try:
+            with self.orderbook_lock:
+                if len(self.recent_trades) == 0:
+                    return {
+                        "total_volume": 0,
+                        "trade_count": 0,
+                        "buy_volume": 0,
+                        "sell_volume": 0,
+                        "buy_trades": 0,
+                        "sell_trades": 0,
+                        "avg_trade_size": 0,
+                        "vwap": 0,
+                        "buy_sell_ratio": 0
+                    }
+                
+                # Filter trades from last N minutes
+                from datetime import timedelta
+                cutoff_time = datetime.now(self.timezone) - timedelta(minutes=minutes)
+                recent_trades = self.recent_trades.filter(pl.col("timestamp") >= cutoff_time)
+                
+                if len(recent_trades) == 0:
+                    return {
+                        "total_volume": 0,
+                        "trade_count": 0,
+                        "buy_volume": 0,
+                        "sell_volume": 0,
+                        "buy_trades": 0,
+                        "sell_trades": 0,
+                        "avg_trade_size": 0,
+                        "vwap": 0,
+                        "buy_sell_ratio": 0
+                    }
+                
+                # Calculate statistics
+                total_volume = int(recent_trades.select(pl.col("volume").sum()).item())
+                trade_count = len(recent_trades)
+                
+                # Buy/sell breakdown
+                buy_trades = recent_trades.filter(pl.col("side") == "buy")
+                sell_trades = recent_trades.filter(pl.col("side") == "sell")
+                
+                buy_volume = int(buy_trades.select(pl.col("volume").sum()).item()) if len(buy_trades) > 0 else 0
+                sell_volume = int(sell_trades.select(pl.col("volume").sum()).item()) if len(sell_trades) > 0 else 0
+                
+                buy_count = len(buy_trades)
+                sell_count = len(sell_trades)
+                
+                # Calculate VWAP (Volume Weighted Average Price)
+                if total_volume > 0:
+                    vwap_calc = recent_trades.select(
+                        (pl.col("price") * pl.col("volume")).sum() / pl.col("volume").sum()
+                    ).item()
+                    vwap = float(vwap_calc)
+                else:
+                    vwap = 0
+                
+                avg_trade_size = total_volume / trade_count if trade_count > 0 else 0
+                buy_sell_ratio = buy_volume / sell_volume if sell_volume > 0 else float('inf') if buy_volume > 0 else 0
+                
+                return {
+                    "total_volume": total_volume,
+                    "trade_count": trade_count,
+                    "buy_volume": buy_volume,
+                    "sell_volume": sell_volume,
+                    "buy_trades": buy_count,
+                    "sell_trades": sell_count,
+                    "avg_trade_size": avg_trade_size,
+                    "vwap": vwap,
+                    "buy_sell_ratio": buy_sell_ratio,
+                    "period_minutes": minutes
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Error getting trade flow summary: {e}")
+            return {"error": str(e)}
+
+    def get_order_type_statistics(self) -> dict[str, int]:
+        """
+        Get statistics about different order types processed.
+        
+        Returns:
+            dict: Count of each order type processed
+        """
+        return self.order_type_stats.copy()
 
     def add_callback(self, event_type: str, callback: Callable):
         """
@@ -1072,6 +1461,7 @@ class ProjectXRealtimeDataManager:
             "is_running": self.is_running,
             "contract_id": self.contract_id,
             "timeframes": {},
+            "orderbook": {},
         }
 
         with self.data_lock:
@@ -1079,16 +1469,39 @@ class ProjectXRealtimeDataManager:
                 if tf_key in self.data:
                     data = self.data[tf_key]
                     stats["timeframes"][tf_key] = {
-                        "bars": _polars_rows(data),
+                        "bars": len(data),
                         "latest_time": data.select(pl.col("timestamp")).tail(1).item()
-                        if _polars_rows(data) > 0
+                        if len(data) > 0
                         else None,
                         "latest_price": float(
                             data.select(pl.col("close")).tail(1).item()
                         )
-                        if _polars_rows(data) > 0
+                        if len(data) > 0
                         else None,
                     }
+
+        # Add orderbook statistics
+        with self.orderbook_lock:
+            best_prices = self.get_best_bid_ask()
+            stats["orderbook"] = {
+                "bid_levels": len(self.orderbook_bids),
+                "ask_levels": len(self.orderbook_asks),
+                "best_bid": best_prices.get("bid"),
+                "best_ask": best_prices.get("ask"),
+                "spread": best_prices.get("spread"),
+                "mid_price": best_prices.get("mid"),
+                "last_update": self.last_orderbook_update,
+                "level2_updates": self.level2_update_count,
+            }
+            
+            # Add trade flow statistics
+            stats["trade_flow"] = {
+                "recent_trades_count": len(self.recent_trades),
+                "last_5min_summary": self.get_trade_flow_summary(minutes=5)
+            }
+            
+            # Add order type statistics
+            stats["order_types"] = self.get_order_type_statistics()
 
         return stats
 
@@ -1110,7 +1523,7 @@ class ProjectXRealtimeDataManager:
 
             with self.data_lock:
                 for tf_key, data in self.data.items():
-                    if _polars_rows(data) == 0:
+                    if len(data) == 0:
                         self.logger.warning(
                             f"Health check: No data for timeframe {tf_key}"
                         )
@@ -1163,13 +1576,13 @@ class ProjectXRealtimeDataManager:
                 for tf_key in self.timeframes.keys():
                     if (
                         tf_key in self.data
-                        and _polars_rows(self.data[tf_key]) > max_bars_per_timeframe
+                        and len(self.data[tf_key]) > max_bars_per_timeframe
                     ):
-                        old_length = _polars_rows(self.data[tf_key])
+                        old_length = len(self.data[tf_key])
                         self.data[tf_key] = self.data[tf_key].tail(
                             max_bars_per_timeframe
                         )
-                        new_length = _polars_rows(self.data[tf_key])
+                        new_length = len(self.data[tf_key])
 
                         self.logger.debug(
                             f"Cleaned up {tf_key} data: {old_length} -> {new_length} bars"

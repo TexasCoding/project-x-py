@@ -279,3 +279,5 @@ local_settings.py
 .env.development
 .env.test
 .env.production
+
+test.py
