@@ -184,7 +184,7 @@ class ProjectXRealtimeDataManager:
         self.timeframes = {}
         for tf in timeframes:
             if tf not in TIMEFRAMES:
-                raise ValueError(f"Invalid timeframe: {tf}")
+                raise ValueError(f"Invalid timeframe: {tf}, valid timeframes are: {list(TIMEFRAMES.keys())}")
             self.timeframes[tf] = TIMEFRAMES[tf]
 
         
