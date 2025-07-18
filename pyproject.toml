@@ -150,6 +150,7 @@ exclude = [
 ignore = [
     "E501",  # Line too long (handled by formatter)
     "B008",  # Do not perform function calls in argument defaults
+    "N815",  # Variable in class scope should not be mixedCase (API compatibility)
     "N818",  # Exception name should be named with an Error suffix
     "UP007", # Use X | Y for type annotations (optional)
 ]

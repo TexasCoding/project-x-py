@@ -30,52 +30,34 @@ class ProjectXError(Exception):
 class ProjectXAuthenticationError(ProjectXError):
     """Authentication-related errors."""
 
-    pass
-
 
 class ProjectXRateLimitError(ProjectXError):
     """Rate limiting errors."""
-
-    pass
 
 
 class ProjectXServerError(ProjectXError):
     """Server-side errors (5xx)."""
 
-    pass
-
 
 class ProjectXClientError(ProjectXError):
     """Client-side errors (4xx)."""
-
-    pass
 
 
 class ProjectXConnectionError(ProjectXError):
     """Connection and network errors."""
 
-    pass
-
 
 class ProjectXDataError(ProjectXError):
     """Data validation and processing errors."""
-
-    pass
 
 
 class ProjectXOrderError(ProjectXError):
     """Order placement and management errors."""
 
-    pass
-
 
 class ProjectXPositionError(ProjectXError):
     """Position management errors."""
 
-    pass
-
 
 class ProjectXInstrumentError(ProjectXError):
     """Instrument-related errors."""
-
-    pass

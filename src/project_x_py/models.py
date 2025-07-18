@@ -5,8 +5,6 @@ This module contains all data model classes for the ProjectX API client.
 """
 
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Optional
 
 
 @dataclass

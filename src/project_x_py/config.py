@@ -5,16 +5,15 @@ This module handles configuration for the ProjectX client, including
 environment variables, config files, and default settings.
 """
 
-import os
 import json
 import logging
+import os
+from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
-from dataclasses import dataclass, asdict
+from typing import Any
 
-from .utils import get_env_var
 from .models import ProjectXConfig
-
+from .utils import get_env_var
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +30,7 @@ class ConfigManager:
     Priority order: Environment variables > Config file > Defaults
     """
 
-    def __init__(self, config_file: Optional[Union[str, Path]] = None):
+    def __init__(self, config_file: str | Path | None = None):
         """
         Initialize configuration manager.
 
@@ -39,7 +38,7 @@ class ConfigManager:
             config_file: Optional path to configuration file
         """
         self.config_file = Path(config_file) if config_file else None
-        self._config: Optional[ProjectXConfig] = None
+        self._config: ProjectXConfig | None = None
 
     def load_config(self) -> ProjectXConfig:
         """
@@ -70,19 +69,19 @@ class ConfigManager:
         self._config = ProjectXConfig(**config_dict)
         return self._config
 
-    def _load_config_file(self) -> Dict[str, Any]:
+    def _load_config_file(self) -> dict[str, Any]:
         """Load configuration from JSON file."""
         if not self.config_file or not self.config_file.exists():
             return {}
 
         try:
-            with open(self.config_file, "r") as f:
+            with open(self.config_file) as f:
                 return json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
+        except (json.JSONDecodeError, OSError) as e:
             logger.error(f"Error loading config file: {e}")
             return {}
 
-    def _load_env_config(self) -> Dict[str, Any]:
+    def _load_env_config(self) -> dict[str, Any]:
         """Load configuration from environment variables."""
         env_config = {}
 
@@ -114,9 +113,7 @@ class ConfigManager:
 
         return env_config
 
-    def save_config(
-        self, config: ProjectXConfig, file_path: Optional[Union[str, Path]] = None
-    ):
+    def save_config(self, config: ProjectXConfig, file_path: str | Path | None = None):
         """
         Save configuration to file.
 
@@ -144,7 +141,7 @@ class ConfigManager:
             logger.error(f"Failed to save config to {target_file}: {e}")
             raise
 
-    def get_auth_config(self) -> Dict[str, str]:
+    def get_auth_config(self) -> dict[str, str]:
         """
         Get authentication configuration from environment variables.
 
@@ -185,11 +182,7 @@ class ConfigManager:
             url = getattr(config, url_field)
             if not url or not isinstance(url, str):
                 errors.append(f"{url_field} must be a non-empty string")
-            elif not (
-                url.startswith("http://")
-                or url.startswith("https://")
-                or url.startswith("wss://")
-            ):
+            elif not url.startswith(("http://", "https://", "wss://")):
                 errors.append(f"{url_field} must be a valid URL")
 
         # Validate numeric settings
@@ -229,7 +222,7 @@ def load_default_config() -> ProjectXConfig:
     return manager.load_config()
 
 
-def create_config_template(file_path: Union[str, Path]) -> None:
+def create_config_template(file_path: str | Path) -> None:
     """
     Create a configuration file template.
 
@@ -289,7 +282,7 @@ def get_default_config_path() -> Path:
 
 
 # Environment variable validation helpers
-def check_environment() -> Dict[str, Any]:
+def check_environment() -> dict[str, Any]:
     """
     Check environment setup for ProjectX.
 

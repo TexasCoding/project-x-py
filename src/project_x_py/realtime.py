@@ -30,6 +30,7 @@ except ImportError:
         "signalrcore package not found. Real-time features will not be available. "
         "Install with: pip install signalrcore",
         ImportWarning,
+        stacklevel=2,
     )
 
 
@@ -860,7 +861,7 @@ class ProjectXRealtimeClient:
         """
         matching_orders = []
 
-        for order_id, order_data in self.tracked_orders.items():
+        for _, order_data in self.tracked_orders.items():
             # Handle different order data formats
             if isinstance(order_data, list) and len(order_data) > 0:
                 # Handle [{'action': 1, 'data': {...}}] format

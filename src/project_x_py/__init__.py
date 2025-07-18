@@ -74,47 +74,41 @@ from .utils import (
 
 # Public API - these are the main classes users should import
 __all__ = [
-    # Main client classes
-    "ProjectX",
-    "ProjectXRealtimeClient",
-    "ProjectXRealtimeDataManager",
-    "OrderBook",
-    # Configuration
-    "ProjectXConfig",
-    "ConfigManager",
-    "load_default_config",
-    "create_config_template",
-    "check_environment",
-    # Data models
-    "Instrument",
     "Account",
+    "BracketOrderResponse",
+    "ConfigManager",
+    "Instrument",
     "Order",
+    "OrderBook",
     "OrderPlaceResponse",
     "Position",
-    "Trade",
-    "BracketOrderResponse",
-    # Exceptions
-    "ProjectXError",
+    "ProjectX",
     "ProjectXAuthenticationError",
-    "ProjectXServerError",
-    "ProjectXRateLimitError",
+    "ProjectXConfig",
     "ProjectXConnectionError",
     "ProjectXDataError",
+    "ProjectXError",
+    "ProjectXInstrumentError",
     "ProjectXOrderError",
     "ProjectXPositionError",
-    "ProjectXInstrumentError",
-    # Utilities
-    "setup_logging",
-    "get_env_var",
-    "format_price",
-    "format_volume",
-    "is_market_hours",
+    "ProjectXRateLimitError",
+    "ProjectXRealtimeClient",
+    "ProjectXRealtimeDataManager",
+    "ProjectXServerError",
     "RateLimiter",
-    # Factory functions
-    "create_realtime_client",
+    "Trade",
+    "check_environment",
+    "create_config_template",
     "create_data_manager",
     "create_orderbook",
+    "create_realtime_client",
     "create_trading_suite",
+    "format_price",
+    "format_volume",
+    "get_env_var",
+    "is_market_hours",
+    "load_default_config",
+    "setup_logging",
 ]
 
 
@@ -209,9 +203,9 @@ def check_setup() -> dict:
 
 # Package-level convenience functions
 def create_client(
-    username: Optional[str] = None,
-    api_key: Optional[str] = None,
-    config: Optional[ProjectXConfig] = None,
+    username: str | None = None,
+    api_key: str | None = None,
+    config: ProjectXConfig | None = None,
 ) -> ProjectX:
     """
     Create a ProjectX client with flexible initialization.
@@ -237,7 +231,7 @@ def create_client(
 
 
 def create_realtime_client(
-    jwt_token: str, account_id: str, config: Optional[ProjectXConfig] = None
+    jwt_token: str, account_id: str, config: ProjectXConfig | None = None
 ) -> ProjectXRealtimeClient:
     """
     Create a ProjectX real-time client.
@@ -265,8 +259,8 @@ def create_data_manager(
     instrument: str,
     project_x: ProjectX,
     realtime_client: ProjectXRealtimeClient,
-    timeframes: list[str] = ["5min"],
-    config: Optional[ProjectXConfig] = None,
+    timeframes: list[str] | None = None,
+    config: ProjectXConfig | None = None,
 ) -> ProjectXRealtimeDataManager:
     """
     Create a ProjectX real-time OHLCV data manager with dependency injection.
@@ -281,6 +275,9 @@ def create_data_manager(
     Returns:
         ProjectXRealtimeDataManager instance
     """
+    if timeframes is None:
+        timeframes = ["5min"]
+
     if config is None:
         config = load_default_config()
 
@@ -295,7 +292,7 @@ def create_data_manager(
 
 def create_orderbook(
     instrument: str,
-    config: Optional[ProjectXConfig] = None,
+    config: ProjectXConfig | None = None,
 ) -> "OrderBook":
     """
     Create a ProjectX OrderBook for advanced market depth analysis.
@@ -321,8 +318,8 @@ def create_trading_suite(
     project_x: ProjectX,
     jwt_token: str,
     account_id: str,
-    timeframes: list[str] = ["5min"],
-    config: Optional[ProjectXConfig] = None,
+    timeframes: list[str] | None = None,
+    config: ProjectXConfig | None = None,
 ) -> dict[str, Any]:
     """
     Create a complete trading suite with optimized architecture.
@@ -361,6 +358,9 @@ def create_trading_suite(
         >>> ohlcv_data = suite["data_manager"].get_data("5min")
         >>> orderbook_snapshot = suite["orderbook"].get_orderbook_snapshot()
     """
+    if timeframes is None:
+        timeframes = ["5min"]
+
     if config is None:
         config = load_default_config()
 
