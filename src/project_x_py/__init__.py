@@ -55,6 +55,7 @@ from .models import (
     ProjectXConfig,
     Trade,
 )
+from .order_manager import OrderManager
 from .orderbook import OrderBook
 from .realtime import ProjectXRealtimeClient
 from .realtime_data_manager import ProjectXRealtimeDataManager
@@ -80,6 +81,7 @@ __all__ = [
     "Instrument",
     "Order",
     "OrderBook",
+    "OrderManager",
     "OrderPlaceResponse",
     "Position",
     "ProjectX",
@@ -100,6 +102,7 @@ __all__ = [
     "check_environment",
     "create_config_template",
     "create_data_manager",
+    "create_order_manager",
     "create_orderbook",
     "create_realtime_client",
     "create_trading_suite",
@@ -313,6 +316,37 @@ def create_orderbook(
     )
 
 
+def create_order_manager(
+    project_x: ProjectX,
+    realtime_client: ProjectXRealtimeClient | None = None,
+) -> OrderManager:
+    """
+    Create a ProjectX OrderManager for comprehensive order operations.
+
+    Args:
+        project_x: ProjectX client instance
+        realtime_client: Optional ProjectXRealtimeClient for real-time order tracking
+
+    Returns:
+        OrderManager instance
+
+    Example:
+        >>> order_manager = create_order_manager(project_x, realtime_client)
+        >>> order_manager.initialize()
+        >>> # Place orders
+        >>> response = order_manager.place_market_order("MGC", 0, 1)
+        >>> bracket = order_manager.place_bracket_order(
+        ...     "MGC", 0, 1, 2045.0, 2040.0, 2055.0
+        ... )
+        >>> # Manage orders
+        >>> orders = order_manager.search_open_orders()
+        >>> order_manager.cancel_order(order_id)
+    """
+    order_manager = OrderManager(project_x)
+    order_manager.initialize(realtime_client=realtime_client)
+    return order_manager
+
+
 def create_trading_suite(
     instrument: str,
     project_x: ProjectX,
@@ -328,6 +362,7 @@ def create_trading_suite(
     - Single ProjectXRealtimeClient for WebSocket connection
     - ProjectXRealtimeDataManager for OHLCV data
     - OrderBook for market depth analysis
+    - OrderManager for comprehensive order operations
     - Proper dependency injection and connection sharing
 
     Args:
@@ -339,7 +374,7 @@ def create_trading_suite(
         config: Configuration object (uses defaults if None)
 
     Returns:
-        dict: {"realtime_client": client, "data_manager": manager, "orderbook": orderbook}
+        dict: {"realtime_client": client, "data_manager": manager, "orderbook": orderbook, "order_manager": order_manager}
 
     Example:
         >>> suite = create_trading_suite(
@@ -350,9 +385,9 @@ def create_trading_suite(
         >>> # Initialize components
         >>> suite["data_manager"].initialize(initial_days=30)
         >>> suite["data_manager"].start_realtime_feed()
-        >>> # Register orderbook for market depth
-        >>> suite["realtime_client"].add_callback(
-        ...     "market_depth", suite["orderbook"].process_market_depth
+        >>> # Place orders
+        >>> bracket = suite["order_manager"].place_bracket_order(
+        ...     "MGC", 0, 1, 2045.0, 2040.0, 2055.0
         ... )
         >>> # Access data
         >>> ohlcv_data = suite["data_manager"].get_data("5min")
@@ -387,9 +422,14 @@ def create_trading_suite(
         timezone=config.timezone,
     )
 
+    # Create order manager for comprehensive order operations
+    order_manager = OrderManager(project_x)
+    order_manager.initialize(realtime_client=realtime_client)
+
     return {
         "realtime_client": realtime_client,
         "data_manager": data_manager,
         "orderbook": orderbook,
+        "order_manager": order_manager,
         "config": config,
     }

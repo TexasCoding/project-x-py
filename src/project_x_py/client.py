@@ -21,22 +21,14 @@ from .exceptions import (
     ProjectXDataError,
     ProjectXError,
     ProjectXInstrumentError,
-    ProjectXOrderError,
     ProjectXRateLimitError,
     ProjectXServerError,
 )
 from .models import (
     Account,
-    BracketOrderResponse,
     Instrument,
-    Order,
-    OrderPlaceResponse,
     Position,
     ProjectXConfig,
-    Trade,
-)
-from .utils import (
-    extract_symbol_from_contract_id,
 )
 
 
@@ -44,12 +36,15 @@ class ProjectX:
     """
     A comprehensive Python client for the ProjectX Gateway API.
 
-    This class provides complete access to trading functionality including:
+    This class provides access to core trading functionality including:
     - Market data retrieval
     - Account management
-    - Order placement, modification, and cancellation
+    - Instrument search and contract details
     - Position management
-    - Trade history and analysis
+    - Authentication and session management
+
+    For order management operations, use the OrderManager class.
+    For real-time market data, use ProjectXRealtimeDataManager and OrderBook.
 
     The client handles authentication, error management, and provides both
     low-level API access and high-level convenience methods.
@@ -72,6 +67,10 @@ class ProjectX:
         >>> instruments = project_x.search_instruments("MGC")
         >>> data = project_x.get_data("MGC", days=5, interval=15)
         >>> positions = project_x.search_open_positions()
+        >>> # For order management, use OrderManager
+        >>> from project_x_py import create_order_manager
+        >>> order_manager = create_order_manager(project_x)
+        >>> response = order_manager.place_market_order("MGC", 0, 1)
     """
 
     def __init__(
@@ -603,242 +602,6 @@ class ProjectX:
         except (KeyError, json.JSONDecodeError, ValueError) as e:
             self.logger.error(f"Invalid history response: {e}")
             raise ProjectXDataError(f"Invalid history response: {e}") from e
-
-    # Order Management Methods - simplified interface
-    def place_market_order(
-        self, contract_id: str, side: int, size: int, account_id: int | None = None
-    ) -> OrderPlaceResponse:
-        """
-        Place a market order (immediate execution at current market price).
-
-        Args:
-            contract_id: The contract ID to trade
-            side: Order side: 0=Buy, 1=Sell
-            size: Number of contracts to trade
-            account_id: Account ID. Uses default account if None.
-
-        Returns:
-            OrderPlaceResponse: Response containing order ID and status
-
-        Example:
-            >>> # Buy 1 contract at market price
-            >>> response = project_x.place_market_order("CON.F.US.MGC.M25", 0, 1)
-        """
-        return self.place_order(
-            contract_id=contract_id,
-            order_type=2,  # Market order
-            side=side,
-            size=size,
-            account_id=account_id,
-        )
-
-    def place_limit_order(
-        self,
-        contract_id: str,
-        side: int,
-        size: int,
-        limit_price: float,
-        account_id: int | None = None,
-    ) -> OrderPlaceResponse:
-        """
-        Place a limit order (execute only at specified price or better).
-
-        Args:
-            contract_id: The contract ID to trade
-            side: Order side: 0=Buy, 1=Sell
-            size: Number of contracts to trade
-            limit_price: Maximum price for buy orders, minimum price for sell orders
-            account_id: Account ID. Uses default account if None.
-
-        Returns:
-            OrderPlaceResponse: Response containing order ID and status
-
-        Example:
-            >>> # Sell 1 contract with minimum price of $2050
-            >>> response = project_x.place_limit_order("CON.F.US.MGC.M25", 1, 1, 2050.0)
-        """
-        return self.place_order(
-            contract_id=contract_id,
-            order_type=1,  # Limit order
-            side=side,
-            size=size,
-            limit_price=limit_price,
-            account_id=account_id,
-        )
-
-    def place_order(
-        self,
-        contract_id: str,
-        order_type: int,
-        side: int,
-        size: int,
-        limit_price: float | None = None,
-        stop_price: float | None = None,
-        trail_price: float | None = None,
-        custom_tag: str | None = None,
-        linked_order_id: int | None = None,
-        account_id: int | None = None,
-    ) -> OrderPlaceResponse:
-        """
-        Place an order with comprehensive parameter support and automatic price alignment.
-
-        All price parameters are automatically aligned to the instrument's tick size.
-
-        Args:
-            contract_id: The contract ID to trade
-            order_type: Order type:
-                1=Limit, 2=Market, 4=Stop, 5=TrailingStop, 6=JoinBid, 7=JoinAsk
-            side: Order side: 0=Buy, 1=Sell
-            size: Number of contracts to trade
-            limit_price: Limit price for limit orders (auto-aligned to tick size)
-            stop_price: Stop price for stop orders (auto-aligned to tick size)
-            trail_price: Trail amount for trailing stop orders (auto-aligned to tick size)
-            custom_tag: Custom identifier for the order
-            linked_order_id: ID of a linked order (for OCO, etc.)
-            account_id: Account ID. Uses default account if None.
-
-        Returns:
-            OrderPlaceResponse: Response containing order ID and status
-
-        Raises:
-            ProjectXOrderError: If order placement fails
-
-        Example:
-            >>> # Place a limit order - price will be auto-aligned to tick size
-            >>> response = project_x.place_order(
-            ...     "CON.F.US.MGC.M25", 1, 0, 1, limit_price=2050.15
-            ... )
-        """
-        self._ensure_authenticated()
-
-        # Use account_info if no account_id provided
-        if account_id is None:
-            if not self.account_info:
-                self.get_account_info()
-            if not self.account_info:
-                raise ProjectXOrderError("No account information available")
-            account_id = self.account_info.id
-
-        # Align all prices to tick size to prevent "Invalid price" errors
-        aligned_limit_price = self._align_price_to_tick_size(limit_price, contract_id)
-        aligned_stop_price = self._align_price_to_tick_size(stop_price, contract_id)
-        aligned_trail_price = self._align_price_to_tick_size(trail_price, contract_id)
-
-        url = f"{self.base_url}/Order/place"
-        payload = {
-            "accountId": account_id,
-            "contractId": contract_id,
-            "type": order_type,
-            "side": side,
-            "size": size,
-            "limitPrice": aligned_limit_price,
-            "stopPrice": aligned_stop_price,
-            "trailPrice": aligned_trail_price,
-            "customTag": custom_tag,
-            "linkedOrderId": linked_order_id,
-        }
-
-        try:
-            response = requests.post(
-                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
-            )
-            self._handle_response_errors(response)
-
-            data = response.json()
-            if not data.get("success", False):
-                error_msg = data.get("errorMessage", "Unknown error")
-                self.logger.error(f"Order placement failed: {error_msg}")
-                raise ProjectXOrderError(f"Order placement failed: {error_msg}")
-
-            return OrderPlaceResponse(**data)
-
-        except requests.RequestException as e:
-            raise ProjectXConnectionError(f"Order placement request failed: {e}") from e
-        except (KeyError, json.JSONDecodeError, TypeError) as e:
-            self.logger.error(f"Invalid order placement response: {e}")
-            raise ProjectXDataError(f"Invalid order placement response: {e}") from e
-
-    def _align_price_to_tick_size(
-        self, price: float | None, contract_id: str
-    ) -> float | None:
-        """
-        Align a price to the instrument's tick size.
-
-        Args:
-            price: The price to align
-            contract_id: Contract ID to get tick size from
-
-        Returns:
-            float: Price aligned to tick size
-            None: If price is None
-        """
-        try:
-            if price is None:
-                return None
-
-            instrument_obj = None
-
-            # Try to get instrument by simple symbol first (e.g., "MNQ")
-            if "." not in contract_id:
-                instrument_obj = self.get_instrument(contract_id)
-            else:
-                # Extract symbol from contract ID (e.g., "CON.F.US.MGC.M25" -> "MGC")
-                symbol = extract_symbol_from_contract_id(contract_id)
-                if symbol:
-                    instrument_obj = self.get_instrument(symbol)
-
-            if not instrument_obj or not hasattr(instrument_obj, "tickSize"):
-                self.logger.warning(
-                    f"No tick size available for contract {contract_id}, using original price: {price}"
-                )
-                return price
-
-            tick_size = instrument_obj.tickSize
-            if tick_size is None or tick_size <= 0:
-                self.logger.warning(
-                    f"Invalid tick size {tick_size} for {contract_id}, using original price: {price}"
-                )
-                return price
-
-            self.logger.debug(
-                f"Aligning price {price} with tick size {tick_size} for {contract_id}"
-            )
-
-            # Use Decimal for precise arithmetic to avoid floating point errors
-            from decimal import ROUND_HALF_UP, Decimal
-
-            # Convert to Decimal for precise calculation
-            price_decimal = Decimal(str(price))
-            tick_decimal = Decimal(str(tick_size))
-
-            # Round to nearest tick using precise decimal arithmetic
-            ticks = (price_decimal / tick_decimal).quantize(
-                Decimal("1"), rounding=ROUND_HALF_UP
-            )
-            aligned_decimal = ticks * tick_decimal
-
-            # Determine the number of decimal places needed for the tick size
-            tick_str = str(tick_size)
-            decimal_places = len(tick_str.split(".")[1]) if "." in tick_str else 0
-
-            # Create the quantization pattern
-            if decimal_places == 0:
-                quantize_pattern = Decimal("1")
-            else:
-                quantize_pattern = Decimal("0." + "0" * (decimal_places - 1) + "1")
-
-            result = float(aligned_decimal.quantize(quantize_pattern))
-
-            if result != price:
-                self.logger.info(
-                    f"Price alignment: {price} -> {result} (tick size: {tick_size})"
-                )
-
-            return result
-
-        except Exception as e:
-            self.logger.error(f"Error aligning price {price} to tick size: {e}")
-            return price  # Return original price if alignment fails
 
     # Position Management Methods
     def search_open_positions(self, account_id: int | None = None) -> list[Position]:

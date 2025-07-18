@@ -234,7 +234,7 @@ class BracketOrderResponse:
     entry_price: float
     stop_loss_price: float
     take_profit_price: float
-    entry_response: "OrderPlaceResponse"
+    entry_response: "OrderPlaceResponse | None"
     stop_response: "OrderPlaceResponse | None"
     target_response: "OrderPlaceResponse | None"
     error_message: str | None
