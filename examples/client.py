@@ -9,7 +9,6 @@ import json
 import logging
 import time
 from datetime import timedelta
-from typing import Optional
 
 import polars as pl
 import pytz
@@ -299,10 +298,12 @@ class ProjectX:
 
         except requests.RequestException as e:
             self.logger.error(f"Authentication request failed: {e}")
-            raise ProjectXConnectionError(f"Authentication request failed: {e}")
+            raise ProjectXConnectionError(f"Authentication request failed: {e}") from e
         except (KeyError, json.JSONDecodeError) as e:
             self.logger.error(f"Invalid authentication response: {e}")
-            raise ProjectXAuthenticationError(f"Invalid authentication response: {e}")
+            raise ProjectXAuthenticationError(
+                f"Invalid authentication response: {e}"
+            ) from e
 
     def get_session_token(self):
         """
@@ -317,7 +318,7 @@ class ProjectX:
         self._ensure_authenticated()
         return self.session_token
 
-    def get_account_info(self) -> Optional[Account]:
+    def get_account_info(self) -> Account | None:
         """
         Retrieve account information for active accounts.
 
@@ -361,10 +362,10 @@ class ProjectX:
             return self.account_info
 
         except requests.RequestException as e:
-            raise ProjectXConnectionError(f"Account search request failed: {e}")
+            raise ProjectXConnectionError(f"Account search request failed: {e}") from e
         except (KeyError, json.JSONDecodeError, TypeError) as e:
             self.logger.error(f"Invalid account response: {e}")
-            raise ProjectXDataError(f"Invalid account response: {e}")
+            raise ProjectXDataError(f"Invalid account response: {e}") from e
 
     def _handle_response_errors(self, response: requests.Response):
         """
@@ -379,9 +380,9 @@ class ProjectX:
             ProjectXError: For other 4xx errors
         """
         if response.status_code == 503:
-            raise ProjectXServerError(f"Server temporarily unavailable (503)")
+            raise ProjectXServerError("Server temporarily unavailable (503)")
         elif response.status_code == 429:
-            raise ProjectXRateLimitError(f"Rate limit exceeded (429)")
+            raise ProjectXRateLimitError("Rate limit exceeded (429)")
         elif response.status_code >= 500:
             raise ProjectXServerError(f"Server error ({response.status_code})")
         elif response.status_code >= 400:
@@ -389,7 +390,7 @@ class ProjectX:
 
         response.raise_for_status()
 
-    def get_instrument(self, symbol: str) -> Optional[Instrument]:
+    def get_instrument(self, symbol: str) -> Instrument | None:
         """
         Search for the first instrument matching a symbol.
 
@@ -432,10 +433,10 @@ class ProjectX:
             return Instrument(**contracts[0])
 
         except requests.RequestException as e:
-            raise ProjectXConnectionError(f"Contract search request failed: {e}")
+            raise ProjectXConnectionError(f"Contract search request failed: {e}") from e
         except (KeyError, json.JSONDecodeError, TypeError) as e:
             self.logger.error(f"Invalid contract response: {e}")
-            raise ProjectXDataError(f"Invalid contract response: {e}")
+            raise ProjectXDataError(f"Invalid contract response: {e}") from e
 
     def search_instruments(self, symbol: str) -> list[Instrument]:
         """
@@ -476,10 +477,10 @@ class ProjectX:
             return [Instrument(**contract) for contract in contracts]
 
         except requests.RequestException as e:
-            raise ProjectXConnectionError(f"Contract search request failed: {e}")
+            raise ProjectXConnectionError(f"Contract search request failed: {e}") from e
         except (KeyError, json.JSONDecodeError, TypeError) as e:
             self.logger.error(f"Invalid contract response: {e}")
-            raise ProjectXDataError(f"Invalid contract response: {e}")
+            raise ProjectXDataError(f"Invalid contract response: {e}") from e
 
     def get_data(
         self,
@@ -596,10 +597,12 @@ class ProjectX:
             return df
 
         except requests.RequestException as e:
-            raise ProjectXConnectionError(f"History retrieval request failed: {e}")
+            raise ProjectXConnectionError(
+                f"History retrieval request failed: {e}"
+            ) from e
         except (KeyError, json.JSONDecodeError, ValueError) as e:
             self.logger.error(f"Invalid history response: {e}")
-            raise ProjectXDataError(f"Invalid history response: {e}")
+            raise ProjectXDataError(f"Invalid history response: {e}") from e
 
     # Order Management Methods - simplified interface
     def place_market_order(
@@ -750,10 +753,10 @@ class ProjectX:
             return OrderPlaceResponse(**data)
 
         except requests.RequestException as e:
-            raise ProjectXConnectionError(f"Order placement request failed: {e}")
+            raise ProjectXConnectionError(f"Order placement request failed: {e}") from e
         except (KeyError, json.JSONDecodeError, TypeError) as e:
             self.logger.error(f"Invalid order placement response: {e}")
-            raise ProjectXDataError(f"Invalid order placement response: {e}")
+            raise ProjectXDataError(f"Invalid order placement response: {e}") from e
 
     def _align_price_to_tick_size(
         self, price: float | None, contract_id: str
@@ -816,10 +819,7 @@ class ProjectX:
 
             # Determine the number of decimal places needed for the tick size
             tick_str = str(tick_size)
-            if "." in tick_str:
-                decimal_places = len(tick_str.split(".")[1])
-            else:
-                decimal_places = 0
+            decimal_places = len(tick_str.split(".")[1]) if "." in tick_str else 0
 
             # Create the quantization pattern
             if decimal_places == 0:
@@ -888,10 +888,10 @@ class ProjectX:
             return [Position(**position) for position in positions]
 
         except requests.RequestException as e:
-            raise ProjectXConnectionError(f"Position search request failed: {e}")
+            raise ProjectXConnectionError(f"Position search request failed: {e}") from e
         except (KeyError, json.JSONDecodeError, TypeError) as e:
             self.logger.error(f"Invalid position search response: {e}")
-            raise ProjectXDataError(f"Invalid position search response: {e}")
+            raise ProjectXDataError(f"Invalid position search response: {e}") from e
 
     # Additional convenience methods can be added here as needed
     def get_health_status(self) -> dict:

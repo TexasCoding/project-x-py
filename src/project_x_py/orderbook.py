@@ -25,9 +25,10 @@ Key Features:
 import logging
 import threading
 from collections import defaultdict, deque
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from statistics import mean, stdev
-from typing import Any, Callable
+from typing import Any
 
 import polars as pl
 import pytz
@@ -307,10 +308,7 @@ class OrderBook:
             side: "bid" or "ask"
         """
         try:
-            if side == "bid":
-                current_df = self.orderbook_bids
-            else:
-                current_df = self.orderbook_asks
+            current_df = self.orderbook_bids if side == "bid" else self.orderbook_asks
 
             # Create DataFrame from updates
             if updates:

@@ -4,9 +4,10 @@ ProjectX Utility Functions
 This module contains utility functions used throughout the ProjectX client.
 """
 
-import os
 import logging
-from typing import Any, Dict, Optional
+import os
+from typing import Any
+
 import polars as pl
 
 
@@ -25,8 +26,8 @@ def get_polars_last_value(df: pl.DataFrame, column: str) -> float:
 
 def setup_logging(
     level: str = "INFO",
-    format_string: Optional[str] = None,
-    filename: Optional[str] = None,
+    format_string: str | None = None,
+    filename: str | None = None,
 ) -> logging.Logger:
     """
     Set up logging configuration for the ProjectX client.
@@ -50,8 +51,8 @@ def setup_logging(
 
 
 def get_env_var(
-    name: str, default: Optional[str] = None, required: bool = False
-) -> Optional[str]:
+    name: str, default: str | None = None, required: bool = False
+) -> str | None:
     """
     Get environment variable with optional default and validation.
 
@@ -91,7 +92,7 @@ def validate_contract_id(contract_id: str) -> bool:
     return "." in contract_id and len(contract_id) > 5
 
 
-def extract_symbol_from_contract_id(contract_id: str) -> Optional[str]:
+def extract_symbol_from_contract_id(contract_id: str) -> str | None:
     """
     Extract trading symbol from contract ID.
 
@@ -177,7 +178,7 @@ def safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
-def merge_dicts(dict1: Dict[str, Any], dict2: Dict[str, Any]) -> Dict[str, Any]:
+def merge_dicts(dict1: dict[str, Any], dict2: dict[str, Any]) -> dict[str, Any]:
     """
     Merge two dictionaries, with dict2 values taking precedence.
 
@@ -220,8 +221,9 @@ def is_market_hours(timezone_str: str = "America/Chicago") -> bool:
         True if within market hours
     """
     try:
-        import pytz
         from datetime import datetime
+
+        import pytz
 
         tz = pytz.timezone(timezone_str)
         now = datetime.now(tz)

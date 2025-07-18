@@ -27,6 +27,7 @@ Architecture:
 """
 
 import asyncio
+import contextlib
 import logging
 import threading
 from collections import defaultdict
@@ -141,7 +142,7 @@ class ProjectXRealtimeDataManager:
         instrument: str,
         project_x: ProjectX,
         realtime_client: ProjectXRealtimeClient,
-        timeframes: list[str] = ["5min"],
+        timeframes: list[str] | None = None,
         timezone: str = "America/Chicago",
     ):
         """
@@ -154,6 +155,9 @@ class ProjectXRealtimeDataManager:
             timeframes: List of timeframes to track (default: ["5min"])
             timezone: Timezone for timestamp handling (default: "America/Chicago")
         """
+        if timeframes is None:
+            timeframes = ["5min"]
+
         self.instrument = instrument
         self.project_x = project_x
         self.realtime_client = realtime_client
@@ -163,7 +167,7 @@ class ProjectXRealtimeDataManager:
         # Set timezone for consistent timestamp handling
         self.timezone = pytz.timezone(timezone)  # CME timezone
 
-        TIMEFRAMES = {
+        timeframes_dict = {
             "1sec": {"interval": 1, "unit": 1, "name": "1sec"},
             "5sec": {"interval": 5, "unit": 1, "name": "5sec"},
             "10sec": {"interval": 10, "unit": 1, "name": "10sec"},
@@ -183,11 +187,11 @@ class ProjectXRealtimeDataManager:
         # Initialize timeframes as dict mapping timeframe names to configs
         self.timeframes = {}
         for tf in timeframes:
-            if tf not in TIMEFRAMES:
+            if tf not in timeframes_dict:
                 raise ValueError(
-                    f"Invalid timeframe: {tf}, valid timeframes are: {list(TIMEFRAMES.keys())}"
+                    f"Invalid timeframe: {tf}, valid timeframes are: {list(timeframes_dict.keys())}"
                 )
-            self.timeframes[tf] = TIMEFRAMES[tf]
+            self.timeframes[tf] = timeframes_dict[tf]
 
         # OHLCV data storage for each timeframe
         self.data: dict[str, pl.DataFrame] = {}
@@ -202,14 +206,12 @@ class ProjectXRealtimeDataManager:
         self.data_lock = threading.RLock()
         self.is_running = False
         self.callbacks: dict[str, list[Callable]] = defaultdict(list)
+        self.background_tasks: set[asyncio.Task] = set()
 
         # Store reference to main event loop for async callback execution from threads
         self.main_loop = None
-        try:
+        with contextlib.suppress(RuntimeError):
             self.main_loop = asyncio.get_running_loop()
-        except RuntimeError:
-            # No event loop running yet - will be set later when strategy starts
-            pass
 
         # Contract ID for real-time subscriptions
         self.contract_id: str | None = None
@@ -698,7 +700,7 @@ class ProjectXRealtimeDataManager:
 
             # Update each timeframe
             with self.data_lock:
-                for tf_key, tf_config in self.timeframes.items():
+                for tf_key in self.timeframes:
                     self._update_timeframe_data(tf_key, timestamp, price, volume)
 
             # Trigger callbacks for data updates
@@ -827,7 +829,9 @@ class ProjectXRealtimeDataManager:
                         # Try to get current loop or use main_loop
                         try:
                             current_loop = asyncio.get_running_loop()
-                            current_loop.create_task(callback(data))
+                            task = current_loop.create_task(callback(data))
+                            self.background_tasks.add(task)
+                            task.add_done_callback(self.background_tasks.discard)
                         except RuntimeError:
                             self.logger.warning(
                                 f"⚠️ Cannot execute async {event_type} callback - no event loop available"
@@ -853,7 +857,7 @@ class ProjectXRealtimeDataManager:
         }
 
         with self.data_lock:
-            for tf_key in self.timeframes.keys():
+            for tf_key in self.timeframes:
                 if tf_key in self.data:
                     data = self.data[tf_key]
                     stats["timeframes"][tf_key] = {
@@ -941,7 +945,7 @@ class ProjectXRealtimeDataManager:
         """
         try:
             with self.data_lock:
-                for tf_key in self.timeframes.keys():
+                for tf_key in self.timeframes:
                     if (
                         tf_key in self.data
                         and len(self.data[tf_key]) > max_bars_per_timeframe
