@@ -28,6 +28,6 @@ search:
     # Boost api reference pages
     "api/*": 2
     # Boost user guide pages  
-    "user_guide/*": 1.5
+    "user_guide/*": 2
     # Boost examples
-    "examples/*": 1.2 
+    "examples/*": 1 
