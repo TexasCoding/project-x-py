@@ -240,4 +240,4 @@ If you run into issues:
 * Check the :doc:`troubleshooting section <installation>`
 * Browse the :doc:`examples directory <examples/basic_usage>`
 * Review the :doc:`API documentation <api/client>`
-* Open an issue on `GitHub <https://github.com/jeffwest87/project-x-py/issues>`_ 
+* Open an issue on `GitHub <https://github.com/TexasCoding/project-x-py/issues>`_ 

@@ -165,4 +165,4 @@ When contributing to documentation:
 
 - Sphinx documentation: https://www.sphinx-doc.org/
 - ReadTheDocs guides: https://docs.readthedocs.io/
-- Project issues: https://github.com/jeffwest87/project-x-py/issues 
+- Project issues: https://github.com/TexasCoding/project-x-py/issues 

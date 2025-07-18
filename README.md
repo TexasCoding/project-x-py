@@ -4,396 +4,359 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code Style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-A professional Python client for the **TopStepX ProjectX Gateway API**, providing comprehensive access to futures trading, real-time market data, Level 2 orderbook analysis, and **advanced market microstructure analysis**. Features institutional-grade order flow detection, hidden liquidity identification, and professional market intelligence tools used by trading desks worldwide.
+A **professional Python client** for the TopStepX ProjectX Gateway API, designed for institutional traders and quantitative analysts. This library provides comprehensive access to futures trading operations, historical market data, real-time streaming, and advanced market microstructure analysis.
 
-## 🚀 Features
+## 📊 Project Status
 
-### Core Functionality
-- **🏦 Account Management** - Balance monitoring, permissions, account info
-- **📊 Market Data** - Historical OHLCV data, multiple timeframes, instrument search
-- **📈 Order Management** - Place, modify, cancel orders with automatic price alignment
-- **💼 Position Management** - Real-time position tracking, P&L monitoring
-- **📋 Trade History** - Comprehensive trade analysis and reporting
+**Current Version**: v0.2.0 (Active Development)
 
-### Real-Time Capabilities
-- **⚡ WebSocket Streams** - Sub-second market data updates
-- **🔄 Live Order Updates** - Instant fill notifications and status changes
-- **📊 Real-Time Positions** - Live position monitoring without polling
-- **📈 Multi-Timeframe Data** - Synchronized data across multiple timeframes
-- **🎯 Level 2 Market Data** - Full orderbook depth with market microstructure analysis
-- **📋 Order Flow Analysis** - Real-time trade execution tracking and volume analysis
-- **⚖️ Market Pressure Detection** - Buy/sell pressure analysis with volume imbalance tracking
-- **🔍 Advanced Order Types** - Processing of all TopStepX order types (bids, asks, trades, modifications)
+✅ **Production Ready**:
+- Complete futures trading API integration (orders, positions, trades)
+- Historical market data with multiple timeframes
+- Account management and authentication
+- Real-time WebSocket connections
+- Order and position management with error handling
+- Professional-grade code with full type hints
 
-### 🎯 Advanced Market Microstructure Analysis
-- **💧 Liquidity Levels Detection** - Identify significant price levels with substantial volume and liquidity scoring
-- **🎯 Order Cluster Analysis** - Detect groups of orders at similar prices with volume-weighted clustering
-- **🧊 Iceberg Order Detection** - Spot hidden institutional orders with confidence scoring and size estimation
-- **📊 Cumulative Delta Analysis** - Real-time net buying vs selling pressure tracking with momentum detection
-- **⚖️ Market Imbalance Monitoring** - Orderbook and trade flow imbalance detection with directional bias analysis
-- **📈 Volume Profile Analysis** - Point of Control (POC) identification and Value Area calculation
-- **🏗️ Dynamic Support/Resistance** - Real-time level detection from orderbook and volume data with strength scoring
-- **🎪 Market Maker Detection** - Identify professional trading activity and institutional flow patterns
-- **📊 Complete Market Intelligence** - Comprehensive analysis combining all microstructure metrics
+🚧 **In Development** (v0.3.0):
+- Advanced market microstructure analysis suite
+- Level 2 orderbook processing and analytics
+- Institutional order flow detection algorithms
+- Market imbalance and liquidity analysis tools
 
-### Professional Features
-- **🛡️ Error Handling** - Comprehensive exception hierarchy with retry logic
-- **⚙️ Configuration Management** - Environment variables, config files, defaults
-- **📝 Full Type Hints** - Complete typing support for better IDE experience
-- **🔧 Rate Limiting** - Built-in API rate limiting and request management
-- **📚 Extensive Logging** - Structured logging for debugging and monitoring
+📋 **Planned Features**:
+- Machine learning integration for pattern recognition
+- Advanced backtesting engine with tick-level data
+- Professional trading strategy framework
+
+## 🚀 Current Features
+
+### ✅ Core Trading Operations (Production Ready)
+- **🏦 Account Management** - Complete account info, balance monitoring, permissions
+- **📊 Historical Market Data** - OHLCV data with multiple timeframes (1min to 1day)
+- **📈 Order Management** - Place, modify, cancel orders (market, limit, stop, bracket orders)
+- **💼 Position Management** - Real-time position tracking, P&L calculations
+- **📋 Trade History** - Comprehensive trade search and analysis
+- **🔍 Instrument Search** - Find and filter available futures contracts
+
+### ⚡ Real-Time Capabilities (Production Ready)
+- **🌐 WebSocket Connections** - Authenticated real-time data streams
+- **🔄 Live Order Updates** - Instant order status and fill notifications
+- **📊 Position Monitoring** - Real-time position updates without polling
+- **📈 Market Data Streaming** - Live price updates and market events
+- **🔐 Session Management** - Automatic token refresh and connection handling
+
+### 🚧 Advanced Features (In Development - v0.3.0)
+- **🎯 Level 2 Orderbook** - Full market depth analysis and visualization
+- **📊 Order Flow Analysis** - Buy/sell pressure detection and trade flow metrics
+- **🧊 Iceberg Detection** - Hidden order identification algorithms
+- **📈 Volume Profile** - Market structure analysis with POC and value areas
+- **⚖️ Market Imbalance** - Real-time imbalance detection and alerts
+- **🏗️ Support/Resistance** - Dynamic level identification from order flow
+
+### 🛠️ Professional Quality
+- **🔧 Production Architecture** - Modular design with comprehensive error handling
+- **📝 Full Type Safety** - Complete type hints for IDE support and code quality
+- **⚙️ Flexible Configuration** - Environment variables, config files, and runtime options
+- **🔍 Comprehensive Logging** - Structured logging for debugging and monitoring
+- **🧪 Testing Framework** - Unit and integration tests for reliability
+- **🎨 Code Quality** - Black formatting, Ruff linting, and MyPy type checking
 
 ## 📦 Installation
 
-### Basic Installation
+### Quick Install (Recommended)
 ```bash
+# Install with uv (fastest)
+uv add project-x-py
+
+# Or with pip
 pip install project-x-py
 ```
 
-### With Real-Time Features
+### Optional Dependencies
 ```bash
-pip install project-x-py[realtime]
+# Real-time WebSocket features
+uv add "project-x-py[realtime]"
+
+# Development tools (linting, testing, type checking)
+uv add "project-x-py[dev]" 
+
+# Documentation building
+uv add "project-x-py[docs]"
+
+# Everything included
+uv add "project-x-py[all]"
 ```
 
-### Development Installation
+### Development Setup
 ```bash
-pip install project-x-py[dev]
+git clone https://github.com/TexasCoding/project-x-py.git
+cd project-x-py
+uv sync --extra dev --extra docs
 ```
 
-### All Features
-```bash
-pip install project-x-py[all]
-```
+### System Requirements
+- **Python**: 3.12 or higher
+- **API Access**: TopStepX account with API credentials
+- **Optional**: Real-time data subscription for WebSocket features
 
 ## ⚡ Quick Start
 
-### 1. Environment Setup
+### 1. Authentication Setup
 ```bash
+# Set environment variables
 export PROJECT_X_API_KEY="your_api_key_here"
 export PROJECT_X_USERNAME="your_username_here"
+
+# Or create ~/.config/projectx/config.json
+{
+  "api_key": "your_api_key",
+  "username": "your_username"
+}
 ```
 
-### 2. Basic Usage
+### 2. Basic Trading Operations
 ```python
 from project_x_py import ProjectX
 
-# Create client using environment variables
+# Initialize client
 client = ProjectX.from_env()
+
+# Get account information
+account = client.get_account_info()
+print(f"Account: {account.name} | Balance: ${account.balance:,.2f}")
 
 # Search for instruments
-instruments = client.search_instruments("MGC")
-print(f"Found {len(instruments)} MGC instruments")
+instruments = client.search_instruments("MGC")  # Micro Gold futures
+print(f"Found {len(instruments)} MGC contracts")
 
-# Get historical data
-data = client.get_data("MGC", days=5, interval=15)
-print(f"Retrieved {len(data)} bars")
+# Get historical market data
+data = client.get_data("MGC", days=5, interval=15)  # 5 days, 15-min bars
+print(f"Retrieved {len(data)} OHLCV bars")
+print(f"Latest close: ${data['close'].tail(1).item():.2f}")
 
-# Check positions
+# Check current positions
 positions = client.search_open_positions()
 for pos in positions:
-    print(f"{pos.contractId}: {pos.size} @ ${pos.averagePrice}")
+    print(f"{pos.contractId}: {pos.size} contracts @ ${pos.averagePrice:.2f}")
 ```
 
-### 3. Real-Time Data with Advanced Analysis
+### 3. Order Management
 ```python
-from project_x_py import ProjectX, ProjectXRealtimeDataManager
-
-# Set up real-time data manager
-client = ProjectX.from_env()
-account = client.get_account_info()
-
-data_manager = ProjectXRealtimeDataManager(
-    instrument="MNQ",  # E-mini NASDAQ futures
-    project_x=client,
-    account_id=str(account.id)
-)
-
-# Initialize with historical data
-data_manager.initialize(initial_days=30)
-
-# Start real-time feed
-jwt_token = client.get_session_token()
-data_manager.start_realtime_feed(jwt_token)
-
-# Access advanced market microstructure analysis
-liquidity = data_manager.get_liquidity_levels(min_volume=200)
-icebergs = data_manager.detect_iceberg_orders()
-delta = data_manager.get_cumulative_delta(time_window_minutes=30)
-imbalance = data_manager.get_market_imbalance()
-
-print(f"🎯 Significant liquidity levels: {len(liquidity['bid_liquidity'])}")
-print(f"🧊 Potential icebergs detected: {len(icebergs['potential_icebergs'])}")
-print(f"📊 Market momentum: {delta['delta_trend']} (Δ: {delta['cumulative_delta']})")
-print(f"⚖️ Market bias: {imbalance['direction']} ({imbalance['confidence']} confidence)")
-```
-
-## 📖 Advanced Market Analysis Examples
-
-### 🎯 Institutional Order Detection
-```python
-# Detect hidden institutional orders (iceberg detection)
-icebergs = data_manager.detect_iceberg_orders(
-    min_refresh_count=3,
-    volume_consistency_threshold=0.8,
-    time_window_minutes=10
-)
-
-if icebergs['potential_icebergs']:
-    print("🚨 Large institutional orders detected:")
-    for iceberg in icebergs['potential_icebergs']:
-        print(f"  ${iceberg['price']:.2f} {iceberg['side'].upper()} | "
-              f"Visible: {iceberg['volume']:,} | "
-              f"Est. Hidden: {iceberg['estimated_hidden_size']:,}")
-```
-
-### 💧 Liquidity Analysis
-```python
-# Identify significant liquidity levels
-liquidity = data_manager.get_liquidity_levels(
-    min_volume=150,  # Minimum contracts for significance
-    levels=25        # Analyze top 25 levels per side
-)
-
-print(f"📈 Significant bid levels: {len(liquidity['bid_liquidity'])}")
-print(f"📉 Significant ask levels: {len(liquidity['ask_liquidity'])}")
-
-# Show top liquidity concentrations
-for level in liquidity['bid_liquidity'].head(3).to_dicts():
-    print(f"  💰 ${level['price']:.2f}: {level['volume']:,} contracts "
-          f"(score: {level['liquidity_score']:.2f})")
-```
-
-### 🎯 Order Cluster Detection
-```python
-# Detect order clustering at key price levels
-clusters = data_manager.detect_order_clusters(
-    price_tolerance=0.25,    # Quarter-point clustering
-    min_cluster_size=3       # Minimum orders per cluster
-)
-
-if clusters['bid_clusters']:
-    strongest = clusters['analysis']['strongest_bid_cluster']
-    print(f"💪 Strongest bid cluster at ${strongest['center_price']:.2f}")
-    print(f"   📦 Total volume: {strongest['total_volume']:,}")
-    print(f"   🔢 Orders: {strongest['order_count']}")
-```
-
-### 📊 Cumulative Delta Analysis
-```python
-# Track net buying vs selling pressure
-delta = data_manager.get_cumulative_delta(time_window_minutes=30)
-
-print(f"📈 Cumulative Delta: {delta['cumulative_delta']:,} contracts")
-print(f"📊 Trend: {delta['delta_trend'].upper()}")
-print(f"💰 Buy Volume: {delta['analysis']['total_buy_volume']:,}")
-print(f"💰 Sell Volume: {delta['analysis']['total_sell_volume']:,}")
-
-# Interpret market momentum
-if delta['delta_trend'] == 'strongly_bullish':
-    print("🚀 Strong buying momentum - consider long bias")
-elif delta['delta_trend'] == 'strongly_bearish':
-    print("🐻 Strong selling momentum - consider short bias")
-```
-
-### ⚖️ Market Imbalance Detection
-```python
-# Analyze orderbook and trade flow imbalances
-imbalance = data_manager.get_market_imbalance()
-
-print(f"📊 Imbalance Ratio: {imbalance['imbalance_ratio']:.3f}")
-print(f"🎯 Direction: {imbalance['direction'].upper()}")
-print(f"🔒 Confidence: {imbalance['confidence'].upper()}")
-
-# Get detailed metrics
-ob_metrics = imbalance['orderbook_metrics']
-print(f"💰 Bid Volume: {ob_metrics['top_bid_volume']:,}")
-print(f"💰 Ask Volume: {ob_metrics['top_ask_volume']:,}")
-print(f"📊 Ratio: {ob_metrics['bid_ask_ratio']:.2f}")
-```
-
-### 📈 Volume Profile Analysis
-```python
-# Create volume profile and identify key levels
-profile = data_manager.get_volume_profile(price_bucket_size=0.25)
-
-# Point of Control (POC) - highest volume price
-poc = profile['poc']
-print(f"🎯 Point of Control: ${poc['price']:.2f} ({poc['volume']:,} contracts)")
-
-# Value Area (70% of volume)
-va = profile['value_area']
-print(f"📊 Value Area: ${va['low']:.2f} - ${va['high']:.2f}")
-print(f"📊 Coverage: {va['volume_percentage']:.1f}%")
-```
-
-### 🏗️ Dynamic Support & Resistance
-```python
-# Identify real-time support and resistance levels
-sr_levels = data_manager.get_support_resistance_levels(lookback_minutes=60)
-
-print(f"🎯 Current Price: ${sr_levels['current_price']:.2f}")
-print(f"🏗️ Support Levels: {len(sr_levels['support_levels'])}")
-print(f"🚧 Resistance Levels: {len(sr_levels['resistance_levels'])}")
-
-# Show strongest levels
-if sr_levels['analysis']['strongest_support']:
-    support = sr_levels['analysis']['strongest_support']
-    print(f"💪 Key Support: ${support['price']:.2f} (strength: {support['strength']:.2f})")
-
-if sr_levels['analysis']['strongest_resistance']:
-    resistance = sr_levels['analysis']['strongest_resistance']
-    print(f"🚧 Key Resistance: ${resistance['price']:.2f} (strength: {resistance['strength']:.2f})")
-```
-
-### 🎪 Complete Market Intelligence
-```python
-# Get comprehensive market analysis in one call
-analysis = data_manager.get_advanced_market_metrics()
-
-# Market condition assessment
-summary = analysis['analysis_summary']
-print(f"🔍 Data Quality: {summary['data_quality'].upper()}")
-print(f"📈 Market Activity: {summary['market_activity'].upper()}")
-
-# Trade flow insights
-trade_flow = analysis['trade_flow']
-print(f"📦 Recent Volume: {trade_flow['total_volume']:,} contracts")
-print(f"⚖️ Buy/Sell Ratio: {trade_flow['buy_sell_ratio']:.2f}")
-print(f"💰 VWAP: ${trade_flow['vwap']:.2f}")
-
-# Orderbook state
-ob_snapshot = analysis['orderbook_snapshot']
-metadata = ob_snapshot['metadata']
-print(f"💰 Best Bid: ${metadata['best_bid']:.2f}")
-print(f"💰 Best Ask: ${metadata['best_ask']:.2f}")
-print(f"📏 Spread: ${metadata['spread']:.2f}")
-```
-
-### 🚨 Real-Time Market Monitoring
-```python
-import time
-
-# Monitor market for institutional activity
-print("🔍 Monitoring for institutional activity...")
-
-for i in range(60):  # 60-second monitoring
-    # Check for iceberg orders
-    icebergs = data_manager.detect_iceberg_orders()
+# Place a limit order (requires real account/paper trading)
+try:
+    # Get specific contract ID
+    instrument = client.get_instrument("MGC")
+    contract_id = instrument.activeContract
     
-    # Monitor cumulative delta
-    delta = data_manager.get_cumulative_delta(time_window_minutes=5)
+    # Place limit buy order
+    response = client.place_limit_order(
+        contract_id=contract_id,
+        side=0,  # 0=Buy, 1=Sell
+        size=1,  # 1 micro contract
+        limit_price=2000.0  # $2000/oz limit
+    )
     
-    # Check market imbalance
-    imbalance = data_manager.get_market_imbalance()
-    
-    # Alert conditions
-    if len(icebergs['potential_icebergs']) > 0:
-        print(f"🧊 [{i+1:2d}s] Iceberg detected: {len(icebergs['potential_icebergs'])} orders")
-    
-    if abs(delta['cumulative_delta']) > 1000:
-        direction = "BUY" if delta['cumulative_delta'] > 0 else "SELL"
-        print(f"📊 [{i+1:2d}s] Strong {direction} pressure: Δ{delta['cumulative_delta']:,}")
-    
-    if imbalance['confidence'] == 'high':
-        print(f"⚖️ [{i+1:2d}s] High confidence {imbalance['direction']} bias")
-    
-    time.sleep(1)
-```
-
-## 📖 Traditional Examples
-
-### Level 2 Orderbook Analysis
-```python
-# See examples/orderbook_usage.py for complete implementation
-from project_x_py import ProjectX, ProjectXRealtimeDataManager
-
-# Initialize and start real-time orderbook monitoring
-client = ProjectX.from_env()
-account = client.get_account_info()
-
-manager = ProjectXRealtimeDataManager("MNQ", client, str(account.id))
-manager.initialize()
-
-jwt_token = client.get_session_token()
-manager.start_realtime_feed(jwt_token)
-
-# Monitor orderbook for insights
-for i in range(30):
-    best = manager.get_best_bid_ask()
-    depth = manager.get_orderbook_depth(price_range=20.0)
-    
-    if best['spread'] and best['spread'] > 2.0:
-        print(f"Wide spread detected: ${best['spread']:.2f}")
-    
-    # Check for volume imbalance
-    total_vol = depth['bid_volume'] + depth['ask_volume']
-    if total_vol > 0:
-        imbalance = abs(depth['bid_volume'] - depth['ask_volume']) / total_vol
-        if imbalance > 0.3:  # 30% imbalance
-            side = "BUY" if depth['bid_volume'] > depth['ask_volume'] else "SELL"
-            print(f"Volume imbalance: {imbalance:.1%} favoring {side}")
-    
-    time.sleep(1)
-```
-
-### Order Management
-```python
-# Place a market order
-response = client.place_market_order("CON.F.US.MGC.M25", side=0, size=1)
-if response.success:
-    print(f"Order placed: {response.orderId}")
-
-# Place a limit order
-response = client.place_limit_order(
-    contract_id="CON.F.US.MGC.M25",
-    side=1,  # Sell
-    size=1,
-    limit_price=2050.0
-)
+    if response.success:
+        print(f"✅ Order placed: {response.orderId}")
+    else:
+        print(f"❌ Order failed: {response.errorMessage}")
+        
+except Exception as e:
+    print(f"Order error: {e}")
 
 # Check open orders
-open_orders = client.search_open_orders()
-for order in open_orders:
-    print(f"Order {order.id}: {order.contractId} - Status: {order.status}")
+orders = client.search_open_orders()
+for order in orders:
+    print(f"Order {order.id}: {order.contractId} {order.side} {order.size}@${order.limitPrice}")
 ```
 
-### Account Information
+### 4. Real-Time Data Streaming
 ```python
-# Get account details
-account = client.get_account_info()
-print(f"Account: {account.name}")
-print(f"Balance: ${account.balance:,.2f}")
-print(f"Can Trade: {account.canTrade}")
+from project_x_py import ProjectXRealtimeClient
 
-# Get trade history
+# Set up real-time client (requires realtime extras)
+jwt_token = client.get_session_token()
+realtime = ProjectXRealtimeClient(jwt_token, account_id=str(account.id))
+
+# Connect and subscribe to updates
+if realtime.connect():
+    print("✅ Connected to real-time data")
+    
+    # Subscribe to user events (orders, positions, trades)
+    realtime.subscribe_user_updates()
+    
+    # Subscribe to market data for specific contracts
+    realtime.subscribe_market_data([contract_id])
+    
+    # Add event handlers
+    def on_order_update(data):
+        print(f"📈 Order update: {data}")
+    
+    def on_position_update(data):
+        print(f"💼 Position update: {data}")
+    
+    realtime.add_callback("order_update", on_order_update)
+    realtime.add_callback("position_update", on_position_update)
+    
+    # Keep connection alive (in production, use proper event loop)
+    import time
+    time.sleep(10)  # Monitor for 10 seconds
+    
+    realtime.disconnect()
+```
+
+## 🚧 Advanced Features Preview (v0.3.0)
+
+The next major version will include advanced market microstructure analysis capabilities. Here's a preview of what's coming:
+
+### 🎯 Planned Advanced Features
+- **🧊 Iceberg Detection** - Identify hidden institutional orders
+- **💧 Liquidity Analysis** - Find significant price levels with volume concentration
+- **📊 Order Flow Analysis** - Real-time buy/sell pressure tracking
+- **📈 Volume Profile** - Point of Control and Value Area identification
+- **⚖️ Market Imbalance** - Orderbook and trade flow imbalance detection
+- **🏗️ Support/Resistance** - Dynamic level detection from market structure
+
+### 🔬 Development Status
+These advanced features are currently in active development. For early access or to contribute to development:
+- 📋 Check the [GitHub Issues](https://github.com/TexasCoding/project-x-py/issues) for current development tasks
+- 💬 Join discussions in [GitHub Discussions](https://github.com/TexasCoding/project-x-py/discussions)
+- 📧 Contact the maintainer for collaboration opportunities
+
+## 📖 Working Examples
+
+### Historical Data Analysis
+```python
+import polars as pl
 from datetime import datetime, timedelta
-start_date = datetime.now() - timedelta(days=7)
+
+# Get extended historical data
+client = ProjectX.from_env()
+data = client.get_data("MGC", days=30, interval=60)  # 30 days, 1-hour bars
+
+# Convert to Polars DataFrame for analysis
+df = pl.from_pandas(data)
+
+# Calculate technical indicators
+df = df.with_columns([
+    # Simple moving averages
+    pl.col("close").rolling_mean(window_size=20).alias("sma_20"),
+    pl.col("close").rolling_mean(window_size=50).alias("sma_50"),
+    
+    # Price changes
+    (pl.col("close") - pl.col("close").shift(1)).alias("price_change"),
+    ((pl.col("close") / pl.col("close").shift(1)) - 1).alias("returns"),
+    
+    # Volume analysis
+    pl.col("volume").rolling_mean(window_size=20).alias("avg_volume"),
+])
+
+# Find high-volume periods
+high_volume = df.filter(pl.col("volume") > pl.col("avg_volume") * 1.5)
+print(f"High volume periods: {len(high_volume)}")
+
+# Identify trend changes
+trend_changes = df.filter(
+    (pl.col("sma_20").shift(1) < pl.col("sma_50").shift(1)) & 
+    (pl.col("sma_20") > pl.col("sma_50"))
+)
+print(f"Bullish crossovers: {len(trend_changes)}")
+```
+
+### Portfolio Analysis
+```python
+from datetime import datetime, timedelta
+
+# Get comprehensive account overview
+account = client.get_account_info()
+print(f"Account: {account.name} | Balance: ${account.balance:,.2f}")
+print(f"Trading Status: {'Active' if account.canTrade else 'View Only'}")
+
+# Analyze recent trading performance
+end_date = datetime.now()
+start_date = end_date - timedelta(days=30)  # Last 30 days
 trades = client.search_trades(start_date)
 
-total_pnl = sum(t.profitAndLoss for t in trades if t.profitAndLoss)
-print(f"7-day P&L: ${total_pnl:.2f}")
+if trades:
+    # Calculate performance metrics
+    total_pnl = sum(t.profitAndLoss for t in trades if t.profitAndLoss)
+    winning_trades = [t for t in trades if t.profitAndLoss and t.profitAndLoss > 0]
+    losing_trades = [t for t in trades if t.profitAndLoss and t.profitAndLoss < 0]
+    
+    win_rate = len(winning_trades) / len(trades) * 100 if trades else 0
+    avg_win = sum(t.profitAndLoss for t in winning_trades) / len(winning_trades) if winning_trades else 0
+    avg_loss = sum(t.profitAndLoss for t in losing_trades) / len(losing_trades) if losing_trades else 0
+    
+    print(f"\n📊 30-Day Performance:")
+    print(f"   Total P&L: ${total_pnl:.2f}")
+    print(f"   Total Trades: {len(trades)}")
+    print(f"   Win Rate: {win_rate:.1f}%")
+    print(f"   Avg Win: ${avg_win:.2f}")
+    print(f"   Avg Loss: ${avg_loss:.2f}")
+    print(f"   Profit Factor: {abs(avg_win/avg_loss):.2f}" if avg_loss != 0 else "   Profit Factor: N/A")
+
+# Current positions analysis
+positions = client.search_open_positions()
+if positions:
+    total_exposure = sum(abs(pos.size * pos.averagePrice) for pos in positions)
+    print(f"\n💼 Current Positions:")
+    print(f"   Open Positions: {len(positions)}")
+    print(f"   Total Exposure: ${total_exposure:,.2f}")
+    
+    for pos in positions:
+        print(f"   {pos.contractId}: {pos.size:+d} @ ${pos.averagePrice:.2f}")
 ```
 
-### Configuration
+### Risk Management Example
 ```python
-from project_x_py import ProjectXConfig, ConfigManager
+# Implement basic risk checks before placing orders
+def safe_order_placement(client, contract_id, side, size, limit_price):
+    """Place order with basic risk checks"""
+    
+    # Get account info
+    account = client.get_account_info()
+    
+    # Check if trading is allowed
+    if not account.canTrade:
+        print("❌ Trading not permitted on this account")
+        return None
+    
+    # Get instrument details for margin calculation
+    instrument = client.get_instrument_by_contract(contract_id)
+    
+    # Estimate order value (simplified)
+    order_value = size * limit_price
+    
+    # Basic balance check (simplified - doesn't account for margins)
+    if order_value > account.balance * 0.1:  # Max 10% of balance per trade
+        print(f"❌ Order size too large: ${order_value:.2f} > 10% of balance")
+        return None
+    
+    # Check existing exposure
+    positions = client.search_open_positions()
+    existing_contracts = [pos.contractId for pos in positions]
+    
+    if contract_id in existing_contracts:
+        print(f"⚠️  Warning: Already have position in {contract_id}")
+    
+    # Place the order
+    try:
+        response = client.place_limit_order(contract_id, side, size, limit_price)
+        if response.success:
+            print(f"✅ Order placed: {response.orderId}")
+            return response.orderId
+        else:
+            print(f"❌ Order failed: {response.errorMessage}")
+            return None
+    except Exception as e:
+        print(f"❌ Order error: {e}")
+        return None
 
-# Create custom configuration
-config = ProjectXConfig(
-    timeout_seconds=60,
-    retry_attempts=5,
-    requests_per_minute=30
-)
-
-# Use with client
-client = ProjectX.from_env(config=config)
-
-# Save configuration to file
-manager = ConfigManager()
-manager.save_config(config, "my_config.json")
-
-# Load from file
-client = ProjectX.from_config_file("my_config.json")
+# Example usage
+instrument = client.get_instrument("MGC")
+contract_id = instrument.activeContract
+order_id = safe_order_placement(client, contract_id, 0, 1, 2000.0)
 ```
 
 ## 🔧 Configuration
@@ -461,107 +424,40 @@ for timeframe, df in mtf_data.items():
     print(f"Latest {timeframe} close: ${latest['close'].item()}")
 ```
 
-### Level 2 Orderbook & Market Microstructure
+### Configuration Management
 ```python
-# Access real-time Level 2 orderbook data
-best_prices = data_manager.get_best_bid_ask()
-print(f"Best Bid: ${best_prices['bid']:.2f}")
-print(f"Best Ask: ${best_prices['ask']:.2f}")
-print(f"Spread: ${best_prices['spread']:.2f}")
+from project_x_py import ProjectXConfig, ConfigManager
 
-# Get orderbook depth (Polars DataFrames)
-bids = data_manager.get_orderbook_bids(levels=10)
-asks = data_manager.get_orderbook_asks(levels=10)
+# Create custom configuration
+config = ProjectXConfig(
+    api_url="https://api.topstepx.com/api",
+    timeout_seconds=60,
+    retry_attempts=5,
+    requests_per_minute=30
+)
 
-print("Top 5 Bid Levels:")
-for row in bids.head(5).iter_rows():
-    price, volume, timestamp, order_type = row
-    print(f"  ${price:.2f} | {volume:4d} contracts")
+# Use with client
+client = ProjectX.from_env(config=config)
 
-# Analyze orderbook depth within price range
-depth = data_manager.get_orderbook_depth(price_range=20.0)
-print(f"Volume within ±$20: {depth['bid_volume']} bids, {depth['ask_volume']} asks")
+# Save configuration to file
+manager = ConfigManager()
+manager.save_config(config, "my_trading_config.json")
 
-# Get complete orderbook snapshot
-snapshot = data_manager.get_orderbook_snapshot(levels=20)
-metadata = snapshot['metadata']
-print(f"Mid Price: ${metadata['mid_price']:.2f}")
-print(f"Volume Imbalance: {metadata['total_bid_volume']} vs {metadata['total_ask_volume']}")
-```
+# Load from file later
+client = ProjectX.from_config_file("my_trading_config.json")
 
-### Trade Flow & Order Flow Analysis
-```python
-# Analyze recent trade executions (Type 5 data)
-recent_trades = data_manager.get_recent_trades(count=50)
-print(f"Recent trades: {len(recent_trades)} executions")
-
-# Get trade flow summary with buy/sell pressure
-trade_flow = data_manager.get_trade_flow_summary(minutes=5)
-print(f"5-min Volume: {trade_flow['total_volume']:,} contracts")
-print(f"Buy Volume: {trade_flow['buy_volume']:,} ({trade_flow['buy_trades']} trades)")
-print(f"Sell Volume: {trade_flow['sell_volume']:,} ({trade_flow['sell_trades']} trades)")
-print(f"Buy/Sell Ratio: {trade_flow['buy_sell_ratio']:.2f}")
-print(f"VWAP: ${trade_flow['vwap']:.2f}")
-
-# Monitor order type statistics
-order_stats = data_manager.get_order_type_statistics()
-print(f"Bid Updates: {order_stats['type_2_count']}")
-print(f"Ask Updates: {order_stats['type_1_count']}")
-print(f"Trade Executions: {order_stats['type_5_count']}")
-print(f"Order Modifications: {order_stats['type_9_count'] + order_stats['type_10_count']}")
-
-# Clear trade history for fresh monitoring periods
-data_manager.clear_recent_trades()
-```
-
-### Real-Time Market Monitoring Example
-```python
-import time
-from datetime import datetime
-
-# Start clean monitoring period
-monitoring_start = datetime.now(data_manager.timezone)
-data_manager.clear_recent_trades()
-
-print("🔍 Monitoring market microstructure...")
-for i in range(60):  # Monitor for 60 seconds
-    time.sleep(1)
-    
-    # Get current market state
-    best = data_manager.get_best_bid_ask()
-    depth = data_manager.get_orderbook_depth(price_range=10.0)
-    
-    # Calculate volume imbalance
-    total_volume = depth['bid_volume'] + depth['ask_volume']
-    if total_volume > 0:
-        bid_ratio = depth['bid_volume'] / total_volume * 100
-        ask_ratio = depth['ask_volume'] / total_volume * 100
-    else:
-        bid_ratio = ask_ratio = 0
-    
-    print(f"[{i+1:2d}s] Mid: ${best['mid']:.2f} | "
-          f"Spread: ${best['spread']:.2f} | "
-          f"Imbalance: {bid_ratio:.1f}% bids / {ask_ratio:.1f}% asks")
-    
-    # Alert on significant imbalance
-    if bid_ratio > 70:
-        print("    🟢 Strong buying pressure detected!")
-    elif ask_ratio > 70:
-        print("    🔴 Strong selling pressure detected!")
-
-# Final trade flow analysis for monitoring period
-final_flow = data_manager.get_trade_flow_summary(minutes=1)
-print(f"\n📊 60-second Summary:")
-print(f"   Total Volume: {final_flow['total_volume']:,} contracts")
-print(f"   Trade Rate: {final_flow['total_volume']/60:.1f} contracts/second")
-print(f"   Buy/Sell Pressure: {final_flow['buy_sell_ratio']:.2f}")
+# Environment-based configuration
+import os
+os.environ['PROJECTX_TIMEOUT_SECONDS'] = '45'
+os.environ['PROJECTX_RETRY_ATTEMPTS'] = '3'
+client = ProjectX.from_env()  # Will use environment overrides
 ```
 
 ## 🛠️ Development
 
 ### Setup Development Environment
 ```bash
-git clone https://github.com/jeffwest87/project-x-py.git
+git clone https://github.com/TexasCoding/project-x-py.git
 cd project-x-py
 
 # Create virtual environment
@@ -648,42 +544,51 @@ This software is for educational and research purposes. Trading futures involves
 ## 🆘 Support
 
 - **📖 Documentation**: [project-x-py.readthedocs.io](https://project-x-py.readthedocs.io)
-- **🐛 Bug Reports**: [GitHub Issues](https://github.com/jeffwest87/project-x-py/issues)
-- **💬 Discussions**: [GitHub Discussions](https://github.com/jeffwest87/project-x-py/discussions)
+- **🐛 Bug Reports**: [GitHub Issues](https://github.com/TexasCoding/project-x-py/issues)
+- **💬 Discussions**: [GitHub Discussions](https://github.com/TexasCoding/project-x-py/discussions)
 - **📧 Email**: [jeff10278@me.com](mailto:jeff10278@me.com)
 
-## 🔮 Roadmap
+## 🔮 Development Roadmap
 
-### Recently Completed ✅
-- [x] **Advanced Market Microstructure Analysis** - Complete suite of institutional-grade analysis tools
-- [x] **Liquidity Level Detection** - Identify significant price levels with volume and liquidity scoring
-- [x] **Order Cluster Analysis** - Detect and analyze order groupings at key price levels
-- [x] **Iceberg Order Detection** - Spot hidden institutional orders with confidence scoring
-- [x] **Cumulative Delta Analysis** - Real-time net buying vs selling pressure tracking
-- [x] **Market Imbalance Detection** - Orderbook and trade flow imbalance analysis
-- [x] **Volume Profile Analysis** - Point of Control and Value Area identification
-- [x] **Dynamic Support/Resistance** - Real-time level detection from market microstructure
-- [x] **Level 2 Market Data** - Complete orderbook depth and market microstructure analysis
-- [x] **Order Flow Analysis** - Real-time trade execution tracking with buy/sell pressure detection
-- [x] **Advanced Order Types** - Full processing of TopStepX order types (bids, asks, trades, modifications)
-- [x] **Market Pressure Detection** - Volume imbalance tracking and market sentiment analysis
+### ✅ Completed (v0.2.0 - Current)
+- [x] **Core Trading API** - Complete order management (market, limit, stop, bracket orders)
+- [x] **Account Management** - Balance monitoring, permissions, account details
+- [x] **Historical Market Data** - OHLCV data with multiple timeframes (1min to 1day)
+- [x] **Position Management** - Real-time position tracking and P&L calculations
+- [x] **Trade History** - Comprehensive trade search and analysis
+- [x] **Real-Time WebSocket** - Live order updates and market data streaming
+- [x] **Professional Architecture** - Type safety, error handling, configuration management
+- [x] **Comprehensive Documentation** - Full API docs, examples, and guides
 
-### Upcoming Features
-- [ ] **Smart Money Flow Analysis** - Institutional vs retail flow detection and analysis
-- [ ] **Market Regime Detection** - Automated detection of trending vs ranging vs volatile markets
-- [ ] **Strategy Framework** - Built-in strategy development tools with Level 2 data integration
-- [ ] **Advanced Risk Analytics** - Portfolio heat maps with market microstructure risk assessment
-- [ ] **Backtesting Engine** - Historical strategy testing with tick-level precision and microstructure simulation
-- [ ] **Paper Trading** - Risk-free strategy validation with real-time orderbook simulation
-- [ ] **Time & Sales Analysis** - Advanced trade tape analysis with institutional flow detection
-- [ ] **Advanced Analytics Dashboard** - Portfolio performance metrics with market microstructure insights
-- [ ] **Web Dashboard** - Browser-based monitoring interface with real-time orderbook visualization
-- [ ] **Machine Learning Integration** - ML-powered pattern recognition for order flow anomalies
+### 🚧 In Active Development (v0.3.0 - Target: Q2 2025)
+- [ ] **Level 2 Orderbook Processing** - Full market depth analysis and visualization
+- [ ] **Advanced Order Flow Analysis** - Buy/sell pressure detection and trade flow metrics
+- [ ] **Iceberg Order Detection** - Hidden institutional order identification algorithms
+- [ ] **Volume Profile Analysis** - Point of Control and Value Area calculations
+- [ ] **Market Imbalance Detection** - Real-time imbalance monitoring and alerts
+- [ ] **Dynamic Support/Resistance** - Algorithmic level identification from market structure
+- [ ] **Liquidity Analysis** - Significant price level detection with volume concentration
 
-### Version History
-- **v0.3.0** - Advanced market microstructure analysis suite with professional-grade capabilities
-- **v0.2.0** - Modular architecture, improved error handling, real-time enhancements  
-- **v0.1.0** - Initial release with basic trading functionality
+### 📋 Planned Features (v0.4.0+)
+- [ ] **Smart Money Flow Analysis** - Institutional vs retail flow detection
+- [ ] **Market Regime Detection** - Automated market condition classification
+- [ ] **Strategy Development Framework** - Built-in tools for systematic trading
+- [ ] **Advanced Backtesting Engine** - Historical testing with tick-level precision
+- [ ] **Risk Management Suite** - Portfolio analytics and risk monitoring
+- [ ] **Machine Learning Integration** - Pattern recognition and predictive analytics
+- [ ] **Professional Dashboard** - Web-based interface for monitoring and analysis
+
+### 📊 Release Timeline
+- **v0.2.x** (Current) - Bug fixes and stability improvements
+- **v0.3.0** (Q2 2025) - Advanced market microstructure analysis
+- **v0.4.0** (Q4 2025) - Strategy framework and backtesting
+- **v1.0.0** (2026) - Production-ready institutional platform
+
+### 🏗️ Contributing to Development
+- 📋 View current progress in [GitHub Issues](https://github.com/TexasCoding/project-x-py/issues)
+- 💬 Discuss features in [GitHub Discussions](https://github.com/TexasCoding/project-x-py/discussions)
+- 🔧 Submit PRs for bug fixes and improvements
+- 📧 Contact maintainer for major feature collaboration
 
 ---
 
@@ -691,7 +596,7 @@ This software is for educational and research purposes. Trading futures involves
 
 **Built with ❤️ for professional traders and institutions**
 
-[⭐ Star us on GitHub](https://github.com/jeffwest87/project-x-py) • [📖 Read the Docs](https://project-x-py.readthedocs.io) • [🐛 Report Issues](https://github.com/jeffwest87/project-x-py/issues)
+[⭐ Star us on GitHub](https://github.com/TexasCoding/project-x-py) • [📖 Read the Docs](https://project-x-py.readthedocs.io) • [🐛 Report Issues](https://github.com/TexasCoding/project-x-py/issues)
 
 *"Professional-grade market microstructure analysis at your fingertips"*
 

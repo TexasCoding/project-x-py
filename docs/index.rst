@@ -9,8 +9,8 @@ project-x-py Documentation
    :target: https://pypi.org/project/project-x-py/
    :alt: Python versions
 
-.. image:: https://img.shields.io/github/license/jeffwest87/project-x-py.svg
-   :target: https://github.com/jeffwest87/project-x-py/blob/main/LICENSE
+.. image:: https://img.shields.io/github/license/TexasCoding/project-x-py.svg
+   :target: https://github.com/TexasCoding/project-x-py/blob/main/LICENSE
    :alt: License
 
 .. image:: https://readthedocs.org/projects/project-x-py/badge/?version=latest

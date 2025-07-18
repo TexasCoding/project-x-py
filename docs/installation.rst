@@ -99,7 +99,7 @@ Development Installation
 
 For development, clone the repository and install with uv::
 
-   git clone https://github.com/jeffwest87/project-x-py.git
+   git clone https://github.com/TexasCoding/project-x-py.git
    cd project-x-py
    uv sync --extra dev --extra docs
 
@@ -158,4 +158,4 @@ Getting Help
 
 * Check the :doc:`API documentation <api/client>`
 * Browse :doc:`examples <examples/basic_usage>`
-* Open an issue on `GitHub <https://github.com/jeffwest87/project-x-py/issues>`_ 
+* Open an issue on `GitHub <https://github.com/TexasCoding/project-x-py/issues>`_ 

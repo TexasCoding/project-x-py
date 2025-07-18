@@ -191,7 +191,7 @@ html_short_title = f"{project} docs"
 # GitHub integration
 html_context = {
     "display_github": True,
-    "github_user": "jeffwest87",
+    "github_user": "TexasCoding",
     "github_repo": "project-x-py",
     "github_version": "main",
     "conf_py_path": "/docs/",

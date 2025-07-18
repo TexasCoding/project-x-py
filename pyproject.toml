@@ -75,11 +75,11 @@ docs = [
 all = ["project-x-py[realtime,dev,test,docs]"]
 
 [project.urls]
-Homepage = "https://github.com/jeffwest87/project-x-py"
+Homepage = "https://github.com/TexasCoding/project-x-py"
 Documentation = "https://project-x-py.readthedocs.io"
-Repository = "https://github.com/jeffwest87/project-x-py.git"
-"Bug Tracker" = "https://github.com/jeffwest87/project-x-py/issues"
-Changelog = "https://github.com/jeffwest87/project-x-py/blob/main/CHANGELOG.md"
+Repository = "https://github.com/TexasCoding/project-x-py.git"
+"Bug Tracker" = "https://github.com/TexasCoding/project-x-py/issues"
+Changelog = "https://github.com/TexasCoding/project-x-py/blob/main/CHANGELOG.md"
 
 [project.scripts]
 projectx-check = "project_x_py.cli:check_setup"
