@@ -8,7 +8,6 @@ Author: TexasCoding
 Date: June 2025
 """
 
-import json
 import logging
 import time
 from collections import defaultdict
@@ -991,6 +990,15 @@ class ProjectXRealtimeClient:
                     callback(data)
                 except Exception as e:
                     self.logger.error(f"Error in {event_type} callback: {e}")
+
+    def is_connected(self) -> bool:
+        """
+        Check if both user and market hubs are connected.
+
+        Returns:
+            bool: True if both hubs are connected, False otherwise
+        """
+        return self.user_connected and self.market_connected
 
     def get_connection_status(self) -> dict:
         """

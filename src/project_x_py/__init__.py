@@ -13,65 +13,64 @@ Author: TexasCoding
 Date: June 2025
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 __version__ = "0.2.0"
 __author__ = "TexasCoding"
 
 # Core client classes
 from .client import ProjectX
-from .realtime import ProjectXRealtimeClient
-from .realtime_data_manager import ProjectXRealtimeDataManager
-
-# Data models
-from .models import (
-    # Configuration
-    ProjectXConfig,
-    # Trading entities
-    Instrument,
-    Account,
-    Order,
-    OrderPlaceResponse,
-    Position,
-    Trade,
-    BracketOrderResponse,
-)
-
-# Exceptions
-from .exceptions import (
-    ProjectXError,
-    ProjectXAuthenticationError,
-    ProjectXServerError,
-    ProjectXRateLimitError,
-    ProjectXConnectionError,
-    ProjectXDataError,
-    ProjectXOrderError,
-    ProjectXPositionError,
-    ProjectXInstrumentError,
-)
 
 # Configuration management
 from .config import (
     ConfigManager,
-    load_default_config,
-    create_config_template,
     check_environment,
+    create_config_template,
+    load_default_config,
 )
+
+# Exceptions
+from .exceptions import (
+    ProjectXAuthenticationError,
+    ProjectXConnectionError,
+    ProjectXDataError,
+    ProjectXError,
+    ProjectXInstrumentError,
+    ProjectXOrderError,
+    ProjectXPositionError,
+    ProjectXRateLimitError,
+    ProjectXServerError,
+)
+
+# Data models
+from .models import (
+    Account,
+    BracketOrderResponse,
+    # Trading entities
+    Instrument,
+    Order,
+    OrderPlaceResponse,
+    Position,
+    # Configuration
+    ProjectXConfig,
+    Trade,
+)
+from .orderbook import OrderBook
+from .realtime import ProjectXRealtimeClient
+from .realtime_data_manager import ProjectXRealtimeDataManager
 
 # Utility functions
+# Convenience imports for backward compatibility
 from .utils import (
-    setup_logging,
-    get_env_var,
+    RateLimiter,
     format_price,
     format_volume,
+    get_env_var,
+    get_polars_last_value as _get_polars_last_value,
+    get_polars_rows as _get_polars_rows,
     is_market_hours,
-    RateLimiter,
+    setup_logging,
 )
-
-# Convenience imports for backward compatibility
-from .utils import get_polars_rows as _get_polars_rows
-from .utils import get_polars_last_value as _get_polars_last_value
-
 
 # Public API - these are the main classes users should import
 __all__ = [
@@ -79,6 +78,7 @@ __all__ = [
     "ProjectX",
     "ProjectXRealtimeClient",
     "ProjectXRealtimeDataManager",
+    "OrderBook",
     # Configuration
     "ProjectXConfig",
     "ConfigManager",
@@ -110,6 +110,11 @@ __all__ = [
     "format_volume",
     "is_market_hours",
     "RateLimiter",
+    # Factory functions
+    "create_realtime_client",
+    "create_data_manager",
+    "create_orderbook",
+    "create_trading_suite",
 ]
 
 
@@ -259,16 +264,18 @@ def create_realtime_client(
 def create_data_manager(
     instrument: str,
     project_x: ProjectX,
-    account_id: str,
+    realtime_client: ProjectXRealtimeClient,
+    timeframes: list[str] = ["5min"],
     config: Optional[ProjectXConfig] = None,
 ) -> ProjectXRealtimeDataManager:
     """
-    Create a ProjectX real-time data manager.
+    Create a ProjectX real-time OHLCV data manager with dependency injection.
 
     Args:
         instrument: Trading instrument symbol
         project_x: ProjectX client instance
-        account_id: Account ID for real-time subscriptions
+        realtime_client: ProjectXRealtimeClient instance for real-time data
+        timeframes: List of timeframes to track (default: ["5min"])
         config: Configuration object (uses defaults if None)
 
     Returns:
@@ -280,8 +287,109 @@ def create_data_manager(
     return ProjectXRealtimeDataManager(
         instrument=instrument,
         project_x=project_x,
+        realtime_client=realtime_client,
+        timeframes=timeframes,
+        timezone=config.timezone,
+    )
+
+
+def create_orderbook(
+    instrument: str,
+    config: Optional[ProjectXConfig] = None,
+) -> "OrderBook":
+    """
+    Create a ProjectX OrderBook for advanced market depth analysis.
+
+    Args:
+        instrument: Trading instrument symbol
+        config: Configuration object (uses defaults if None)
+
+    Returns:
+        OrderBook instance
+    """
+    if config is None:
+        config = load_default_config()
+
+    return OrderBook(
+        instrument=instrument,
+        timezone=config.timezone,
+    )
+
+
+def create_trading_suite(
+    instrument: str,
+    project_x: ProjectX,
+    jwt_token: str,
+    account_id: str,
+    timeframes: list[str] = ["5min"],
+    config: Optional[ProjectXConfig] = None,
+) -> dict[str, Any]:
+    """
+    Create a complete trading suite with optimized architecture.
+
+    This factory function sets up:
+    - Single ProjectXRealtimeClient for WebSocket connection
+    - ProjectXRealtimeDataManager for OHLCV data
+    - OrderBook for market depth analysis
+    - Proper dependency injection and connection sharing
+
+    Args:
+        instrument: Trading instrument symbol
+        project_x: ProjectX client instance
+        jwt_token: JWT token for WebSocket authentication
+        account_id: Account ID for real-time subscriptions
+        timeframes: List of timeframes to track (default: ["5min"])
+        config: Configuration object (uses defaults if None)
+
+    Returns:
+        dict: {"realtime_client": client, "data_manager": manager, "orderbook": orderbook}
+
+    Example:
+        >>> suite = create_trading_suite(
+        ...     "MGC", project_x, jwt_token, account_id, ["5sec", "1min", "5min"]
+        ... )
+        >>> # Connect once
+        >>> suite["realtime_client"].connect()
+        >>> # Initialize components
+        >>> suite["data_manager"].initialize(initial_days=30)
+        >>> suite["data_manager"].start_realtime_feed()
+        >>> # Register orderbook for market depth
+        >>> suite["realtime_client"].add_callback(
+        ...     "market_depth", suite["orderbook"].process_market_depth
+        ... )
+        >>> # Access data
+        >>> ohlcv_data = suite["data_manager"].get_data("5min")
+        >>> orderbook_snapshot = suite["orderbook"].get_orderbook_snapshot()
+    """
+    if config is None:
+        config = load_default_config()
+
+    # Create single realtime client (shared connection)
+    realtime_client: ProjectXRealtimeClient = ProjectXRealtimeClient(
+        jwt_token=jwt_token,
         account_id=account_id,
         user_hub_url=config.user_hub_url,
         market_hub_url=config.market_hub_url,
+    )
+
+    # Create OHLCV data manager with dependency injection
+    data_manager: ProjectXRealtimeDataManager = ProjectXRealtimeDataManager(
+        instrument=instrument,
+        project_x=project_x,
+        realtime_client=realtime_client,
+        timeframes=timeframes,
         timezone=config.timezone,
     )
+
+    # Create separate orderbook for market depth analysis
+    orderbook: OrderBook = OrderBook(
+        instrument=instrument,
+        timezone=config.timezone,
+    )
+
+    return {
+        "realtime_client": realtime_client,
+        "data_manager": data_manager,
+        "orderbook": orderbook,
+        "config": config,
+    }
