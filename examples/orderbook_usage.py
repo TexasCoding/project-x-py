@@ -263,9 +263,7 @@ def main():
 
     try:
         print("🔐 Authenticating with ProjectX...")
-        project_x = ProjectX(
-            username="jeffw102", api_key="Q1yl6AVP0aWGigl176fLN5O7gooUaJGTaSLUtKQMoZE="
-        )
+        project_x = ProjectX(username="username", api_key="api_key")
         account = project_x.get_account_info()
         if not account:
             raise ValueError("No account found")

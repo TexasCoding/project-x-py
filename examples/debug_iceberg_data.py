@@ -22,9 +22,7 @@ def debug_iceberg_data():
     print("=" * 60)
 
     # Initialize (same as your main script)
-    project_x = ProjectX(
-        username="jeffw102", api_key="Q1yl6AVP0aWGigl176fLN5O7gooUaJGTaSLUtKQMoZE="
-    )
+    project_x = ProjectX(username="username", api_key="api_key")
 
     # Initialize data manager
     data_manager = ProjectXRealtimeDataManager(

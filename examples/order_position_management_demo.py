@@ -85,9 +85,9 @@ class OrderPositionDemoManager:
         try:
             # Initialize client
             self.client = ProjectX(
-                username="jeffw102",
-                api_key="Q1yl6AVP0aWGigl176fLN5O7gooUaJGTaSLUtKQMoZE=",
-                account_name="PRACTICEJUL1115049378",
+                username="username",
+                api_key="api_key",
+                account_name="account_name",
             )
             account = self.client.get_account_info()
 

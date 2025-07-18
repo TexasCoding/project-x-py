@@ -62,9 +62,7 @@ async def demonstrate_advanced_market_analysis():
     print_subsection("📡 Initializing ProjectX Client")
     try:
         # Note: In a real implementation, you would provide your actual credentials
-        project_x = ProjectX(
-            username="jeffw102", api_key="Q1yl6AVP0aWGigl176fLN5O7gooUaJGTaSLUtKQMoZE="
-        )
+        project_x = ProjectX(username="username", api_key="api_key")
         print("✅ ProjectX client initialized successfully")
     except Exception as e:
         print(f"❌ Failed to initialize ProjectX: {e}")

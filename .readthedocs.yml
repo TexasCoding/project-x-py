@@ -1,0 +1,33 @@
+# ReadTheDocs configuration file
+# See https://docs.readthedocs.io/en/stable/config-file/v2.html for details
+
+version: 2
+
+build:
+  os: ubuntu-22.04
+  tools:
+    python: "3.12"
+    
+python:
+  install:
+    - method: pip
+      path: .
+      extra_requirements:
+        - docs
+
+sphinx:
+  configuration: docs/conf.py
+  fail_on_warning: false
+
+formats:
+  - pdf
+  - epub
+
+search:
+  ranking:
+    # Boost api reference pages
+    "api/*": 2
+    # Boost user guide pages  
+    "user_guide/*": 1.5
+    # Boost examples
+    "examples/*": 1.2 
