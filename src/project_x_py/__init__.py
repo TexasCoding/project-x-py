@@ -57,6 +57,7 @@ from .models import (
 )
 from .order_manager import OrderManager
 from .orderbook import OrderBook
+from .position_manager import PositionManager
 from .realtime import ProjectXRealtimeClient
 from .realtime_data_manager import ProjectXRealtimeDataManager
 
@@ -84,6 +85,7 @@ __all__ = [
     "OrderManager",
     "OrderPlaceResponse",
     "Position",
+    "PositionManager",
     "ProjectX",
     "ProjectXAuthenticationError",
     "ProjectXConfig",
@@ -104,6 +106,7 @@ __all__ = [
     "create_data_manager",
     "create_order_manager",
     "create_orderbook",
+    "create_position_manager",
     "create_realtime_client",
     "create_trading_suite",
     "format_price",
@@ -347,6 +350,38 @@ def create_order_manager(
     return order_manager
 
 
+def create_position_manager(
+    project_x: ProjectX,
+    realtime_client: ProjectXRealtimeClient | None = None,
+) -> PositionManager:
+    """
+    Create a ProjectX PositionManager for comprehensive position operations.
+
+    Args:
+        project_x: ProjectX client instance
+        realtime_client: Optional ProjectXRealtimeClient for real-time position tracking
+
+    Returns:
+        PositionManager instance
+
+    Example:
+        >>> position_manager = create_position_manager(project_x, realtime_client)
+        >>> position_manager.initialize()
+        >>> # Get positions
+        >>> positions = position_manager.get_all_positions()
+        >>> mgc_position = position_manager.get_position("MGC")
+        >>> # Portfolio analytics
+        >>> pnl = position_manager.get_portfolio_pnl()
+        >>> risk = position_manager.get_risk_metrics()
+        >>> # Position monitoring
+        >>> position_manager.add_position_alert("MGC", max_loss=-500.0)
+        >>> position_manager.start_monitoring()
+    """
+    position_manager = PositionManager(project_x)
+    position_manager.initialize(realtime_client=realtime_client)
+    return position_manager
+
+
 def create_trading_suite(
     instrument: str,
     project_x: ProjectX,
@@ -363,6 +398,7 @@ def create_trading_suite(
     - ProjectXRealtimeDataManager for OHLCV data
     - OrderBook for market depth analysis
     - OrderManager for comprehensive order operations
+    - PositionManager for position tracking and risk management
     - Proper dependency injection and connection sharing
 
     Args:
@@ -374,7 +410,7 @@ def create_trading_suite(
         config: Configuration object (uses defaults if None)
 
     Returns:
-        dict: {"realtime_client": client, "data_manager": manager, "orderbook": orderbook, "order_manager": order_manager}
+        dict: {"realtime_client": client, "data_manager": manager, "orderbook": orderbook, "order_manager": order_manager, "position_manager": position_manager}
 
     Example:
         >>> suite = create_trading_suite(
@@ -389,9 +425,13 @@ def create_trading_suite(
         >>> bracket = suite["order_manager"].place_bracket_order(
         ...     "MGC", 0, 1, 2045.0, 2040.0, 2055.0
         ... )
+        >>> # Monitor positions
+        >>> suite["position_manager"].add_position_alert("MGC", max_loss=-500.0)
+        >>> suite["position_manager"].start_monitoring()
         >>> # Access data
         >>> ohlcv_data = suite["data_manager"].get_data("5min")
         >>> orderbook_snapshot = suite["orderbook"].get_orderbook_snapshot()
+        >>> portfolio_pnl = suite["position_manager"].get_portfolio_pnl()
     """
     if timeframes is None:
         timeframes = ["5min"]
@@ -426,10 +466,15 @@ def create_trading_suite(
     order_manager = OrderManager(project_x)
     order_manager.initialize(realtime_client=realtime_client)
 
+    # Create position manager for position tracking and risk management
+    position_manager = PositionManager(project_x)
+    position_manager.initialize(realtime_client=realtime_client)
+
     return {
         "realtime_client": realtime_client,
         "data_manager": data_manager,
         "orderbook": orderbook,
         "order_manager": order_manager,
+        "position_manager": position_manager,
         "config": config,
     }

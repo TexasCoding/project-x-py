@@ -140,6 +140,10 @@ class Position:
         size (int): Position size (number of contracts, always positive)
         averagePrice (float): Average entry price of the position
 
+    Note:
+        This model contains only the fields returned by ProjectX API.
+        For P&L calculations, use PositionManager.calculate_position_pnl() method.
+
     Example:
         >>> direction = "LONG" if position.type == 1 else "SHORT"
         >>> print(
