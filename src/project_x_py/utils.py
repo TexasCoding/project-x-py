@@ -751,3 +751,1140 @@ def find_support_resistance_levels(
 
     # Sort by strength (descending)
     return sorted(levels, key=lambda x: x["strength"], reverse=True)
+
+
+# ================================================================================
+# ADVANCED TECHNICAL INDICATORS
+# ================================================================================
+
+
+def calculate_macd(
+    data: pl.DataFrame,
+    column: str = "close",
+    fast_period: int = 12,
+    slow_period: int = 26,
+    signal_period: int = 9,
+) -> pl.DataFrame:
+    """
+    Calculate Moving Average Convergence Divergence (MACD).
+
+    Args:
+        data: DataFrame with OHLCV data
+        column: Column to calculate MACD for
+        fast_period: Fast EMA period
+        slow_period: Slow EMA period
+        signal_period: Signal line EMA period
+
+    Returns:
+        DataFrame with MACD columns added
+
+    Example:
+        >>> data_with_macd = calculate_macd(ohlcv_data)
+        >>> print(
+        ...     data_with_macd.columns
+        ... )  # Now includes macd, macd_signal, macd_histogram
+    """
+    if column not in data.columns:
+        raise ValueError(f"Column '{column}' not found in data")
+
+    # Calculate fast and slow EMAs
+    fast_alpha = 2.0 / (fast_period + 1)
+    slow_alpha = 2.0 / (slow_period + 1)
+    signal_alpha = 2.0 / (signal_period + 1)
+
+    # Calculate MACD line (fast EMA - slow EMA)
+    result = data.with_columns(
+        [
+            pl.col(column).ewm_mean(alpha=fast_alpha).alias("ema_fast"),
+            pl.col(column).ewm_mean(alpha=slow_alpha).alias("ema_slow"),
+        ]
+    ).with_columns((pl.col("ema_fast") - pl.col("ema_slow")).alias("macd"))
+
+    # Calculate signal line (EMA of MACD)
+    result = result.with_columns(
+        pl.col("macd").ewm_mean(alpha=signal_alpha).alias("macd_signal")
+    )
+
+    # Calculate MACD histogram
+    result = result.with_columns(
+        (pl.col("macd") - pl.col("macd_signal")).alias("macd_histogram")
+    )
+
+    # Remove intermediate columns
+    return result.drop(["ema_fast", "ema_slow"])
+
+
+def calculate_stochastic(
+    data: pl.DataFrame,
+    high_column: str = "high",
+    low_column: str = "low",
+    close_column: str = "close",
+    k_period: int = 14,
+    d_period: int = 3,
+) -> pl.DataFrame:
+    """
+    Calculate Stochastic Oscillator.
+
+    Args:
+        data: DataFrame with OHLCV data
+        high_column: High price column
+        low_column: Low price column
+        close_column: Close price column
+        k_period: %K period
+        d_period: %D smoothing period
+
+    Returns:
+        DataFrame with Stochastic columns added
+
+    Example:
+        >>> data_with_stoch = calculate_stochastic(ohlcv_data)
+        >>> print(data_with_stoch.columns)  # Now includes stoch_k, stoch_d
+    """
+    required_cols = [high_column, low_column, close_column]
+    for col in required_cols:
+        if col not in data.columns:
+            raise ValueError(f"Column '{col}' not found in data")
+
+    # Calculate %K
+    result = data.with_columns(
+        [
+            pl.col(high_column).rolling_max(window_size=k_period).alias("highest_high"),
+            pl.col(low_column).rolling_min(window_size=k_period).alias("lowest_low"),
+        ]
+    ).with_columns(
+        (
+            100
+            * (pl.col(close_column) - pl.col("lowest_low"))
+            / (pl.col("highest_high") - pl.col("lowest_low"))
+        ).alias("stoch_k")
+    )
+
+    # Calculate %D (SMA of %K)
+    result = result.with_columns(
+        pl.col("stoch_k").rolling_mean(window_size=d_period).alias("stoch_d")
+    )
+
+    # Remove intermediate columns
+    return result.drop(["highest_high", "lowest_low"])
+
+
+def calculate_williams_r(
+    data: pl.DataFrame,
+    high_column: str = "high",
+    low_column: str = "low",
+    close_column: str = "close",
+    period: int = 14,
+) -> pl.DataFrame:
+    """
+    Calculate Williams %R.
+
+    Args:
+        data: DataFrame with OHLCV data
+        high_column: High price column
+        low_column: Low price column
+        close_column: Close price column
+        period: Lookback period
+
+    Returns:
+        DataFrame with Williams %R column added
+
+    Example:
+        >>> data_with_wr = calculate_williams_r(ohlcv_data)
+        >>> print(data_with_wr.columns)  # Now includes williams_r
+    """
+    required_cols = [high_column, low_column, close_column]
+    for col in required_cols:
+        if col not in data.columns:
+            raise ValueError(f"Column '{col}' not found in data")
+
+    return (
+        data.with_columns(
+            [
+                pl.col(high_column)
+                .rolling_max(window_size=period)
+                .alias("highest_high"),
+                pl.col(low_column).rolling_min(window_size=period).alias("lowest_low"),
+            ]
+        )
+        .with_columns(
+            (
+                -100
+                * (pl.col("highest_high") - pl.col(close_column))
+                / (pl.col("highest_high") - pl.col("lowest_low"))
+            ).alias("williams_r")
+        )
+        .drop(["highest_high", "lowest_low"])
+    )
+
+
+def calculate_atr(
+    data: pl.DataFrame,
+    high_column: str = "high",
+    low_column: str = "low",
+    close_column: str = "close",
+    period: int = 14,
+) -> pl.DataFrame:
+    """
+    Calculate Average True Range (ATR).
+
+    Args:
+        data: DataFrame with OHLCV data
+        high_column: High price column
+        low_column: Low price column
+        close_column: Close price column
+        period: ATR period
+
+    Returns:
+        DataFrame with ATR column added
+
+    Example:
+        >>> data_with_atr = calculate_atr(ohlcv_data)
+        >>> print(data_with_atr.columns)  # Now includes atr
+    """
+    required_cols = [high_column, low_column, close_column]
+    for col in required_cols:
+        if col not in data.columns:
+            raise ValueError(f"Column '{col}' not found in data")
+
+    # Calculate True Range components
+    result = (
+        data.with_columns(
+            [
+                pl.col(close_column).shift(1).alias("prev_close"),
+            ]
+        )
+        .with_columns(
+            [
+                # TR1: High - Low
+                (pl.col(high_column) - pl.col(low_column)).alias("tr1"),
+                # TR2: |High - Previous Close|
+                (pl.col(high_column) - pl.col("prev_close")).abs().alias("tr2"),
+                # TR3: |Low - Previous Close|
+                (pl.col(low_column) - pl.col("prev_close")).abs().alias("tr3"),
+            ]
+        )
+        .with_columns(
+            # True Range = max(TR1, TR2, TR3)
+            pl.max_horizontal(["tr1", "tr2", "tr3"]).alias("true_range")
+        )
+        .with_columns(
+            # ATR = EMA of True Range
+            pl.col("true_range")
+            .ewm_mean(alpha=2.0 / (period + 1))
+            .alias(f"atr_{period}")
+        )
+    )
+
+    # Remove intermediate columns
+    return result.drop(["prev_close", "tr1", "tr2", "tr3", "true_range"])
+
+
+def calculate_adx(
+    data: pl.DataFrame,
+    high_column: str = "high",
+    low_column: str = "low",
+    close_column: str = "close",
+    period: int = 14,
+) -> pl.DataFrame:
+    """
+    Calculate Average Directional Index (ADX).
+
+    Args:
+        data: DataFrame with OHLCV data
+        high_column: High price column
+        low_column: Low price column
+        close_column: Close price column
+        period: ADX period
+
+    Returns:
+        DataFrame with ADX, +DI, -DI columns added
+
+    Example:
+        >>> data_with_adx = calculate_adx(ohlcv_data)
+        >>> print(data_with_adx.columns)  # Now includes adx, di_plus, di_minus
+    """
+    required_cols = [high_column, low_column, close_column]
+    for col in required_cols:
+        if col not in data.columns:
+            raise ValueError(f"Column '{col}' not found in data")
+
+    # Calculate price movements
+    result = data.with_columns(
+        [
+            pl.col(high_column).diff().alias("up_move"),
+            (-pl.col(low_column).diff()).alias("down_move"),
+        ]
+    ).with_columns(
+        [
+            # Positive and negative directional movements
+            pl.when((pl.col("up_move") > pl.col("down_move")) & (pl.col("up_move") > 0))
+            .then(pl.col("up_move"))
+            .otherwise(0)
+            .alias("dm_plus"),
+            pl.when(
+                (pl.col("down_move") > pl.col("up_move")) & (pl.col("down_move") > 0)
+            )
+            .then(pl.col("down_move"))
+            .otherwise(0)
+            .alias("dm_minus"),
+        ]
+    )
+
+    # Calculate True Range for ADX
+    result = calculate_atr(result, high_column, low_column, close_column, period)
+
+    # Calculate smoothed DM and TR
+    alpha = 2.0 / (period + 1)
+    result = (
+        result.with_columns(
+            [
+                pl.col("dm_plus").ewm_mean(alpha=alpha).alias("dm_plus_smooth"),
+                pl.col("dm_minus").ewm_mean(alpha=alpha).alias("dm_minus_smooth"),
+                pl.col(f"atr_{period}").alias("tr_smooth"),
+            ]
+        )
+        .with_columns(
+            [
+                # Calculate +DI and -DI
+                (100 * pl.col("dm_plus_smooth") / pl.col("tr_smooth")).alias("di_plus"),
+                (100 * pl.col("dm_minus_smooth") / pl.col("tr_smooth")).alias(
+                    "di_minus"
+                ),
+            ]
+        )
+        .with_columns(
+            [
+                # Calculate DX
+                (
+                    100
+                    * (pl.col("di_plus") - pl.col("di_minus")).abs()
+                    / (pl.col("di_plus") + pl.col("di_minus"))
+                ).alias("dx")
+            ]
+        )
+        .with_columns(
+            # Calculate ADX (smoothed DX)
+            pl.col("dx").ewm_mean(alpha=alpha).alias("adx")
+        )
+    )
+
+    # Remove intermediate columns
+    return result.drop(
+        [
+            "up_move",
+            "down_move",
+            "dm_plus",
+            "dm_minus",
+            "dm_plus_smooth",
+            "dm_minus_smooth",
+            "tr_smooth",
+            "dx",
+            f"atr_{period}",
+        ]
+    )
+
+
+def calculate_commodity_channel_index(
+    data: pl.DataFrame,
+    high_column: str = "high",
+    low_column: str = "low",
+    close_column: str = "close",
+    period: int = 20,
+    constant: float = 0.015,
+) -> pl.DataFrame:
+    """
+    Calculate Commodity Channel Index (CCI).
+
+    Args:
+        data: DataFrame with OHLCV data
+        high_column: High price column
+        low_column: Low price column
+        close_column: Close price column
+        period: CCI period
+        constant: CCI constant (typically 0.015)
+
+    Returns:
+        DataFrame with CCI column added
+
+    Example:
+        >>> data_with_cci = calculate_commodity_channel_index(ohlcv_data)
+        >>> print(data_with_cci.columns)  # Now includes cci
+    """
+    required_cols = [high_column, low_column, close_column]
+    for col in required_cols:
+        if col not in data.columns:
+            raise ValueError(f"Column '{col}' not found in data")
+
+    # Calculate Typical Price
+    result = data.with_columns(
+        ((pl.col(high_column) + pl.col(low_column) + pl.col(close_column)) / 3).alias(
+            "typical_price"
+        )
+    )
+
+    # Calculate Simple Moving Average of Typical Price
+    result = result.with_columns(
+        pl.col("typical_price").rolling_mean(window_size=period).alias("sma_tp")
+    )
+
+    # Calculate Mean Deviation
+    result = result.with_columns(
+        (pl.col("typical_price") - pl.col("sma_tp"))
+        .abs()
+        .rolling_mean(window_size=period)
+        .alias("mean_deviation")
+    )
+
+    # Calculate CCI
+    result = result.with_columns(
+        (
+            (pl.col("typical_price") - pl.col("sma_tp"))
+            / (constant * pl.col("mean_deviation"))
+        ).alias("cci")
+    )
+
+    # Remove intermediate columns
+    return result.drop(["typical_price", "sma_tp", "mean_deviation"])
+
+
+# ================================================================================
+# STATISTICAL ANALYSIS FUNCTIONS
+# ================================================================================
+
+
+def calculate_correlation_matrix(
+    data: pl.DataFrame,
+    columns: list[str] | None = None,
+    method: str = "pearson",
+) -> pl.DataFrame:
+    """
+    Calculate correlation matrix for specified columns.
+
+    Args:
+        data: DataFrame with numeric data
+        columns: Columns to include (default: all numeric columns)
+        method: Correlation method ("pearson", "spearman")
+
+    Returns:
+        DataFrame with correlation matrix
+
+    Example:
+        >>> corr_matrix = calculate_correlation_matrix(
+        ...     ohlcv_data, ["open", "high", "low", "close"]
+        ... )
+        >>> print(corr_matrix)
+    """
+    if columns is None:
+        # Auto-detect numeric columns
+        columns = [
+            col
+            for col, dtype in zip(data.columns, data.dtypes, strict=False)
+            if dtype in [pl.Float64, pl.Float32, pl.Int64, pl.Int32]
+        ]
+
+    if not columns:
+        raise ValueError("No numeric columns found")
+
+    # Simple correlation calculation using polars
+    correlations = {}
+    for col1 in columns:
+        correlations[col1] = {}
+        for col2 in columns:
+            if col1 == col2:
+                correlations[col1][col2] = 1.0
+            else:
+                # Calculate Pearson correlation
+                corr_result = data.select(
+                    [pl.corr(col1, col2).alias("correlation")]
+                ).item(0, "correlation")
+                correlations[col1][col2] = (
+                    corr_result if corr_result is not None else 0.0
+                )
+
+    # Convert to DataFrame
+    corr_data = []
+    for col1 in columns:
+        row = {"column": col1}
+        for col2 in columns:
+            row[col2] = correlations[col1][col2]
+        corr_data.append(row)
+
+    return pl.from_dicts(corr_data)
+
+
+def calculate_volatility_metrics(
+    data: pl.DataFrame,
+    price_column: str = "close",
+    return_column: str | None = None,
+    window: int = 20,
+) -> dict[str, Any]:
+    """
+    Calculate various volatility metrics.
+
+    Args:
+        data: DataFrame with price data
+        price_column: Price column for calculations
+        return_column: Pre-calculated returns column (optional)
+        window: Window for rolling calculations
+
+    Returns:
+        Dict with volatility metrics
+
+    Example:
+        >>> vol_metrics = calculate_volatility_metrics(ohlcv_data)
+        >>> print(f"Annualized Volatility: {vol_metrics['annualized_volatility']:.2%}")
+    """
+    if price_column not in data.columns:
+        raise ValueError(f"Column '{price_column}' not found in data")
+
+    # Calculate returns if not provided
+    if return_column is None:
+        data = data.with_columns(pl.col(price_column).pct_change().alias("returns"))
+        return_column = "returns"
+
+    if data.is_empty():
+        return {"error": "No data available"}
+
+    try:
+        # Calculate various volatility measures
+        returns_data = data.select(pl.col(return_column)).drop_nulls()
+
+        if returns_data.is_empty():
+            return {"error": "No valid returns data"}
+
+        std_dev = returns_data.std().item()
+        mean_return = returns_data.mean().item()
+
+        # Calculate rolling volatility
+        rolling_vol = (
+            data.with_columns(
+                pl.col(return_column)
+                .rolling_std(window_size=window)
+                .alias("rolling_vol")
+            )
+            .select("rolling_vol")
+            .drop_nulls()
+        )
+
+        metrics = {
+            "volatility": std_dev or 0.0,
+            "annualized_volatility": (std_dev or 0.0)
+            * (252**0.5),  # Assuming 252 trading days
+            "mean_return": mean_return or 0.0,
+            "annualized_return": (mean_return or 0.0) * 252,
+        }
+
+        if not rolling_vol.is_empty():
+            metrics.update(
+                {
+                    "avg_rolling_volatility": rolling_vol.mean().item() or 0.0,
+                    "max_rolling_volatility": rolling_vol.max().item() or 0.0,
+                    "min_rolling_volatility": rolling_vol.min().item() or 0.0,
+                }
+            )
+
+        return metrics
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def calculate_sharpe_ratio(
+    data: pl.DataFrame,
+    return_column: str = "returns",
+    risk_free_rate: float = 0.02,
+    periods_per_year: int = 252,
+) -> float:
+    """
+    Calculate Sharpe ratio.
+
+    Args:
+        data: DataFrame with returns data
+        return_column: Returns column name
+        risk_free_rate: Annual risk-free rate
+        periods_per_year: Number of periods per year
+
+    Returns:
+        Sharpe ratio
+
+    Example:
+        >>> # First calculate returns
+        >>> data = data.with_columns(pl.col("close").pct_change().alias("returns"))
+        >>> sharpe = calculate_sharpe_ratio(data)
+        >>> print(f"Sharpe Ratio: {sharpe:.2f}")
+    """
+    if return_column not in data.columns:
+        raise ValueError(f"Column '{return_column}' not found in data")
+
+    returns_data = data.select(pl.col(return_column)).drop_nulls()
+
+    if returns_data.is_empty():
+        return 0.0
+
+    try:
+        mean_return = returns_data.mean().item() or 0.0
+        std_return = returns_data.std().item() or 0.0
+
+        if std_return == 0:
+            return 0.0
+
+        # Annualize the metrics
+        annualized_return = mean_return * periods_per_year
+        annualized_volatility = std_return * (periods_per_year**0.5)
+
+        # Calculate Sharpe ratio
+        excess_return = annualized_return - risk_free_rate
+        return excess_return / annualized_volatility
+
+    except Exception:
+        return 0.0
+
+
+def calculate_max_drawdown(
+    data: pl.DataFrame,
+    price_column: str = "close",
+) -> dict[str, Any]:
+    """
+    Calculate maximum drawdown.
+
+    Args:
+        data: DataFrame with price data
+        price_column: Price column name
+
+    Returns:
+        Dict with drawdown metrics
+
+    Example:
+        >>> dd_metrics = calculate_max_drawdown(ohlcv_data)
+        >>> print(f"Max Drawdown: {dd_metrics['max_drawdown']:.2%}")
+    """
+    if price_column not in data.columns:
+        raise ValueError(f"Column '{price_column}' not found in data")
+
+    if data.is_empty():
+        return {"max_drawdown": 0.0, "max_drawdown_duration": 0}
+
+    try:
+        # Calculate cumulative maximum (peak) using rolling_max with large window
+        data_length = len(data)
+        data_with_peak = data.with_columns(
+            pl.col(price_column).rolling_max(window_size=data_length).alias("peak")
+        )
+
+        # Calculate drawdown
+        data_with_dd = data_with_peak.with_columns(
+            ((pl.col(price_column) / pl.col("peak")) - 1).alias("drawdown")
+        )
+
+        # Get maximum drawdown
+        max_dd = data_with_dd.select(pl.col("drawdown").min()).item() or 0.0
+
+        # Calculate drawdown duration (simplified)
+        dd_series = data_with_dd.select("drawdown").to_series()
+        max_duration = 0
+        current_duration = 0
+
+        for dd in dd_series:
+            if dd < 0:  # In drawdown
+                current_duration += 1
+                max_duration = max(max_duration, current_duration)
+            else:  # Recovery
+                current_duration = 0
+
+        return {
+            "max_drawdown": max_dd,
+            "max_drawdown_duration": max_duration,
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ================================================================================
+# PATTERN RECOGNITION HELPERS
+# ================================================================================
+
+
+def detect_candlestick_patterns(
+    data: pl.DataFrame,
+    open_col: str = "open",
+    high_col: str = "high",
+    low_col: str = "low",
+    close_col: str = "close",
+) -> pl.DataFrame:
+    """
+    Detect basic candlestick patterns.
+
+    Args:
+        data: DataFrame with OHLCV data
+        open_col: Open price column
+        high_col: High price column
+        low_col: Low price column
+        close_col: Close price column
+
+    Returns:
+        DataFrame with pattern detection columns added
+
+    Example:
+        >>> patterns = detect_candlestick_patterns(ohlcv_data)
+        >>> doji_count = patterns.filter(pl.col("doji") == True).height
+        >>> print(f"Doji patterns found: {doji_count}")
+    """
+    required_cols = [open_col, high_col, low_col, close_col]
+    for col in required_cols:
+        if col not in data.columns:
+            raise ValueError(f"Column '{col}' not found in data")
+
+    # Calculate basic metrics
+    result = data.with_columns(
+        [
+            (pl.col(close_col) - pl.col(open_col)).alias("body"),
+            (pl.col(high_col) - pl.col(low_col)).alias("range"),
+            (pl.col(high_col) - pl.max_horizontal([open_col, close_col])).alias(
+                "upper_shadow"
+            ),
+            (pl.min_horizontal([open_col, close_col]) - pl.col(low_col)).alias(
+                "lower_shadow"
+            ),
+        ]
+    )
+
+    # Pattern detection
+    result = result.with_columns(
+        [
+            # Doji: Very small body relative to range
+            (pl.col("body").abs() <= 0.1 * pl.col("range")).alias("doji"),
+            # Hammer: Small body, long lower shadow, little upper shadow
+            (
+                (pl.col("body").abs() <= 0.3 * pl.col("range"))
+                & (pl.col("lower_shadow") >= 2 * pl.col("body").abs())
+                & (pl.col("upper_shadow") <= 0.1 * pl.col("range"))
+            ).alias("hammer"),
+            # Shooting Star: Small body, long upper shadow, little lower shadow
+            (
+                (pl.col("body").abs() <= 0.3 * pl.col("range"))
+                & (pl.col("upper_shadow") >= 2 * pl.col("body").abs())
+                & (pl.col("lower_shadow") <= 0.1 * pl.col("range"))
+            ).alias("shooting_star"),
+            # Bullish/Bearish flags
+            (pl.col("body") > 0).alias("bullish_candle"),
+            (pl.col("body") < 0).alias("bearish_candle"),
+            # Long body candles (strong moves)
+            (pl.col("body").abs() >= 0.7 * pl.col("range")).alias("long_body"),
+        ]
+    )
+
+    # Remove intermediate calculation columns
+    return result.drop(["body", "range", "upper_shadow", "lower_shadow"])
+
+
+def detect_chart_patterns(
+    data: pl.DataFrame,
+    price_column: str = "close",
+    window: int = 20,
+) -> dict[str, Any]:
+    """
+    Detect basic chart patterns.
+
+    Args:
+        data: DataFrame with price data
+        price_column: Price column to analyze
+        window: Window size for pattern detection
+
+    Returns:
+        Dict with detected patterns and their locations
+
+    Example:
+        >>> patterns = detect_chart_patterns(ohlcv_data)
+        >>> print(f"Double tops found: {len(patterns['double_tops'])}")
+    """
+    if price_column not in data.columns:
+        raise ValueError(f"Column '{price_column}' not found in data")
+
+    if len(data) < window * 2:
+        return {"error": "Insufficient data for pattern detection"}
+
+    try:
+        prices = data.select(pl.col(price_column)).to_series().to_list()
+
+        patterns = {
+            "double_tops": [],
+            "double_bottoms": [],
+            "breakouts": [],
+            "trend_reversals": [],
+        }
+
+        # Simple pattern detection logic
+        for i in range(window, len(prices) - window):
+            local_max = max(prices[i - window : i + window + 1])
+            local_min = min(prices[i - window : i + window + 1])
+            current_price = prices[i]
+
+            # Double top detection (simplified)
+            if current_price == local_max:
+                # Look for another high nearby
+                for j in range(i + window // 2, min(i + window, len(prices))):
+                    if (
+                        abs(prices[j] - current_price) / current_price < 0.02
+                    ):  # Within 2%
+                        patterns["double_tops"].append(
+                            {
+                                "index1": i,
+                                "index2": j,
+                                "price": current_price,
+                                "strength": local_max - local_min,
+                            }
+                        )
+                        break
+
+            # Double bottom detection (simplified)
+            if current_price == local_min:
+                # Look for another low nearby
+                for j in range(i + window // 2, min(i + window, len(prices))):
+                    if (
+                        abs(prices[j] - current_price) / current_price < 0.02
+                    ):  # Within 2%
+                        patterns["double_bottoms"].append(
+                            {
+                                "index1": i,
+                                "index2": j,
+                                "price": current_price,
+                                "strength": local_max - local_min,
+                            }
+                        )
+                        break
+
+        return patterns
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ================================================================================
+# PORTFOLIO ANALYSIS TOOLS
+# ================================================================================
+
+
+def calculate_portfolio_metrics(
+    trades: list[dict],
+    initial_balance: float = 100000.0,
+) -> dict[str, Any]:
+    """
+    Calculate comprehensive portfolio performance metrics.
+
+    Args:
+        trades: List of trade dictionaries with 'pnl', 'size', 'timestamp' fields
+        initial_balance: Starting portfolio balance
+
+    Returns:
+        Dict with portfolio metrics
+
+    Example:
+        >>> trades = [
+        ...     {"pnl": 500, "size": 1, "timestamp": "2024-01-01"},
+        ...     {"pnl": -200, "size": 2, "timestamp": "2024-01-02"},
+        ... ]
+        >>> metrics = calculate_portfolio_metrics(trades)
+        >>> print(f"Total Return: {metrics['total_return']:.2%}")
+    """
+    if not trades:
+        return {"error": "No trades provided"}
+
+    try:
+        # Extract P&L values
+        pnls = [trade.get("pnl", 0) for trade in trades]
+        total_pnl = sum(pnls)
+
+        # Basic metrics
+        total_trades = len(trades)
+        winning_trades = [pnl for pnl in pnls if pnl > 0]
+        losing_trades = [pnl for pnl in pnls if pnl < 0]
+
+        win_rate = len(winning_trades) / total_trades if total_trades > 0 else 0
+        avg_win = sum(winning_trades) / len(winning_trades) if winning_trades else 0
+        avg_loss = sum(losing_trades) / len(losing_trades) if losing_trades else 0
+
+        # Profit factor
+        gross_profit = sum(winning_trades)
+        gross_loss = abs(sum(losing_trades))
+        profit_factor = gross_profit / gross_loss if gross_loss > 0 else float("inf")
+
+        # Returns
+        total_return = total_pnl / initial_balance
+
+        # Calculate equity curve for drawdown
+        equity_curve = [initial_balance]
+        for pnl in pnls:
+            equity_curve.append(equity_curve[-1] + pnl)
+
+        # Max drawdown
+        peak = equity_curve[0]
+        max_dd = 0
+        max_dd_duration = 0
+        current_dd_duration = 0
+
+        for equity in equity_curve[1:]:
+            if equity > peak:
+                peak = equity
+                current_dd_duration = 0
+            else:
+                dd = (peak - equity) / peak
+                max_dd = max(max_dd, dd)
+                current_dd_duration += 1
+                max_dd_duration = max(max_dd_duration, current_dd_duration)
+
+        # Expectancy
+        expectancy = (win_rate * avg_win) + ((1 - win_rate) * avg_loss)
+
+        return {
+            "total_trades": total_trades,
+            "total_pnl": total_pnl,
+            "total_return": total_return,
+            "win_rate": win_rate,
+            "profit_factor": profit_factor,
+            "avg_win": avg_win,
+            "avg_loss": avg_loss,
+            "max_drawdown": max_dd,
+            "max_drawdown_duration": max_dd_duration,
+            "expectancy": expectancy,
+            "gross_profit": gross_profit,
+            "gross_loss": gross_loss,
+            "largest_win": max(pnls) if pnls else 0,
+            "largest_loss": min(pnls) if pnls else 0,
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def calculate_position_sizing(
+    account_balance: float,
+    risk_per_trade: float,
+    entry_price: float,
+    stop_loss_price: float,
+    tick_value: float = 1.0,
+) -> dict[str, Any]:
+    """
+    Calculate optimal position size based on risk management.
+
+    Args:
+        account_balance: Current account balance
+        risk_per_trade: Risk per trade as decimal (e.g., 0.02 for 2%)
+        entry_price: Entry price for the trade
+        stop_loss_price: Stop loss price
+        tick_value: Dollar value per tick
+
+    Returns:
+        Dict with position sizing information
+
+    Example:
+        >>> sizing = calculate_position_sizing(50000, 0.02, 2050, 2040, 1.0)
+        >>> print(f"Position size: {sizing['position_size']} contracts")
+    """
+    try:
+        # Calculate risk per share/contract
+        price_risk = abs(entry_price - stop_loss_price)
+
+        if price_risk == 0:
+            return {"error": "No price risk (entry equals stop loss)"}
+
+        # Calculate dollar risk
+        dollar_risk_per_contract = price_risk * tick_value
+
+        # Calculate maximum dollar risk for this trade
+        max_dollar_risk = account_balance * risk_per_trade
+
+        # Calculate position size
+        position_size = max_dollar_risk / dollar_risk_per_contract
+
+        # Round down to whole contracts
+        position_size = int(position_size)
+
+        # Calculate actual risk
+        actual_dollar_risk = position_size * dollar_risk_per_contract
+        actual_risk_percent = actual_dollar_risk / account_balance
+
+        return {
+            "position_size": position_size,
+            "price_risk": price_risk,
+            "dollar_risk_per_contract": dollar_risk_per_contract,
+            "max_dollar_risk": max_dollar_risk,
+            "actual_dollar_risk": actual_dollar_risk,
+            "actual_risk_percent": actual_risk_percent,
+            "risk_reward_ratio": None,  # Can be calculated if target provided
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ================================================================================
+# MARKET MICROSTRUCTURE ANALYSIS
+# ================================================================================
+
+
+def analyze_bid_ask_spread(
+    data: pl.DataFrame,
+    bid_column: str = "bid",
+    ask_column: str = "ask",
+    mid_column: str | None = None,
+) -> dict[str, Any]:
+    """
+    Analyze bid-ask spread characteristics.
+
+    Args:
+        data: DataFrame with bid/ask data
+        bid_column: Bid price column
+        ask_column: Ask price column
+        mid_column: Mid price column (optional, will calculate if not provided)
+
+    Returns:
+        Dict with spread analysis
+
+    Example:
+        >>> spread_analysis = analyze_bid_ask_spread(market_data)
+        >>> print(f"Average spread: ${spread_analysis['avg_spread']:.4f}")
+    """
+    required_cols = [bid_column, ask_column]
+    for col in required_cols:
+        if col not in data.columns:
+            raise ValueError(f"Column '{col}' not found in data")
+
+    if data.is_empty():
+        return {"error": "No data provided"}
+
+    try:
+        # Calculate mid price if not provided
+        if mid_column is None:
+            data = data.with_columns(
+                ((pl.col(bid_column) + pl.col(ask_column)) / 2).alias("mid_price")
+            )
+            mid_column = "mid_price"
+
+        # Calculate spread metrics
+        analysis_data = (
+            data.with_columns(
+                [
+                    (pl.col(ask_column) - pl.col(bid_column)).alias("spread"),
+                    (
+                        (pl.col(ask_column) - pl.col(bid_column)) / pl.col(mid_column)
+                    ).alias("relative_spread"),
+                ]
+            )
+            .select(["spread", "relative_spread"])
+            .drop_nulls()
+        )
+
+        if analysis_data.is_empty():
+            return {"error": "No valid spread data"}
+
+        return {
+            "avg_spread": analysis_data.select(pl.col("spread").mean()).item() or 0.0,
+            "median_spread": analysis_data.select(pl.col("spread").median()).item()
+            or 0.0,
+            "min_spread": analysis_data.select(pl.col("spread").min()).item() or 0.0,
+            "max_spread": analysis_data.select(pl.col("spread").max()).item() or 0.0,
+            "avg_relative_spread": analysis_data.select(
+                pl.col("relative_spread").mean()
+            ).item()
+            or 0.0,
+            "spread_volatility": analysis_data.select(pl.col("spread").std()).item()
+            or 0.0,
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def calculate_volume_profile(
+    data: pl.DataFrame,
+    price_column: str = "close",
+    volume_column: str = "volume",
+    num_bins: int = 50,
+) -> dict[str, Any]:
+    """
+    Calculate volume profile analysis.
+
+    Args:
+        data: DataFrame with price and volume data
+        price_column: Price column
+        volume_column: Volume column
+        num_bins: Number of price bins
+
+    Returns:
+        Dict with volume profile analysis
+
+    Example:
+        >>> profile = calculate_volume_profile(ohlcv_data)
+        >>> print(f"Point of Control: ${profile['poc_price']:.2f}")
+    """
+    required_cols = [price_column, volume_column]
+    for col in required_cols:
+        if col not in data.columns:
+            raise ValueError(f"Column '{col}' not found in data")
+
+    if data.is_empty():
+        return {"error": "No data provided"}
+
+    try:
+        # Get price and volume data
+        prices = data.select(pl.col(price_column)).to_series().to_list()
+        volumes = data.select(pl.col(volume_column)).to_series().to_list()
+
+        # Calculate price range
+        min_price = min(prices)
+        max_price = max(prices)
+        price_range = max_price - min_price
+
+        if price_range == 0:
+            return {"error": "No price variation in data"}
+
+        # Create price bins
+        bin_size = price_range / num_bins
+        volume_profile = {}
+
+        for price, volume in zip(prices, volumes, strict=False):
+            bin_index = int((price - min_price) / bin_size)
+            bin_index = min(bin_index, num_bins - 1)  # Ensure within bounds
+            bin_price = min_price + (bin_index * bin_size) + (bin_size / 2)
+
+            if bin_price not in volume_profile:
+                volume_profile[bin_price] = 0
+            volume_profile[bin_price] += volume
+
+        # Find Point of Control (POC) - price level with highest volume
+        poc_price = max(volume_profile, key=lambda x: volume_profile[x])
+        poc_volume = volume_profile[poc_price]
+
+        # Calculate Value Area (70% of volume)
+        total_volume = sum(volume_profile.values())
+        target_volume = total_volume * 0.7
+
+        # Sort by volume to find value area
+        sorted_levels = sorted(volume_profile.items(), key=lambda x: x[1], reverse=True)
+
+        value_area_volume = 0
+        value_area_high = poc_price
+        value_area_low = poc_price
+
+        for price, volume in sorted_levels:
+            value_area_volume += volume
+            value_area_high = max(value_area_high, price)
+            value_area_low = min(value_area_low, price)
+
+            if value_area_volume >= target_volume:
+                break
+
+        return {
+            "poc_price": poc_price,
+            "poc_volume": poc_volume,
+            "value_area_high": value_area_high,
+            "value_area_low": value_area_low,
+            "value_area_volume": value_area_volume,
+            "total_volume": total_volume,
+            "num_price_levels": len(volume_profile),
+            "volume_profile": volume_profile,
+        }
+
+    except Exception as e:
+        return {"error": str(e)}

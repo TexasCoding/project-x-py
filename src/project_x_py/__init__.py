@@ -65,16 +65,33 @@ from .realtime_data_manager import ProjectXRealtimeDataManager
 # Convenience imports for backward compatibility
 from .utils import (
     RateLimiter,
+    # Enhanced data analysis and indicators
+    analyze_bid_ask_spread,
+    calculate_adx,
+    calculate_atr,
     calculate_bollinger_bands,
+    calculate_commodity_channel_index,
+    calculate_correlation_matrix,
     calculate_ema,
+    calculate_macd,
+    calculate_max_drawdown,
+    calculate_portfolio_metrics,
+    calculate_position_sizing,
     calculate_position_value,
     calculate_risk_reward_ratio,
     calculate_rsi,
+    calculate_sharpe_ratio,
     # Technical analysis helpers
     calculate_sma,
+    calculate_stochastic,
     calculate_tick_value,
+    calculate_volatility_metrics,
+    calculate_volume_profile,
+    calculate_williams_r,
     convert_timeframe_to_seconds,
     create_data_snapshot,
+    detect_candlestick_patterns,
+    detect_chart_patterns,
     extract_symbol_from_contract_id,
     find_support_resistance_levels,
     format_price,
@@ -117,13 +134,28 @@ __all__ = [
     "ProjectXServerError",
     "RateLimiter",
     "Trade",
+    # Enhanced technical analysis and trading utilities
+    "analyze_bid_ask_spread",
+    "calculate_adx",
+    "calculate_atr",
     "calculate_bollinger_bands",
+    "calculate_commodity_channel_index",
+    "calculate_correlation_matrix",
     "calculate_ema",
+    "calculate_macd",
+    "calculate_max_drawdown",
+    "calculate_portfolio_metrics",
+    "calculate_position_sizing",
     "calculate_position_value",
     "calculate_risk_reward_ratio",
     "calculate_rsi",
+    "calculate_sharpe_ratio",
     "calculate_sma",
+    "calculate_stochastic",
     "calculate_tick_value",
+    "calculate_volatility_metrics",
+    "calculate_volume_profile",
+    "calculate_williams_r",
     "check_environment",
     "convert_timeframe_to_seconds",
     "create_config_template",
@@ -134,6 +166,8 @@ __all__ = [
     "create_position_manager",
     "create_realtime_client",
     "create_trading_suite",
+    "detect_candlestick_patterns",
+    "detect_chart_patterns",
     "extract_symbol_from_contract_id",
     "find_support_resistance_levels",
     "format_price",
@@ -242,6 +276,7 @@ def create_client(
     username: str | None = None,
     api_key: str | None = None,
     config: ProjectXConfig | None = None,
+    account_name: str | None = None,
 ) -> ProjectX:
     """
     Create a ProjectX client with flexible initialization.
@@ -250,6 +285,7 @@ def create_client(
         username: Username (uses env var if None)
         api_key: API key (uses env var if None)
         config: Configuration object (uses defaults if None)
+        account_name: Optional account name to select specific account
 
     Returns:
         ProjectX client instance
@@ -259,11 +295,15 @@ def create_client(
         >>> client = create_client()
         >>> # Using explicit credentials
         >>> client = create_client("username", "api_key")
+        >>> # Using specific account
+        >>> client = create_client(account_name="Main Trading Account")
     """
     if username is None or api_key is None:
-        return ProjectX.from_env(config=config)
+        return ProjectX.from_env(config=config, account_name=account_name)
     else:
-        return ProjectX(username=username, api_key=api_key, config=config)
+        return ProjectX(
+            username=username, api_key=api_key, config=config, account_name=account_name
+        )
 
 
 def create_realtime_client(

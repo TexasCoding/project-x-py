@@ -7,6 +7,7 @@ This module contains the main ProjectX client class for trading operations.
 import datetime
 import json
 import logging
+import os  # Added for os.getenv
 import time
 from datetime import timedelta
 
@@ -38,7 +39,7 @@ class ProjectX:
 
     This class provides access to core trading functionality including:
     - Market data retrieval
-    - Account management
+    - Account management with multi-account support
     - Instrument search and contract details
     - Position management
     - Authentication and session management
@@ -53,16 +54,23 @@ class ProjectX:
         config (ProjectXConfig): Configuration settings
         api_key (str): API key for authentication
         username (str): Username for authentication
+        account_name (str | None): Optional account name for multi-account selection
         base_url (str): Base URL for the API endpoints
         session_token (str): JWT token for authenticated requests
         headers (dict): HTTP headers for API requests
-        account_info (Account): Default account information
+        account_info (Account): Selected account information
 
     Example:
         >>> # Using environment variables (recommended)
         >>> project_x = ProjectX.from_env()
         >>> # Using explicit credentials
         >>> project_x = ProjectX(username="your_username", api_key="your_api_key")
+        >>> # Selecting specific account by name
+        >>> project_x = ProjectX.from_env(account_name="Main Trading Account")
+        >>> # List available accounts
+        >>> accounts = project_x.list_accounts()
+        >>> for account in accounts:
+        ...     print(f"Account: {account['name']} (ID: {account['id']})")
         >>> # Get market data
         >>> instruments = project_x.search_instruments("MGC")
         >>> data = project_x.get_data("MGC", days=5, interval=15)
@@ -78,6 +86,7 @@ class ProjectX:
         username: str,
         api_key: str,
         config: ProjectXConfig | None = None,
+        account_name: str | None = None,
     ):
         """
         Initialize the ProjectX client.
@@ -86,6 +95,7 @@ class ProjectX:
             username: Username for TopStepX account
             api_key: API key for TopStepX authentication
             config: Optional configuration object (uses defaults if None)
+            account_name: Optional account name to select specific account (uses first if None)
 
         Raises:
             ValueError: If required credentials are missing
@@ -102,6 +112,7 @@ class ProjectX:
         self.config = config
         self.api_key = api_key
         self.username = username
+        self.account_name = account_name  # Store account name for selection
 
         # Set up timezone and URLs from config
         self.timezone = pytz.timezone(config.timezone)
@@ -128,7 +139,9 @@ class ProjectX:
         self.logger = logging.getLogger(__name__)
 
     @classmethod
-    def from_env(cls, config: ProjectXConfig | None = None) -> "ProjectX":
+    def from_env(
+        cls, config: ProjectXConfig | None = None, account_name: str | None = None
+    ) -> "ProjectX":
         """
         Create ProjectX client using environment variables.
 
@@ -136,8 +149,12 @@ class ProjectX:
             PROJECT_X_API_KEY: API key for TopStepX authentication
             PROJECT_X_USERNAME: Username for TopStepX account
 
+        Optional Environment Variables:
+            PROJECT_X_ACCOUNT_NAME: Account name to select specific account
+
         Args:
             config: Optional configuration object
+            account_name: Optional account name (overrides environment variable)
 
         Returns:
             ProjectX client instance
@@ -149,24 +166,35 @@ class ProjectX:
             >>> import os
             >>> os.environ["PROJECT_X_API_KEY"] = "your_api_key_here"
             >>> os.environ["PROJECT_X_USERNAME"] = "your_username_here"
+            >>> os.environ["PROJECT_X_ACCOUNT_NAME"] = (
+            ...     "Main Trading Account"  # Optional
+            ... )
             >>> project_x = ProjectX.from_env()
         """
         config_manager = ConfigManager()
         auth_config = config_manager.get_auth_config()
 
+        # Use provided account_name or try to get from environment
+        if account_name is None:
+            account_name = os.getenv("PROJECT_X_ACCOUNT_NAME")
+
         return cls(
             username=auth_config["username"],
             api_key=auth_config["api_key"],
             config=config,
+            account_name=account_name,
         )
 
     @classmethod
-    def from_config_file(cls, config_file: str) -> "ProjectX":
+    def from_config_file(
+        cls, config_file: str, account_name: str | None = None
+    ) -> "ProjectX":
         """
         Create ProjectX client using a configuration file.
 
         Args:
             config_file: Path to configuration file
+            account_name: Optional account name to select specific account
 
         Returns:
             ProjectX client instance
@@ -179,6 +207,7 @@ class ProjectX:
             username=auth_config["username"],
             api_key=auth_config["api_key"],
             config=config,
+            account_name=account_name,
         )
 
     def _ensure_authenticated(self):
@@ -357,8 +386,63 @@ class ProjectX:
             if not accounts:
                 return None
 
+            # If account_name is provided, find the specific account by name
+            if self.account_name:
+                for account in accounts:
+                    if account.get("name") == self.account_name:
+                        self.account_info = Account(**account)
+                        return self.account_info
+                self.logger.warning(
+                    f"Account with name '{self.account_name}' not found."
+                )
+                return None
+
+            # Otherwise, take the first active account
             self.account_info = Account(**accounts[0])
             return self.account_info
+
+        except requests.RequestException as e:
+            raise ProjectXConnectionError(f"Account search request failed: {e}") from e
+        except (KeyError, json.JSONDecodeError, TypeError) as e:
+            self.logger.error(f"Invalid account response: {e}")
+            raise ProjectXDataError(f"Invalid account response: {e}") from e
+
+    def list_accounts(self) -> list[dict]:
+        """
+        List all available accounts for the authenticated user.
+
+        Returns:
+            List[dict]: List of all available accounts with their details
+
+        Raises:
+            ProjectXError: If not authenticated or API request fails
+
+        Example:
+            >>> accounts = project_x.list_accounts()
+            >>> for account in accounts:
+            ...     print(f"Account: {account['name']} (ID: {account['id']})")
+            ...     print(f"  Balance: ${account.get('balance', 0):.2f}")
+            ...     print(f"  Can Trade: {account.get('canTrade', False)}")
+        """
+        self._ensure_authenticated()
+
+        url = f"{self.base_url}/Account/search"
+        payload = {"onlyActiveAccounts": True}
+
+        try:
+            response = requests.post(
+                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
+            )
+            self._handle_response_errors(response)
+
+            data = response.json()
+            if not data.get("success", False):
+                error_msg = data.get("errorMessage", "Unknown error")
+                self.logger.error(f"Account search failed: {error_msg}")
+                raise ProjectXError(f"Account search failed: {error_msg}")
+
+            accounts = data.get("accounts", [])
+            return accounts
 
         except requests.RequestException as e:
             raise ProjectXConnectionError(f"Account search request failed: {e}") from e
@@ -655,6 +739,485 @@ class ProjectX:
         except (KeyError, json.JSONDecodeError, TypeError) as e:
             self.logger.error(f"Invalid position search response: {e}")
             raise ProjectXDataError(f"Invalid position search response: {e}") from e
+
+    # ================================================================================
+    # ENHANCED API COVERAGE - COMPREHENSIVE ENDPOINT ACCESS
+    # ================================================================================
+
+    def search_trades(
+        self,
+        start_date: datetime.datetime | None = None,
+        end_date: datetime.datetime | None = None,
+        contract_id: str | None = None,
+        account_id: int | None = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        """
+        Search trade execution history.
+
+        Args:
+            start_date: Start date for trade search (default: 30 days ago)
+            end_date: End date for trade search (default: now)
+            contract_id: Optional contract ID filter
+            account_id: Account ID to search. Uses default account if None.
+            limit: Maximum number of trades to return
+
+        Returns:
+            List[dict]: List of executed trades with details
+
+        Example:
+            >>> from datetime import datetime, timedelta
+            >>> start = datetime.now() - timedelta(days=7)
+            >>> trades = project_x.search_trades(start_date=start)
+            >>> for trade in trades:
+            ...     print(
+            ...         f"Trade: {trade['contractId']} - {trade['size']} @ ${trade['price']}"
+            ...     )
+        """
+        self._ensure_authenticated()
+
+        if account_id is None:
+            if not self.account_info:
+                self.get_account_info()
+            if not self.account_info:
+                raise ProjectXError("No account information available")
+            account_id = self.account_info.id
+
+        # Default date range if not provided
+        if start_date is None:
+            start_date = datetime.datetime.now(self.timezone) - timedelta(days=30)
+        if end_date is None:
+            end_date = datetime.datetime.now(self.timezone)
+
+        url = f"{self.base_url}/Trade/search"
+        payload = {
+            "accountId": account_id,
+            "startTime": start_date.isoformat(),
+            "endTime": end_date.isoformat(),
+            "limit": limit,
+        }
+
+        if contract_id:
+            payload["contractId"] = contract_id
+
+        try:
+            response = requests.post(
+                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
+            )
+            self._handle_response_errors(response)
+
+            data = response.json()
+            if not data.get("success", False):
+                error_msg = data.get("errorMessage", "Unknown error")
+                self.logger.error(f"Trade search failed: {error_msg}")
+                raise ProjectXDataError(f"Trade search failed: {error_msg}")
+
+            return data.get("trades", [])
+
+        except requests.RequestException as e:
+            raise ProjectXConnectionError(f"Trade search request failed: {e}") from e
+        except (KeyError, json.JSONDecodeError, TypeError) as e:
+            self.logger.error(f"Invalid trade search response: {e}")
+            raise ProjectXDataError(f"Invalid trade search response: {e}") from e
+
+    def search_position_history(
+        self,
+        start_date: datetime.datetime | None = None,
+        end_date: datetime.datetime | None = None,
+        contract_id: str | None = None,
+        account_id: int | None = None,
+        include_closed: bool = True,
+        limit: int = 100,
+    ) -> list[dict]:
+        """
+        Search position history including closed positions.
+
+        Args:
+            start_date: Start date for position search (default: 30 days ago)
+            end_date: End date for position search (default: now)
+            contract_id: Optional contract ID filter
+            account_id: Account ID to search. Uses default account if None.
+            include_closed: Whether to include closed positions
+            limit: Maximum number of positions to return
+
+        Returns:
+            List[dict]: List of position history with details
+
+        Example:
+            >>> positions = project_x.search_position_history(include_closed=True)
+            >>> for pos in positions:
+            ...     if pos.get("status") == "closed":
+            ...         print(
+            ...             f"Closed: {pos['contractId']} - P&L: ${pos.get('realizedPnl', 0)}"
+            ...         )
+        """
+        self._ensure_authenticated()
+
+        if account_id is None:
+            if not self.account_info:
+                self.get_account_info()
+            if not self.account_info:
+                raise ProjectXError("No account information available")
+            account_id = self.account_info.id
+
+        # Default date range if not provided
+        if start_date is None:
+            start_date = datetime.datetime.now(self.timezone) - timedelta(days=30)
+        if end_date is None:
+            end_date = datetime.datetime.now(self.timezone)
+
+        url = f"{self.base_url}/Position/search"
+        payload = {
+            "accountId": account_id,
+            "startTime": start_date.isoformat(),
+            "endTime": end_date.isoformat(),
+            "includeClosed": include_closed,
+            "limit": limit,
+        }
+
+        if contract_id:
+            payload["contractId"] = contract_id
+
+        try:
+            response = requests.post(
+                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
+            )
+            self._handle_response_errors(response)
+
+            data = response.json()
+            if not data.get("success", False):
+                error_msg = data.get("errorMessage", "Unknown error")
+                self.logger.error(f"Position history search failed: {error_msg}")
+                raise ProjectXDataError(f"Position history search failed: {error_msg}")
+
+            return data.get("positions", [])
+
+        except requests.RequestException as e:
+            raise ProjectXConnectionError(
+                f"Position history request failed: {e}"
+            ) from e
+        except (KeyError, json.JSONDecodeError, TypeError) as e:
+            self.logger.error(f"Invalid position history response: {e}")
+            raise ProjectXDataError(f"Invalid position history response: {e}") from e
+
+    def get_account_performance(
+        self,
+        start_date: datetime.datetime | None = None,
+        end_date: datetime.datetime | None = None,
+        account_id: int | None = None,
+    ) -> dict:
+        """
+        Get account performance metrics.
+
+        Args:
+            start_date: Start date for performance calculation (default: 30 days ago)
+            end_date: End date for performance calculation (default: now)
+            account_id: Account ID. Uses default account if None.
+
+        Returns:
+            dict: Performance metrics including P&L, win rate, etc.
+
+        Example:
+            >>> perf = project_x.get_account_performance()
+            >>> print(f"Total P&L: ${perf.get('totalPnl', 0):.2f}")
+            >>> print(f"Win Rate: {perf.get('winRate', 0) * 100:.1f}%")
+        """
+        self._ensure_authenticated()
+
+        if account_id is None:
+            if not self.account_info:
+                self.get_account_info()
+            if not self.account_info:
+                raise ProjectXError("No account information available")
+            account_id = self.account_info.id
+
+        # Default date range if not provided
+        if start_date is None:
+            start_date = datetime.datetime.now(self.timezone) - timedelta(days=30)
+        if end_date is None:
+            end_date = datetime.datetime.now(self.timezone)
+
+        url = f"{self.base_url}/Account/performance"
+        payload = {
+            "accountId": account_id,
+            "startTime": start_date.isoformat(),
+            "endTime": end_date.isoformat(),
+        }
+
+        try:
+            response = requests.post(
+                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
+            )
+            self._handle_response_errors(response)
+
+            data = response.json()
+            if not data.get("success", False):
+                error_msg = data.get("errorMessage", "Unknown error")
+                self.logger.error(f"Performance retrieval failed: {error_msg}")
+                # Return empty performance data instead of failing
+                return {
+                    "totalPnl": 0.0,
+                    "winRate": 0.0,
+                    "totalTrades": 0,
+                    "avgWin": 0.0,
+                    "avgLoss": 0.0,
+                    "profitFactor": 0.0,
+                    "maxDrawdown": 0.0,
+                }
+
+            return data.get("performance", {})
+
+        except requests.RequestException as e:
+            self.logger.warning(f"Performance request failed: {e}")
+            return {"error": str(e)}
+        except (KeyError, json.JSONDecodeError, TypeError) as e:
+            self.logger.warning(f"Invalid performance response: {e}")
+            return {"error": str(e)}
+
+    def get_account_settings(self, account_id: int | None = None) -> dict:
+        """
+        Get account settings and configuration.
+
+        Args:
+            account_id: Account ID. Uses default account if None.
+
+        Returns:
+            dict: Account settings and configuration
+
+        Example:
+            >>> settings = project_x.get_account_settings()
+            >>> print(f"Risk Limit: ${settings.get('riskLimit', 0)}")
+            >>> print(f"Max Position Size: {settings.get('maxPositionSize', 0)}")
+        """
+        self._ensure_authenticated()
+
+        if account_id is None:
+            if not self.account_info:
+                self.get_account_info()
+            if not self.account_info:
+                raise ProjectXError("No account information available")
+            account_id = self.account_info.id
+
+        url = f"{self.base_url}/Account/settings"
+        payload = {"accountId": account_id}
+
+        try:
+            response = requests.post(
+                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
+            )
+            self._handle_response_errors(response)
+
+            data = response.json()
+            if not data.get("success", False):
+                error_msg = data.get("errorMessage", "Unknown error")
+                self.logger.warning(f"Settings retrieval failed: {error_msg}")
+                return {"error": error_msg}
+
+            return data.get("settings", {})
+
+        except requests.RequestException as e:
+            self.logger.warning(f"Settings request failed: {e}")
+            return {"error": str(e)}
+        except (KeyError, json.JSONDecodeError, TypeError) as e:
+            self.logger.warning(f"Invalid settings response: {e}")
+            return {"error": str(e)}
+
+    def get_risk_metrics(self, account_id: int | None = None) -> dict:
+        """
+        Get risk management metrics and limits.
+
+        Args:
+            account_id: Account ID. Uses default account if None.
+
+        Returns:
+            dict: Risk metrics including limits and current exposure
+
+        Example:
+            >>> risk = project_x.get_risk_metrics()
+            >>> print(f"Current Risk: ${risk.get('currentRisk', 0):.2f}")
+            >>> print(f"Risk Limit: ${risk.get('riskLimit', 0):.2f}")
+        """
+        self._ensure_authenticated()
+
+        if account_id is None:
+            if not self.account_info:
+                self.get_account_info()
+            if not self.account_info:
+                raise ProjectXError("No account information available")
+            account_id = self.account_info.id
+
+        url = f"{self.base_url}/Risk/metrics"
+        payload = {"accountId": account_id}
+
+        try:
+            response = requests.post(
+                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
+            )
+            self._handle_response_errors(response)
+
+            data = response.json()
+            if not data.get("success", False):
+                error_msg = data.get("errorMessage", "Unknown error")
+                self.logger.warning(f"Risk metrics retrieval failed: {error_msg}")
+                return {"error": error_msg}
+
+            return data.get("risk", {})
+
+        except requests.RequestException as e:
+            self.logger.warning(f"Risk metrics request failed: {e}")
+            return {"error": str(e)}
+        except (KeyError, json.JSONDecodeError, TypeError) as e:
+            self.logger.warning(f"Invalid risk metrics response: {e}")
+            return {"error": str(e)}
+
+    def get_account_statements(
+        self,
+        start_date: datetime.datetime | None = None,
+        end_date: datetime.datetime | None = None,
+        account_id: int | None = None,
+        statement_type: str = "daily",
+    ) -> list[dict]:
+        """
+        Get account statements for a date range.
+
+        Args:
+            start_date: Start date for statements (default: 30 days ago)
+            end_date: End date for statements (default: now)
+            account_id: Account ID. Uses default account if None.
+            statement_type: Type of statement ("daily", "monthly", "trade")
+
+        Returns:
+            List[dict]: List of account statements
+
+        Example:
+            >>> statements = project_x.get_account_statements()
+            >>> for stmt in statements:
+            ...     print(f"Date: {stmt['date']} - Balance: ${stmt.get('balance', 0)}")
+        """
+        self._ensure_authenticated()
+
+        if account_id is None:
+            if not self.account_info:
+                self.get_account_info()
+            if not self.account_info:
+                raise ProjectXError("No account information available")
+            account_id = self.account_info.id
+
+        # Default date range if not provided
+        if start_date is None:
+            start_date = datetime.datetime.now(self.timezone) - timedelta(days=30)
+        if end_date is None:
+            end_date = datetime.datetime.now(self.timezone)
+
+        url = f"{self.base_url}/Account/statements"
+        payload = {
+            "accountId": account_id,
+            "startTime": start_date.isoformat(),
+            "endTime": end_date.isoformat(),
+            "type": statement_type,
+        }
+
+        try:
+            response = requests.post(
+                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
+            )
+            self._handle_response_errors(response)
+
+            data = response.json()
+            if not data.get("success", False):
+                error_msg = data.get("errorMessage", "Unknown error")
+                self.logger.warning(f"Statements retrieval failed: {error_msg}")
+                return []
+
+            return data.get("statements", [])
+
+        except requests.RequestException as e:
+            self.logger.warning(f"Statements request failed: {e}")
+            return []
+        except (KeyError, json.JSONDecodeError, TypeError) as e:
+            self.logger.warning(f"Invalid statements response: {e}")
+            return []
+
+    def get_tick_data(
+        self,
+        instrument: str,
+        start_time: datetime.datetime | None = None,
+        end_time: datetime.datetime | None = None,
+        limit: int = 1000,
+    ) -> pl.DataFrame | None:
+        """
+        Retrieve tick-level market data for an instrument.
+
+        Args:
+            instrument: Symbol of the instrument (e.g., "MGC", "MNQ")
+            start_time: Start time for tick data (default: 1 hour ago)
+            end_time: End time for tick data (default: now)
+            limit: Maximum number of ticks to retrieve
+
+        Returns:
+            pl.DataFrame: DataFrame with tick data (timestamp, price, volume, side)
+            None: If no data is available
+
+        Example:
+            >>> ticks = project_x.get_tick_data("MGC", limit=500)
+            >>> print(f"Retrieved {len(ticks)} ticks")
+        """
+        self._ensure_authenticated()
+
+        # Get instrument details
+        instrument_obj = self.get_instrument(instrument)
+        if not instrument_obj:
+            raise ProjectXInstrumentError(f"Instrument '{instrument}' not found")
+
+        # Default time range if not provided
+        if start_time is None:
+            start_time = datetime.datetime.now(self.timezone) - timedelta(hours=1)
+        if end_time is None:
+            end_time = datetime.datetime.now(self.timezone)
+
+        url = f"{self.base_url}/History/retrieveTicks"
+        payload = {
+            "contractId": instrument_obj.id,
+            "startTime": start_time.isoformat(),
+            "endTime": end_time.isoformat(),
+            "limit": limit,
+        }
+
+        try:
+            response = requests.post(
+                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
+            )
+            self._handle_response_errors(response)
+
+            data = response.json()
+            if not data.get("success", False):
+                error_msg = data.get("errorMessage", "Unknown error")
+                self.logger.warning(f"Tick data retrieval failed: {error_msg}")
+                return None
+
+            ticks = data.get("ticks", [])
+            if not ticks:
+                return None
+
+            # Create DataFrame with polars
+            df = pl.from_dicts(ticks).sort("timestamp")
+
+            # Convert timestamp to datetime and handle timezone properly
+            df = df.with_columns(
+                pl.col("timestamp")
+                .str.to_datetime()
+                .dt.replace_time_zone("UTC")
+                .dt.convert_time_zone(str(self.timezone.zone))
+            )
+
+            return df
+
+        except requests.RequestException as e:
+            self.logger.warning(f"Tick data request failed: {e}")
+            return None
+        except (KeyError, json.JSONDecodeError, ValueError) as e:
+            self.logger.warning(f"Invalid tick data response: {e}")
+            return None
 
     # Additional convenience methods can be added here as needed
     def get_health_status(self) -> dict:
