@@ -8,7 +8,7 @@ A **professional Python client** for the TopStepX ProjectX Gateway API, designed
 
 ## 📊 Project Status
 
-**Current Version**: v0.2.0 (Active Development)
+**Current Version**: v1.0.0+ (Active Development)
 
 ✅ **Production Ready**:
 - Complete futures trading API integration (orders, positions, trades)
@@ -22,7 +22,7 @@ A **professional Python client** for the TopStepX ProjectX Gateway API, designed
 - **🧊 Institutional-Grade Level 2 Orderbook & Market Microstructure Analysis**
 - **📈 Advanced Portfolio and Risk Analysis Tools**
 
-🔮 **Planned Features** (v0.3.0+):
+🔮 **Planned Features** (v2.0.0+):
 - Machine learning integration for pattern recognition
 - Advanced backtesting engine with tick-level data
 - Professional trading strategy framework
@@ -655,7 +655,7 @@ This software is for educational and research purposes. Trading futures involves
 
 ## 🔮 Development Roadmap
 
-### ✅ Completed (v0.2.0 - Current)
+### ✅ Completed (v1.0.0+ - Current)
 - [x] **Core Trading API** - Complete order management (market, limit, stop, bracket orders)
 - [x] **Account Management** - Balance monitoring, permissions, account details
 - [x] **Historical Market Data** - OHLCV data with multiple timeframes (1min to 1day)
@@ -674,14 +674,14 @@ This software is for educational and research purposes. Trading futures involves
 - [x] **Professional Architecture** - Type safety, error handling, configuration management
 - [x] **Comprehensive Documentation** - Full API docs, examples, and guides
 
-### 🚧 In Active Development (v0.3.0 - Target: Q2 2025)
+### 🚧 In Active Development (v2.0.0+ - Target: Q2 2025)
 - [ ] **Machine Learning Integration** - Pattern recognition and predictive analytics
 - [ ] **Advanced Backtesting Engine** - Historical testing with tick-level precision
 - [ ] **Strategy Development Framework** - Built-in tools for systematic trading
 - [ ] **Production Market Microstructure** - Real-time institutional-grade analysis
 - [ ] **Advanced Portfolio Management** - Multi-asset correlation and risk monitoring
 
-### 📋 Planned Features (v0.4.0+)
+### 📋 Planned Features (v3.0.0+)
 - [ ] **Cloud-Based Data Pipeline** - Scalable data processing infrastructure
 - [ ] **Professional Dashboard** - Web-based interface for monitoring and analysis
 - [ ] **Custom Indicator Framework** - User-defined technical indicators
@@ -689,9 +689,9 @@ This software is for educational and research purposes. Trading futures involves
 - [ ] **Mobile Application** - iOS/Android app for portfolio monitoring
 
 ### 📊 Release Timeline
-- **v0.2.x** (Current) - Technical indicators and analytics library (Complete)
-- **v0.3.0** (Q2 2025) - Machine learning integration and strategy framework
-- **v0.4.0** (Q4 2025) - Advanced backtesting and production microstructure
+- **v1.0.0** (Current) - Technical indicators and analytics library (Complete)
+- **v2.0.0** (Q2 2025) - Machine learning integration and strategy framework
+- **v3.0.0** (Q4 2025) - Advanced backtesting and production microstructure
 - **v1.0.0** (2026) - Production-ready institutional platform
 
 ### 🏗️ Contributing to Development

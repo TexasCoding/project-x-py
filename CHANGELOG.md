@@ -5,6 +5,88 @@ All notable changes to the ProjectX Python client will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-01-29
+
+### Added
+- **🎯 Comprehensive Technical Indicators Library**: Complete TA-Lib compatible indicator suite
+  - **25+ Technical Indicators**: All major categories covered
+  - **Overlap Studies**: SMA, EMA, BBANDS, DEMA, TEMA, WMA, MIDPOINT
+  - **Momentum Indicators**: RSI, MACD, STOCH, WILLR, CCI, ROC, MOM, STOCHRSI
+  - **Volatility Indicators**: ATR, ADX, NATR, TRANGE, ULTOSC
+  - **Volume Indicators**: OBV, VWAP, AD, ADOSC
+  - **Dual Interface**: Class-based and function-based (TA-Lib style) usage
+  - **Polars-Native**: Built specifically for Polars DataFrames
+  - **Discovery Tools**: `get_all_indicators()`, `get_indicator_groups()`, `get_indicator_info()`
+- **📊 Level 2 Orderbook & Market Microstructure Analysis** (Production Ready):
+  - **Institutional-Grade Orderbook Processing**: Full market depth analysis
+  - **Iceberg Detection**: Hidden order identification with statistical confidence
+  - **Order Flow Analysis**: Buy/sell pressure detection and trade flow metrics
+  - **Volume Profile**: Point of Control and Value Area calculations
+  - **Market Imbalance**: Real-time imbalance detection and alerts
+  - **Support/Resistance**: Dynamic level identification from order flow
+  - **Liquidity Analysis**: Significant price level detection
+  - **Cumulative Delta**: Net buying/selling pressure tracking
+  - **Order Clustering**: Price level grouping and institutional flow detection
+- **📈 Enhanced Portfolio & Risk Analysis**:
+  - Portfolio performance metrics with Sharpe ratio and max drawdown
+  - Advanced position sizing algorithms
+  - Risk/reward ratio calculations
+  - Volatility metrics and statistical analysis
+- **🔧 Base Indicator Framework**:
+  - `BaseIndicator`, `OverlapIndicator`, `MomentumIndicator`, `VolatilityIndicator`, `VolumeIndicator`
+  - Consistent validation and error handling across all indicators
+  - Utility functions: `ema_alpha()`, `safe_division()`, rolling calculations
+
+### Enhanced
+- **📚 Comprehensive Documentation**: Updated README with accurate feature representation
+  - Complete technical indicators reference with examples
+  - Level 2 orderbook usage examples
+  - Multi-timeframe analysis strategies
+  - Portfolio management and risk analysis guides
+- **🎨 Code Quality**: Professional indicator implementations
+  - Full type hints throughout indicator library
+  - Consistent error handling and validation
+  - Memory-efficient Polars operations
+  - Clean separation of concerns
+
+### Fixed
+- **🔧 GitHub Actions**: Updated deprecated artifact actions from v3 to v4
+  - `actions/upload-artifact@v3` → `actions/upload-artifact@v4`
+  - `actions/download-artifact@v3` → `actions/download-artifact@v4`
+- **📝 Documentation**: Corrected feature status in README
+  - Level 2 orderbook marked as production-ready (not development)
+  - Market microstructure analysis properly categorized
+  - Accurate representation of implemented vs planned features
+
+### Dependencies
+- **Core**: No new required dependencies
+- **Existing**: Compatible with current Polars, pytz, requests versions
+- **Optional**: All existing optional dependencies remain the same
+
+### Migration from v0.2.0
+```python
+# New technical indicators usage
+from project_x_py.indicators import RSI, SMA, MACD, BBANDS
+
+# Class-based interface
+rsi = RSI()
+data_with_rsi = rsi.calculate(data, period=14)
+
+# TA-Lib style functions
+data = RSI(data, period=14)
+data = SMA(data, period=20)
+data = BBANDS(data, period=20, std_dev=2.0)
+
+# Level 2 orderbook analysis
+from project_x_py import OrderBook
+orderbook = OrderBook("MGC")
+advanced_metrics = orderbook.get_advanced_market_metrics()
+
+# Discover available indicators
+from project_x_py.indicators import get_all_indicators, get_indicator_groups
+print("Available indicators:", get_all_indicators())
+```
+
 ## [0.2.0] - 2025-01-28
 
 ### Added
