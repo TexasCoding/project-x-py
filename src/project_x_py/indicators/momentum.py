@@ -13,8 +13,6 @@ import polars as pl
 from .base import (
     MomentumIndicator,
     ema_alpha,
-    rolling_sum_negative,
-    rolling_sum_positive,
     safe_division,
 )
 

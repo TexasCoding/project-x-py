@@ -173,7 +173,6 @@ __all__ = [
     "detect_candlestick_patterns",
     "detect_chart_patterns",
     "extract_symbol_from_contract_id",
-    "find_support_resistance_levels",
     "format_price",
     "format_volume",
     "get_env_var",

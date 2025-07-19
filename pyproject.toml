@@ -162,6 +162,7 @@ unfixable = []
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.per-file-ignores]
+"src/project_x_py/indicators/__init__.py" = ["N802"]  # Allow uppercase function names for TA-Lib style compatibility
 "tests/**/*" = ["S101", "PLR2004", "PLR0913", "PLR0915"]
 "__init__.py" = ["F401"]
 
@@ -266,9 +267,9 @@ dev = [
     "mypy>=1.0.0",
     "black>=23.0.0",
     "isort>=5.12.0",
-    "pre-commit>=4.2.0",
     "pytest-asyncio>=1.1.0",
     "pytest-mock>=3.14.1",
+    "pre-commit>=4.2.0",
 ]
 test = [
     "pytest>=8.4.1",

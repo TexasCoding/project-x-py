@@ -8,15 +8,12 @@ Base classes and common functionality for technical indicators.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any
 
 import polars as pl
 
 
 class IndicatorError(Exception):
     """Custom exception for indicator calculation errors."""
-
-    pass
 
 
 class BaseIndicator(ABC):
@@ -101,7 +98,6 @@ class BaseIndicator(ABC):
         Returns:
             DataFrame with indicator columns added
         """
-        pass
 
     def __call__(self, data: pl.DataFrame, **kwargs) -> pl.DataFrame:
         """

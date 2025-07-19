@@ -307,7 +307,10 @@ class WMA(OverlapIndicator):
                 return None
             recent_values = values[-period:]
             return (
-                sum(val * weight for val, weight in zip(recent_values, weights))
+                sum(
+                    val * weight
+                    for val, weight in zip(recent_values, weights, strict=False)
+                )
                 / weight_sum
             )
 

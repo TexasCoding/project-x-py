@@ -10,7 +10,7 @@ helping traders understand market volatility and potential breakouts.
 
 import polars as pl
 
-from .base import VolatilityIndicator, ema_alpha, safe_division
+from .base import VolatilityIndicator, safe_division
 
 
 class ATR(VolatilityIndicator):
