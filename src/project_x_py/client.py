@@ -1,7 +1,17 @@
 """
 ProjectX API Client
 
+Author: TexasCoding
+Date: June 2025
+
 This module contains the main ProjectX client class for trading operations.
+It provides a comprehensive interface for interacting with the ProjectX API,
+including authentication, account management, market data retrieval, and order
+management.
+
+The client handles authentication, error management, and provides both
+low-level API access and high-level convenience methods.
+
 """
 
 import datetime

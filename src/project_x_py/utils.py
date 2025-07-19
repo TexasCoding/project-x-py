@@ -1,6 +1,9 @@
 """
 ProjectX Utility Functions
 
+Author: TexasCoding
+Date: June 2025
+
 This module contains utility functions used throughout the ProjectX client.
 """
 

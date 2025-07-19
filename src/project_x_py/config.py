@@ -1,8 +1,12 @@
 """
 ProjectX Configuration Management
 
+Author: TexasCoding
+Date: June 2025
+
 This module handles configuration for the ProjectX client, including
 environment variables, config files, and default settings.
+
 """
 
 import json

@@ -1,7 +1,11 @@
 """
 ProjectX Custom Exceptions
 
+Author: TexasCoding
+Date: June 2025
+
 This module defines custom exception classes for the ProjectX API client.
+
 """
 
 

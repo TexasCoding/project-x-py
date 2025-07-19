@@ -1,6 +1,9 @@
 """
 ProjectX Data Models
 
+Author: TexasCoding
+Date: June 2025
+
 This module contains all data model classes for the ProjectX API client.
 """
 
