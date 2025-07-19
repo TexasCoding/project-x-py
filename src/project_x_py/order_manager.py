@@ -446,6 +446,87 @@ class OrderManager:
     # BRACKET ORDER METHODS
     # ================================================================================
 
+    def _prepare_bracket_prices(
+        self,
+        entry_price: float,
+        stop_loss_price: float,
+        take_profit_price: float,
+        contract_id: str,
+        side: int,
+    ) -> tuple[float, float, float]:
+        aligned_entry = self._align_price_to_tick_size(entry_price, contract_id)
+        aligned_stop = self._align_price_to_tick_size(stop_loss_price, contract_id)
+        aligned_target = self._align_price_to_tick_size(take_profit_price, contract_id)
+
+        if aligned_entry is None or aligned_stop is None or aligned_target is None:
+            raise ProjectXOrderError("Invalid bracket order prices")
+
+        self._validate_bracket_prices(side, aligned_entry, aligned_stop, aligned_target)
+        return aligned_entry, aligned_stop, aligned_target
+
+    def _place_entry_order(
+        self,
+        contract_id: str,
+        side: int,
+        size: int,
+        entry_type: str,
+        aligned_entry: float,
+        custom_tag: str | None,
+        account_id: int | None,
+    ) -> OrderPlaceResponse:
+        entry_order_type = 1 if entry_type == "limit" else 2
+        return self.place_order(
+            contract_id=contract_id,
+            order_type=entry_order_type,
+            side=side,
+            size=size,
+            limit_price=aligned_entry if entry_type == "limit" else None,
+            custom_tag=f"{custom_tag}_entry" if custom_tag else "bracket_entry",
+            account_id=account_id,
+        )
+
+    def _place_stop_order(
+        self,
+        contract_id: str,
+        stop_side: int,
+        size: int,
+        aligned_stop: float,
+        entry_response: OrderPlaceResponse,
+        custom_tag: str | None,
+        account_id: int | None,
+    ) -> OrderPlaceResponse:
+        return self.place_order(
+            contract_id=contract_id,
+            order_type=4,
+            side=stop_side,
+            size=size,
+            stop_price=aligned_stop,
+            linked_order_id=entry_response.orderId,
+            custom_tag=f"{custom_tag}_stop" if custom_tag else "bracket_stop",
+            account_id=account_id,
+        )
+
+    def _place_target_order(
+        self,
+        contract_id: str,
+        stop_side: int,
+        size: int,
+        aligned_target: float,
+        entry_response: OrderPlaceResponse,
+        custom_tag: str | None,
+        account_id: int | None,
+    ) -> OrderPlaceResponse:
+        return self.place_order(
+            contract_id=contract_id,
+            order_type=1,
+            side=stop_side,
+            size=size,
+            limit_price=aligned_target,
+            linked_order_id=entry_response.orderId,
+            custom_tag=f"{custom_tag}_target" if custom_tag else "bracket_target",
+            account_id=account_id,
+        )
+
     def place_bracket_order(
         self,
         contract_id: str,
@@ -492,31 +573,18 @@ class OrderManager:
             ... )
         """
         try:
-            # Align all prices to tick size
-            aligned_entry = self._align_price_to_tick_size(entry_price, contract_id)
-            aligned_stop = self._align_price_to_tick_size(stop_loss_price, contract_id)
-            aligned_target = self._align_price_to_tick_size(
-                take_profit_price, contract_id
+            aligned_entry, aligned_stop, aligned_target = self._prepare_bracket_prices(
+                entry_price, stop_loss_price, take_profit_price, contract_id, side
             )
 
-            if aligned_entry is None or aligned_stop is None or aligned_target is None:
-                raise ProjectXOrderError("Invalid bracket order prices")
-
-            # Validate bracket order logic
-            self._validate_bracket_prices(
-                side, aligned_entry, aligned_stop, aligned_target
-            )
-
-            # Place entry order
-            entry_order_type = 1 if entry_type == "limit" else 2  # Limit or Market
-            entry_response = self.place_order(
-                contract_id=contract_id,
-                order_type=entry_order_type,
-                side=side,
-                size=size,
-                limit_price=aligned_entry if entry_type == "limit" else None,
-                custom_tag=f"{custom_tag}_entry" if custom_tag else "bracket_entry",
-                account_id=account_id,
+            entry_response = self._place_entry_order(
+                contract_id,
+                side,
+                size,
+                entry_type,
+                aligned_entry,
+                custom_tag,
+                account_id,
             )
 
             if not entry_response.success:
@@ -534,34 +602,26 @@ class OrderManager:
                     error_message=f"Entry order failed: {entry_response}",
                 )
 
-            # Place stop loss order (opposite side, stop order)
-            stop_side = 1 - side  # Opposite side
-            stop_response = self.place_order(
-                contract_id=contract_id,
-                order_type=4,  # Stop order
-                side=stop_side,
-                size=size,
-                stop_price=aligned_stop,
-                linked_order_id=entry_response.orderId,
-                custom_tag=f"{custom_tag}_stop" if custom_tag else "bracket_stop",
-                account_id=account_id,
+            stop_side = 1 - side
+            stop_response = self._place_stop_order(
+                contract_id,
+                stop_side,
+                size,
+                aligned_stop,
+                entry_response,
+                custom_tag,
+                account_id,
             )
 
-            # Place take profit order (opposite side, limit order)
-            target_response = self.place_order(
-                contract_id=contract_id,
-                order_type=1,  # Limit order
-                side=stop_side,  # Same as stop (opposite of entry)
-                size=size,
-                limit_price=aligned_target,
-                linked_order_id=entry_response.orderId,
-                custom_tag=f"{custom_tag}_target" if custom_tag else "bracket_target",
-                account_id=account_id,
+            target_response = self._place_target_order(
+                contract_id,
+                stop_side,
+                size,
+                aligned_target,
+                entry_response,
+                custom_tag,
+                account_id,
             )
-
-            # Update statistics
-            with self.order_lock:
-                self.stats["bracket_orders_placed"] += 1
 
             bracket_success = (
                 entry_response.success
@@ -593,6 +653,8 @@ class OrderManager:
                 self.logger.info(
                     f"✅ Bracket order placed successfully: Entry={entry_response.orderId}, Stop={stop_response.orderId}, Target={target_response.orderId}"
                 )
+                with self.order_lock:
+                    self.stats["bracket_orders_placed"] += 1
             else:
                 self.logger.warning("⚠️ Partial bracket order failure")
 

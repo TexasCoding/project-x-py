@@ -153,7 +153,7 @@ class ConfigManager:
             Dictionary with authentication settings
 
         Raises:
-            ValueError: If required authentication variables are missing
+            ValueError: If required authentication variables are missing or invalid
         """
         api_key = get_env_var("PROJECT_X_API_KEY", required=True)
         username = get_env_var("PROJECT_X_USERNAME", required=True)
@@ -162,6 +162,11 @@ class ConfigManager:
             raise ValueError("PROJECT_X_API_KEY environment variable is required")
         if not username:
             raise ValueError("PROJECT_X_USERNAME environment variable is required")
+
+        if not isinstance(api_key, str) or len(api_key) < 10:
+            raise ValueError(
+                "Invalid PROJECT_X_API_KEY format - must be a string longer than 10 characters"
+            )
 
         return {"api_key": api_key, "username": username}
 

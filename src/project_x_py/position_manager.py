@@ -28,10 +28,10 @@ Architecture:
 - Event-driven position updates
 """
 
+import asyncio
 import json
 import logging
 import threading
-import time
 from collections import defaultdict
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
@@ -666,6 +666,16 @@ class PositionManager:
                 },
             )
 
+    async def _monitoring_loop(self, refresh_interval: int):
+        """Main monitoring loop for polling mode."""
+        while self._monitoring_active:
+            try:
+                self.refresh_positions()
+                await asyncio.sleep(refresh_interval)
+            except Exception as e:
+                self.logger.error(f"Error in monitoring loop: {e}")
+                await asyncio.sleep(refresh_interval)
+
     def start_monitoring(self, refresh_interval: int = 30):
         """
         Start automated position monitoring.
@@ -681,11 +691,10 @@ class PositionManager:
         self.stats["monitoring_started"] = datetime.now()
 
         if not self._realtime_enabled:
-            # Start polling thread for non-realtime mode
-            self._monitoring_thread = threading.Thread(
-                target=self._monitoring_loop, args=(refresh_interval,), daemon=True
+            # Start async monitoring loop
+            self._monitoring_task = asyncio.create_task(
+                self._monitoring_loop(refresh_interval)
             )
-            self._monitoring_thread.start()
             self.logger.info(
                 f"📊 Position monitoring started (polling every {refresh_interval}s)"
             )
@@ -695,20 +704,10 @@ class PositionManager:
     def stop_monitoring(self):
         """Stop automated position monitoring."""
         self._monitoring_active = False
-        if self._monitoring_thread:
-            self._monitoring_thread.join(timeout=5.0)
-            self._monitoring_thread = None
+        if hasattr(self, "_monitoring_task") and self._monitoring_task:
+            self._monitoring_task.cancel()
+            self._monitoring_task = None
         self.logger.info("🛑 Position monitoring stopped")
-
-    def _monitoring_loop(self, refresh_interval: int):
-        """Main monitoring loop for polling mode."""
-        while self._monitoring_active:
-            try:
-                self.refresh_positions()
-                time.sleep(refresh_interval)
-            except Exception as e:
-                self.logger.error(f"Error in monitoring loop: {e}")
-                time.sleep(refresh_interval)
 
     # ================================================================================
     # POSITION SIZING AND RISK MANAGEMENT

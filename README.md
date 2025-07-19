@@ -625,18 +625,25 @@ Create `~/.config/projectx/config.json`:
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+We welcome contributions! Please follow these steps to contribute:
 
-### Development Workflow
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Add tests for new functionality
-5. Ensure all tests pass (`pytest`)
-6. Run code quality checks (`ruff check . && mypy src/`)
-7. Commit your changes (`git commit -m 'Add amazing feature'`)
-8. Push to the branch (`git push origin feature/amazing-feature`)
-9. Open a Pull Request
+1. Fork the repository on GitHub.
+2. Create a feature branch from main (`git checkout -b feature/your-feature`).
+3. Make your changes and commit them with clear messages.
+4. Add tests for new functionality (use pytest).
+5. Run code quality checks: `ruff check .`, `mypy src/`, `black .`.
+6. Push your branch and open a Pull Request.
+
+### Adding New Indicators
+To add a new technical indicator:
+- Create a new class in the appropriate indicators sub-module (e.g., momentum.py).
+- Inherit from the base class (e.g., MomentumIndicator).
+- Implement the calculate method.
+- Add to __init__.py exports and function wrapper if TA-Lib style.
+- Add tests in tests/test_indicators.py.
+- Update documentation in docs/indicators.md.
+
+For major changes, open an issue first to discuss.
 
 ## 📄 License
 

@@ -279,13 +279,25 @@ def calculate_risk_reward_ratio(
     Returns:
         float: Risk/reward ratio (reward / risk)
 
+    Raises:
+        ValueError: If prices are invalid (e.g., stop/target inversion)
+
     Example:
         >>> # Long trade: entry=2050, stop=2045, target=2065
         >>> calculate_risk_reward_ratio(2050, 2045, 2065)
         3.0
     """
+    if entry_price == stop_price:
+        raise ValueError("Entry price and stop price cannot be equal")
+
     risk = abs(entry_price - stop_price)
     reward = abs(target_price - entry_price)
+
+    is_long = stop_price < entry_price
+    if is_long and target_price <= entry_price:
+        raise ValueError("For long positions, target must be above entry")
+    elif not is_long and target_price >= entry_price:
+        raise ValueError("For short positions, target must be below entry")
 
     if risk <= 0:
         return 0.0

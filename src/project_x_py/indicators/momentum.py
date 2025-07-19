@@ -78,7 +78,7 @@ class RSI(MomentumIndicator):
                 pl.col("gain").ewm_mean(alpha=alpha, adjust=False).alias("avg_gain"),
                 pl.col("loss").ewm_mean(alpha=alpha, adjust=False).alias("avg_loss"),
             ]
-        )
+        ).with_columns(pl.col("avg_gain").fill_null(0), pl.col("avg_loss").fill_null(0))
 
         # Calculate RSI
         result = data_with_averages.with_columns(

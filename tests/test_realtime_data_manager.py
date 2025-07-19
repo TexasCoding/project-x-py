@@ -538,3 +538,27 @@ class TestRealtimeDataManager:
         assert stats["instrument"] == "MGC"
         assert "timeframes" in stats
         assert "5min" in stats["timeframes"]
+
+    def test_realtime_feed_failure_handling(self):
+        """Test handling failures in real-time feed startup"""
+        # Arrange
+        mock_client = Mock(spec=ProjectX)
+        mock_realtime = Mock(spec=ProjectXRealtimeClient)
+        mock_realtime.subscribe_market_data.side_effect = Exception(
+            "Subscription failed"
+        )
+
+        data_manager = ProjectXRealtimeDataManager(
+            instrument="MGC",
+            project_x=mock_client,
+            realtime_client=mock_realtime,
+            timeframes=["5min"],
+        )
+        data_manager.initialize()
+
+        # Act
+        success = data_manager.start_realtime_feed()
+
+        # Assert
+        assert success is False
+        assert data_manager.is_running is False

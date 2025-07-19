@@ -274,6 +274,49 @@ def check_setup() -> dict:
         }
 
 
+def diagnose_issues() -> dict:
+    """
+    Diagnose common setup issues and provide recommendations.
+
+    Returns:
+        Dict with diagnostics and fixes
+    """
+    diagnostics = check_setup()
+    diagnostics["issues"] = []
+    diagnostics["recommendations"] = []
+
+    # Check dependencies
+    try:
+        import polars
+        import pytz
+        import requests
+    except ImportError as e:
+        diagnostics["issues"].append(f"Missing dependency: {e.name}")
+        diagnostics["recommendations"].append(f"Install with: pip install {e.name}")
+
+    # Check network connectivity
+    try:
+        requests.get("https://www.google.com", timeout=5)
+    except requests.RequestException:
+        diagnostics["issues"].append("Network connectivity issue")
+        diagnostics["recommendations"].append("Check internet connection")
+
+    # Check config validity
+    try:
+        config = load_default_config()
+        ConfigManager().validate_config(config)
+    except ValueError as e:
+        diagnostics["issues"].append(f"Invalid configuration: {e!s}")
+        diagnostics["recommendations"].append("Fix config file or env vars")
+
+    if not diagnostics["issues"]:
+        diagnostics["status"] = "All systems operational"
+    else:
+        diagnostics["status"] = "Issues detected"
+
+    return diagnostics
+
+
 # Package-level convenience functions
 def create_client(
     username: str | None = None,

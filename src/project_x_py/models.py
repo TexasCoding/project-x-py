@@ -276,3 +276,30 @@ class ProjectXConfig:
     retry_delay_seconds: float = 2.0
     requests_per_minute: int = 60
     burst_limit: int = 10
+
+
+@dataclass
+class OrderUpdateEvent:
+    orderId: int
+    status: int  # 0=Unknown, 1=Pending, 2=Filled, 3=Cancelled, 4=Rejected
+    fillVolume: int | None
+    updateTimestamp: str
+
+
+@dataclass
+class PositionUpdateEvent:
+    positionId: int
+    contractId: str
+    size: int
+    averagePrice: float
+    updateTimestamp: str
+
+
+@dataclass
+class MarketDataEvent:
+    contractId: str
+    lastPrice: float
+    bid: float | None
+    ask: float | None
+    volume: int | None
+    timestamp: str

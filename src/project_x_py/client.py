@@ -259,6 +259,9 @@ class ProjectX:
             base_delay = self.retry_delay_seconds
 
         for attempt in range(max_retries):
+            self.logger.debug(
+                f"Authentication attempt {attempt + 1}/{max_retries} with payload: {self.username}, {self.api_key[:4]}****"
+            )
             try:
                 self._authenticate()
                 return
