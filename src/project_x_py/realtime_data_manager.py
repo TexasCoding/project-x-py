@@ -207,6 +207,7 @@ class ProjectXRealtimeDataManager:
         self.is_running = False
         self.callbacks: dict[str, list[Callable]] = defaultdict(list)
         self.background_tasks: set[asyncio.Task] = set()
+        self.indicator_cache: defaultdict[str, dict] = defaultdict(dict)
 
         # Store reference to main event loop for async callback execution from threads
         self.main_loop = None
@@ -543,10 +544,10 @@ class ProjectXRealtimeDataManager:
             if tf_key not in self.data:
                 return
 
-            current_data = self.data[tf_key]
+            current_data = self.data[tf_key].lazy()
 
             # Check if we need to create a new bar or update existing
-            if len(current_data) == 0:
+            if current_data.collect().height == 0:
                 # First bar - ensure minimum volume for pattern detection
                 bar_volume = max(volume, 1) if volume > 0 else 1
                 new_bar = pl.DataFrame(
@@ -558,16 +559,18 @@ class ProjectXRealtimeDataManager:
                         "close": [price],
                         "volume": [bar_volume],
                     }
-                )
+                ).lazy()
 
-                self.data[tf_key] = new_bar
+                self.data[tf_key] = new_bar.collect()
                 self.last_bar_times[tf_key] = bar_time
 
             else:
-                last_bar_time = current_data.select(pl.col("timestamp")).tail(1).item()
+                last_bar_time = (
+                    current_data.select(pl.col("timestamp")).tail(1).collect().item()
+                )
 
                 if bar_time > last_bar_time:
-                    # New bar needed - ensure minimum volume for pattern detection
+                    # New bar needed
                     bar_volume = max(volume, 1) if volume > 0 else 1
                     new_bar = pl.DataFrame(
                         {
@@ -578,9 +581,10 @@ class ProjectXRealtimeDataManager:
                             "close": [price],
                             "volume": [bar_volume],
                         }
-                    )
+                    ).lazy()
 
-                    self.data[tf_key] = pl.concat([current_data, new_bar])
+                    current_data = pl.concat([current_data, new_bar])
+
                     self.last_bar_times[tf_key] = bar_time
 
                     # Trigger new bar callback
@@ -589,64 +593,64 @@ class ProjectXRealtimeDataManager:
                         {
                             "timeframe": tf_key,
                             "bar_time": bar_time,
-                            "data": new_bar.to_dicts()[0],
+                            "data": new_bar.collect().to_dicts()[0],
                         },
                     )
 
                 elif bar_time == last_bar_time:
-                    # Update existing bar - get the last row for modification
-                    last_row_mask = current_data.get_column("timestamp") == bar_time
+                    # Update existing bar
+                    last_row_mask = pl.col("timestamp") == pl.lit(bar_time)
 
-                    # Get current OHLCV values safely
+                    # Get current values using collect
+                    last_row = current_data.filter(last_row_mask).collect()
                     current_high = (
-                        current_data.filter(last_row_mask).select(pl.col("high")).item()
+                        last_row.select(pl.col("high")).item()
+                        if last_row.height > 0
+                        else price
                     )
                     current_low = (
-                        current_data.filter(last_row_mask).select(pl.col("low")).item()
+                        last_row.select(pl.col("low")).item()
+                        if last_row.height > 0
+                        else price
                     )
                     current_volume = (
-                        current_data.filter(last_row_mask)
-                        .select(pl.col("volume"))
-                        .item()
+                        last_row.select(pl.col("volume")).item()
+                        if last_row.height > 0
+                        else 0
                     )
 
-                    # Calculate new OHLCV values
-                    new_high = (
-                        max(current_high, price) if current_high is not None else price
-                    )
-                    new_low = (
-                        min(current_low, price) if current_low is not None else price
-                    )
-                    new_volume = current_volume + volume
+                    # Calculate new values
+                    new_high = max(current_high, price)
+                    new_low = min(current_low, price)
+                    new_volume = max(current_volume + volume, 1)
 
-                    # Ensure minimum volume of 1 for pattern detection
-                    new_volume = max(new_volume, 1)
-
-                    # Update the DataFrame using polars operations
-                    self.data[tf_key] = current_data.with_columns(
+                    # Update lazily
+                    current_data = current_data.with_columns(
                         [
-                            pl.when(pl.col("timestamp") == bar_time)
+                            pl.when(last_row_mask)
                             .then(pl.lit(new_high))
                             .otherwise(pl.col("high"))
                             .alias("high"),
-                            pl.when(pl.col("timestamp") == bar_time)
+                            pl.when(last_row_mask)
                             .then(pl.lit(new_low))
                             .otherwise(pl.col("low"))
                             .alias("low"),
-                            pl.when(pl.col("timestamp") == bar_time)
+                            pl.when(last_row_mask)
                             .then(pl.lit(price))
                             .otherwise(pl.col("close"))
                             .alias("close"),
-                            pl.when(pl.col("timestamp") == bar_time)
+                            pl.when(last_row_mask)
                             .then(pl.lit(new_volume))
                             .otherwise(pl.col("volume"))
                             .alias("volume"),
                         ]
                     )
 
-            # Keep only recent data to manage memory (keep last 1000 bars per timeframe)
-            if len(self.data[tf_key]) > 1000:
-                self.data[tf_key] = self.data[tf_key].tail(1000)
+            # Prune memory
+            if current_data.collect().height > 1000:
+                current_data = current_data.tail(1000)
+
+            self.data[tf_key] = current_data.collect()
 
         except Exception as e:
             self.logger.error(f"Error updating {tf_key} timeframe: {e}")
@@ -741,6 +745,29 @@ class ProjectXRealtimeDataManager:
         except Exception as e:
             self.logger.error(f"Error getting data for timeframe {timeframe}: {e}")
             return None
+
+    def get_data_with_indicators(
+        self,
+        timeframe: str = "5min",
+        bars: int | None = None,
+        indicators: list[str] | None = None,
+    ) -> pl.DataFrame | None:
+        """Get OHLCV data with optional computed indicators."""
+        data = self.get_data(timeframe, bars)
+        if data is None or indicators is None or not indicators:
+            return data
+
+        cache_key = f"{timeframe}_{bars}_" + "_".join(sorted(indicators))
+
+        if cache_key in self.indicator_cache[timeframe]:
+            return self.indicator_cache[timeframe][cache_key]
+
+        # TODO: Implement indicator computation here or import from indicators module
+        # For example:
+        # computed = data.with_columns(pl.col("close").rolling_mean(20).alias("sma_20"))
+        # self.indicator_cache[timeframe][cache_key] = computed
+        # return computed
+        return data  # Return without indicators for now
 
     def get_mtf_data(
         self, timeframes: list[str] | None = None, bars: int | None = None

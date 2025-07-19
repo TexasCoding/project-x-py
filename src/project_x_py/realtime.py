@@ -16,6 +16,8 @@ from datetime import datetime
 
 from signalrcore.hub_connection_builder import HubConnectionBuilder
 
+from .utils import RateLimiter
+
 
 class ProjectXRealtimeClient:
     """
@@ -162,6 +164,8 @@ class ProjectXRealtimeClient:
         self.logger.info("ProjectX real-time client initialized")
         self.logger.info(f"User Hub URL: {self.user_hub_url[:50]}...")
         self.logger.info(f"Market Hub URL: {self.market_hub_url[:50]}...")
+
+        self.rate_limiter = RateLimiter(requests_per_minute=60)
 
     def setup_connections(self):
         """Set up SignalR hub connections with proper configuration."""
@@ -682,26 +686,14 @@ class ProjectXRealtimeClient:
                 self.logger.error("❌ User connection not available")
                 return False
 
-            # Subscribe to various user update channels using correct TopStepX method names
-            if self.user_connection:
-                self.user_connection.send(
-                    "SubscribeAccounts", []
-                )  # No parameters needed
-                self.user_connection.send(
-                    "SubscribePositions", [int(self.account_id)]
-                )  # Account ID as integer
-                self.user_connection.send(
-                    "SubscribeOrders", [int(self.account_id)]
-                )  # Account ID as integer
-                self.user_connection.send(
-                    "SubscribeTrades", [int(self.account_id)]
-                )  # Account ID as integer
-            else:
-                self.logger.error("❌ User connection is None")
-                return False
-
-            self.logger.info("✅ Successfully subscribed to user updates")
-            return True
+            with self.rate_limiter:
+                self.user_connection.send("SubscribeAccounts", [])
+            with self.rate_limiter:
+                self.user_connection.send("SubscribePositions", [int(self.account_id)])
+            with self.rate_limiter:
+                self.user_connection.send("SubscribeOrders", [int(self.account_id)])
+            with self.rate_limiter:
+                self.user_connection.send("SubscribeTrades", [int(self.account_id)])
 
         except Exception as e:
             self.logger.error(f"❌ Failed to subscribe to user updates: {e}")
@@ -724,21 +716,18 @@ class ProjectXRealtimeClient:
             # Subscribe to market data channels using correct TopStepX method names
             if self.market_connection:
                 for contract_id in contract_ids:
-                    self.market_connection.send(
-                        "SubscribeContractQuotes", [contract_id]
-                    )
-                    self.market_connection.send(
-                        "SubscribeContractTrades", [contract_id]
-                    )
-                    self.market_connection.send(
-                        "SubscribeContractMarketDepth", [contract_id]
-                    )
-            else:
-                self.logger.error("❌ Market connection is None")
-                return False
-
-            self.logger.info("✅ Successfully subscribed to market data")
-            return True
+                    with self.rate_limiter:
+                        self.market_connection.send(
+                            "SubscribeContractQuotes", [contract_id]
+                        )
+                    with self.rate_limiter:
+                        self.market_connection.send(
+                            "SubscribeContractTrades", [contract_id]
+                        )
+                    with self.rate_limiter:
+                        self.market_connection.send(
+                            "SubscribeContractMarketDepth", [contract_id]
+                        )
 
         except Exception as e:
             self.logger.error(f"❌ Failed to subscribe to market data: {e}")
@@ -762,13 +751,8 @@ class ProjectXRealtimeClient:
 
             # Subscribe to order-specific updates
             if self.user_connection:
-                self.user_connection.send("SubscribeToOrderFills", order_ids)
-            else:
-                self.logger.error("❌ User connection is None")
-                return False
-
-            self.logger.info("✅ Successfully subscribed to order fills")
-            return True
+                with self.rate_limiter:
+                    self.user_connection.send("SubscribeToOrderFills", order_ids)
 
         except Exception as e:
             self.logger.error(f"❌ Failed to subscribe to order fills: {e}")

@@ -1218,50 +1218,52 @@ def calculate_volume_profile(
         return {"error": "No data provided"}
 
     try:
-        # Get price and volume data
-        prices = data.select(pl.col(price_column)).to_series().to_list()
-        volumes = data.select(pl.col(volume_column)).to_series().to_list()
+        min_price = data.select(pl.col(price_column).min()).item()
+        max_price = data.select(pl.col(price_column).max()).item()
+        breaks = [
+            min_price + i * ((max_price - min_price) / num_bins)
+            for i in range(num_bins + 1)
+        ]
 
-        # Calculate price range
-        min_price = min(prices)
-        max_price = max(prices)
-        price_range = max_price - min_price
+        binned = data.with_columns(pl.col(price_column).cut(breaks=breaks).alias("bin"))
 
-        if price_range == 0:
-            return {"error": "No price variation in data"}
-
-        # Create price bins
-        bin_size = price_range / num_bins
-        volume_profile = {}
-
-        for price, volume in zip(prices, volumes, strict=False):
-            bin_index = int((price - min_price) / bin_size)
-            bin_index = min(bin_index, num_bins - 1)  # Ensure within bounds
-            bin_price = min_price + (bin_index * bin_size) + (bin_size / 2)
-
-            if bin_price not in volume_profile:
-                volume_profile[bin_price] = 0
-            volume_profile[bin_price] += volume
+        profile = (
+            binned.group_by("bin")
+            .agg(
+                pl.col(volume_column).sum().alias("total_volume"),
+                pl.col(price_column).mean().alias("avg_price"),
+                pl.col(volume_column).count().alias("trade_count"),
+                pl.col(volume_column)
+                .filter(pl.col("side") == "buy")
+                .sum()
+                .alias("buy_volume"),
+                pl.col(volume_column)
+                .filter(pl.col("side") == "sell")
+                .sum()
+                .alias("sell_volume"),
+            )
+            .sort("bin")
+        )
 
         # Find Point of Control (POC) - price level with highest volume
-        poc_price = max(volume_profile, key=lambda x: volume_profile[x])
-        poc_volume = volume_profile[poc_price]
+        poc_price = profile.select(pl.col("avg_price")).item()
+        poc_volume = profile.select(pl.col("total_volume")).item()
 
         # Calculate Value Area (70% of volume)
-        total_volume = sum(volume_profile.values())
+        total_volume = profile.select(pl.col("total_volume")).sum().item()
         target_volume = total_volume * 0.7
 
         # Sort by volume to find value area
-        sorted_levels = sorted(volume_profile.items(), key=lambda x: x[1], reverse=True)
+        sorted_levels = profile.sort("total_volume", descending=True).to_dicts()
 
         value_area_volume = 0
         value_area_high = poc_price
         value_area_low = poc_price
 
-        for price, volume in sorted_levels:
-            value_area_volume += volume
-            value_area_high = max(value_area_high, price)
-            value_area_low = min(value_area_low, price)
+        for level in sorted_levels:
+            value_area_volume += level["total_volume"]
+            value_area_high = max(value_area_high, level["avg_price"])
+            value_area_low = min(value_area_low, level["avg_price"])
 
             if value_area_volume >= target_volume:
                 break
@@ -1273,8 +1275,8 @@ def calculate_volume_profile(
             "value_area_low": value_area_low,
             "value_area_volume": value_area_volume,
             "total_volume": total_volume,
-            "num_price_levels": len(volume_profile),
-            "volume_profile": volume_profile,
+            "num_price_levels": len(profile),
+            "volume_profile": profile.to_dicts(),
         }
 
     except Exception as e:
