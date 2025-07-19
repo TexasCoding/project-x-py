@@ -1,6 +1,6 @@
 [project]
 name = "project-x-py"
-version = "0.2.0"
+version = "1.0.0"
 description = "Professional Python client for TopStepX ProjectX Gateway API - futures trading, real-time data, and market analysis"
 readme = "README.md"
 license = { text = "MIT" }
