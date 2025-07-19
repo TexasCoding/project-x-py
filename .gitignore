@@ -270,6 +270,9 @@ local_config.py
 local_settings.py
 .local/
 
+# Coverage reports
+coverage.xml
+
 # API keys and secrets (project-specific patterns)
 *api_key*
 *secret*
