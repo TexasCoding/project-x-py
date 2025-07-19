@@ -1,6 +1,6 @@
 [project]
 name = "project-x-py"
-version = "1.0.1"
+version = "1.0.2"
 description = "Professional Python client for TopStepX ProjectX Gateway API - futures trading, real-time data, and market analysis"
 readme = "README.md"
 license = { text = "MIT" }
@@ -31,7 +31,7 @@ classifiers = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "polars^1.31.0",
+    "polars>=1.31.0",  # TODO: Update to 1.31.0
     "pytz>=2025.2",
     "requests>=2.32.4",
     "signalrcore>=0.9.5",
