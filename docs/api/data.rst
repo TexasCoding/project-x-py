@@ -1,7 +1,7 @@
 Data API
 ========
 
-Real-time market data, orderbook analysis, and technical indicators.
+Real-time market data, Level 2 orderbook analysis, and institutional-grade market microstructure tools.
 
 Real-time Data Management
 -------------------------
@@ -44,48 +44,10 @@ Instrument Models
    :undoc-members:
    :show-inheritance:
 
-Technical Analysis Utilities
-----------------------------
-
-Moving Averages
-~~~~~~~~~~~~~~~
-
-.. autofunction:: project_x_py.utils.calculate_sma
-.. autofunction:: project_x_py.utils.calculate_ema
-
-Momentum Indicators
-~~~~~~~~~~~~~~~~~~
-
-.. autofunction:: project_x_py.utils.calculate_rsi
-.. autofunction:: project_x_py.utils.calculate_macd
-.. autofunction:: project_x_py.utils.calculate_stochastic
-.. autofunction:: project_x_py.utils.calculate_williams_r
-
-Volatility Indicators
-~~~~~~~~~~~~~~~~~~~~~
-
-.. autofunction:: project_x_py.utils.calculate_bollinger_bands
-.. autofunction:: project_x_py.utils.calculate_atr
-.. autofunction:: project_x_py.utils.calculate_volatility_metrics
-
-Trend Indicators
-~~~~~~~~~~~~~~~~
-
-.. autofunction:: project_x_py.utils.calculate_adx
-.. autofunction:: project_x_py.utils.calculate_commodity_channel_index
-
-Volume Analysis
-~~~~~~~~~~~~~~~
-
-.. autofunction:: project_x_py.utils.calculate_volume_profile
-.. autofunction:: project_x_py.utils.analyze_bid_ask_spread
-
-Pattern Recognition
-~~~~~~~~~~~~~~~~~~~
-
-.. autofunction:: project_x_py.utils.detect_candlestick_patterns
-.. autofunction:: project_x_py.utils.detect_chart_patterns
-.. autofunction:: project_x_py.utils.find_support_resistance_levels
+.. note::
+   **Technical Indicators**: For comprehensive technical analysis with 25+ indicators, 
+   see the :doc:`indicators` module which provides TA-Lib compatible indicators 
+   optimized for Polars DataFrames.
 
 Data Utilities
 --------------

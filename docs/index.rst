@@ -17,7 +17,7 @@ project-x-py Documentation
    :target: https://project-x-py.readthedocs.io/en/latest/?badge=latest
    :alt: Documentation Status
 
-**project-x-py** is a professional Python client for the TopStepX ProjectX Gateway API, providing comprehensive access to futures trading, real-time market data, and advanced market analysis tools.
+**project-x-py** is a professional Python client for the TopStepX ProjectX Gateway API, providing comprehensive access to futures trading, real-time market data, Level 2 orderbook analysis, and a complete technical analysis suite with 25+ TA-Lib compatible indicators.
 
 Quick Start
 -----------
@@ -38,12 +38,16 @@ Set up your credentials::
 Start trading::
 
    from project_x_py import ProjectX
+   from project_x_py.indicators import RSI, SMA, MACD
    
    # Create client
    client = ProjectX.from_env()
    
-   # Get market data
-   data = client.get_data('MGC', days=5, interval=15)
+   # Get market data with technical analysis
+   data = client.get_data('MGC', days=30, interval=60)
+   data = RSI(data, period=14)         # Add RSI
+   data = SMA(data, period=20)         # Add moving average
+   data = MACD(data)                   # Add MACD
    
    # Place an order
    from project_x_py import create_order_manager
@@ -62,8 +66,9 @@ Key Features
 📊 **Market Data & Analysis**
    * Historical OHLCV data with multiple timeframes
    * Real-time market data feeds via WebSocket
-   * Advanced orderbook analysis and market depth
-   * 50+ technical indicators and chart patterns
+   * **Level 2 orderbook analysis** with institutional-grade features
+   * **25+ Technical Indicators** with TA-Lib compatibility (RSI, MACD, Bollinger Bands, etc.)
+   * **Advanced market microstructure** analysis (iceberg detection, order flow, volume profile)
 
 🔧 **Developer Tools**
    * Comprehensive Python typing support
@@ -115,6 +120,7 @@ Table of Contents
    api/client
    api/trading
    api/data
+   api/indicators
    api/models
    api/utilities
 

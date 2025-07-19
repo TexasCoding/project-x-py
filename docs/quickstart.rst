@@ -171,23 +171,41 @@ Basic Trading Workflow
    if bracket.success:
        print("Bracket order placed successfully!")
 
-Market Analysis
-~~~~~~~~~~~~~~~
+Market Analysis with Technical Indicators
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
-   from project_x_py import calculate_rsi, calculate_sma, calculate_bollinger_bands
+   from project_x_py.indicators import RSI, SMA, BBANDS, MACD
 
    # Get data
    data = client.get_data('MGC', days=30, interval=60)
 
-   # Calculate technical indicators
-   rsi = calculate_rsi(data, period=14)
-   sma_20 = calculate_sma(data, period=20)
-   bb = calculate_bollinger_bands(data, period=20, std_dev=2)
+   # Calculate technical indicators using TA-Lib style functions
+   data = RSI(data, period=14)
+   data = SMA(data, period=20)
+   data = SMA(data, period=50)
+   data = BBANDS(data, period=20, std_dev=2.0)
+   data = MACD(data, fast_period=12, slow_period=26, signal_period=9)
 
-   print(f"Current RSI: {rsi.tail(1).item():.2f}")
-   print(f"Price vs SMA: ${float(data.select('close').tail(1).item()):.2f} vs ${sma_20.tail(1).item():.2f}")
+   # Check latest values
+   latest = data.tail(1)
+   print(f"Current RSI: {latest['rsi_14'].item():.2f}")
+   print(f"Price: ${latest['close'].item():.2f}")
+   print(f"SMA(20): ${latest['sma_20'].item():.2f}")
+   print(f"SMA(50): ${latest['sma_50'].item():.2f}")
+   print(f"MACD: {latest['macd'].item():.4f}")
+
+   # Simple signal logic
+   rsi_val = latest['rsi_14'].item()
+   price = latest['close'].item()
+   sma_20 = latest['sma_20'].item()
+   sma_50 = latest['sma_50'].item()
+   
+   if rsi_val < 30 and price > sma_20 > sma_50:
+       print("🟢 Potential BUY signal: Oversold RSI + Uptrend")
+   elif rsi_val > 70 and price < sma_20 < sma_50:
+       print("🔴 Potential SELL signal: Overbought RSI + Downtrend")
 
 Error Handling
 ~~~~~~~~~~~~~~
@@ -214,11 +232,12 @@ Next Steps
 
 Now that you have the basics working:
 
-1. **Learn the API**: Explore the :doc:`API reference <api/client>`
-2. **Study Examples**: Check out :doc:`detailed examples <examples/basic_usage>`
-3. **Configure Advanced Features**: See :doc:`configuration options <configuration>`
-4. **Real-time Trading**: Learn about :doc:`real-time capabilities <user_guide/real_time>`
-5. **Risk Management**: Read about :doc:`position management <user_guide/trading>`
+1. **Technical Analysis**: Explore the :doc:`comprehensive indicators library <api/indicators>` (25+ TA-Lib compatible indicators)
+2. **Learn the API**: Explore the :doc:`API reference <api/client>`
+3. **Study Examples**: Check out :doc:`detailed examples <examples/basic_usage>`
+4. **Configure Advanced Features**: See :doc:`configuration options <configuration>`
+5. **Real-time Trading**: Learn about :doc:`real-time capabilities <user_guide/real_time>`
+6. **Risk Management**: Read about :doc:`position management <user_guide/trading>`
 
 Tips for Success
 ----------------
