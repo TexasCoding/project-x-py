@@ -10,6 +10,12 @@ The indicators module provides both class-based and function-based interfaces fo
 
 .. currentmodule:: project_x_py.indicators
 
+.. automodule:: project_x_py.indicators
+   :members:
+   :undoc-members:
+   :show-inheritance:
+   :no-index:
+
 Quick Start
 -----------
 

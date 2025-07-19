@@ -8,6 +8,12 @@ Core Models
 
 .. currentmodule:: project_x_py.models
 
+.. automodule:: project_x_py.models
+   :members:
+   :undoc-members:
+   :show-inheritance:
+   :no-index:
+
 Configuration
 ~~~~~~~~~~~~~
 

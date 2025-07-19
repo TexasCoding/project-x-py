@@ -42,6 +42,23 @@ from .exceptions import (
     ProjectXServerError,
 )
 
+# Technical Analysis - Import from indicators module for backward compatibility
+from .indicators import (
+    calculate_adx,
+    calculate_atr,
+    calculate_bollinger_bands,
+    calculate_commodity_channel_index,
+    calculate_ema,
+    calculate_macd,
+    calculate_obv,
+    calculate_rsi,
+    # TA-Lib style functions
+    calculate_sma,
+    calculate_stochastic,
+    calculate_vwap,
+    calculate_williams_r,
+)
+
 # Data models
 from .models import (
     Account,
@@ -62,38 +79,26 @@ from .realtime import ProjectXRealtimeClient
 from .realtime_data_manager import ProjectXRealtimeDataManager
 
 # Utility functions
-# Convenience imports for backward compatibility
 from .utils import (
     RateLimiter,
-    # Enhanced data analysis and indicators
+    # Market analysis utilities
     analyze_bid_ask_spread,
-    calculate_adx,
-    calculate_atr,
-    calculate_bollinger_bands,
-    calculate_commodity_channel_index,
+    # Risk and portfolio analysis
     calculate_correlation_matrix,
-    calculate_ema,
-    calculate_macd,
     calculate_max_drawdown,
     calculate_portfolio_metrics,
     calculate_position_sizing,
     calculate_position_value,
     calculate_risk_reward_ratio,
-    calculate_rsi,
     calculate_sharpe_ratio,
-    # Technical analysis helpers
-    calculate_sma,
-    calculate_stochastic,
     calculate_tick_value,
     calculate_volatility_metrics,
     calculate_volume_profile,
-    calculate_williams_r,
     convert_timeframe_to_seconds,
     create_data_snapshot,
     detect_candlestick_patterns,
     detect_chart_patterns,
     extract_symbol_from_contract_id,
-    find_support_resistance_levels,
     format_price,
     format_volume,
     get_env_var,
@@ -103,7 +108,6 @@ from .utils import (
     is_market_hours,
     round_to_tick_size,
     setup_logging,
-    # New utility functions for developers
     validate_contract_id,
 )
 

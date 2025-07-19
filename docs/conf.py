@@ -49,6 +49,19 @@ templates_path = ["_templates"]
 # directories to ignore when looking for source files.
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
+# Generate module index
+modindex_common_prefix = ["project_x_py."]
+
+# Enable module index generation
+html_domain_indices = True
+html_use_modindex = True
+
+# Force creation of Python module index
+add_module_names = False
+modindex_common_prefix = ["project_x_py."]
+
+# Note: py-modindex.rst will be built as py-modindex.html automatically
+
 # The suffix(es) of source filenames.
 source_suffix = {
     ".rst": None,

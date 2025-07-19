@@ -8,6 +8,12 @@ ProjectX Client
 
 .. currentmodule:: project_x_py
 
+.. automodule:: project_x_py.client
+   :members:
+   :undoc-members:
+   :show-inheritance:
+   :no-index:
+
 .. autoclass:: ProjectX
    :members:
    :undoc-members:

@@ -5,6 +5,12 @@ Utility functions and helper tools for trading, analysis, and data processing.
 
 .. currentmodule:: project_x_py.utils
 
+.. automodule:: project_x_py.utils
+   :members:
+   :undoc-members:
+   :show-inheritance:
+   :no-index:
+
 Price and Position Utilities
 ----------------------------
 

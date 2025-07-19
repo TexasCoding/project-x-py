@@ -120,9 +120,17 @@ Table of Contents
    api/client
    api/trading
    api/data
+   api/orderbook
    api/indicators
    api/models
    api/utilities
+
+Indices and Search
+==================
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`
 
 .. toctree::
    :maxdepth: 2

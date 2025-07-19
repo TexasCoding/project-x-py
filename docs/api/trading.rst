@@ -8,6 +8,18 @@ Order Management
 
 .. currentmodule:: project_x_py
 
+.. automodule:: project_x_py.order_manager
+   :members:
+   :undoc-members:
+   :show-inheritance:
+   :no-index:
+
+.. automodule:: project_x_py.position_manager
+   :members:
+   :undoc-members:
+   :show-inheritance:
+   :no-index:
+
 .. autoclass:: OrderManager
    :members:
    :undoc-members:

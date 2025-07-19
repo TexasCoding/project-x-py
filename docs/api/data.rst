@@ -24,9 +24,13 @@ Real-time Client
 Orderbook Analysis
 ------------------
 
+.. note::
+   **Level 2 OrderBook API**: For comprehensive Level 2 orderbook analysis including 
+   iceberg detection, market imbalance analysis, and institutional-grade market 
+   microstructure tools, see the dedicated :doc:`orderbook` module.
+
 .. autoclass:: OrderBook
-   :members:
-   :undoc-members:
+   :members: get_orderbook_snapshot, get_best_bid_ask, get_advanced_market_metrics
    :show-inheritance:
 
 Data Factory Functions
