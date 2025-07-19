@@ -17,17 +17,21 @@ A **professional Python client** for the TopStepX ProjectX Gateway API, designed
 - Real-time WebSocket connections
 - Order and position management with error handling
 - Professional-grade code with full type hints
+- **Advanced market microstructure analysis suite**
+- **Level 2 orderbook processing and analytics**
+- **Institutional order flow detection algorithms**
+- **Market imbalance and liquidity analysis tools**
 
 🚧 **In Development** (v0.3.0):
-- Advanced market microstructure analysis suite
-- Level 2 orderbook processing and analytics
-- Institutional order flow detection algorithms
-- Market imbalance and liquidity analysis tools
+- Machine learning integration for pattern recognition
+- Advanced backtesting engine with tick-level data
+- Professional trading strategy framework
 
 📋 **Planned Features**:
 - Machine learning integration for pattern recognition
 - Advanced backtesting engine with tick-level data
 - Professional trading strategy framework
+- Multi-asset portfolio analytics and risk management
 
 ## 🚀 Current Features
 
@@ -46,13 +50,16 @@ A **professional Python client** for the TopStepX ProjectX Gateway API, designed
 - **📈 Market Data Streaming** - Live price updates and market events
 - **🔐 Session Management** - Automatic token refresh and connection handling
 
-### 🚧 Advanced Features (In Development - v0.3.0)
+### ✅ Advanced Market Microstructure (Production Ready)
 - **🎯 Level 2 Orderbook** - Full market depth analysis and visualization
 - **📊 Order Flow Analysis** - Buy/sell pressure detection and trade flow metrics
-- **🧊 Iceberg Detection** - Hidden order identification algorithms
+- **🧊 Iceberg Detection** - Hidden order identification algorithms (simplified & advanced)
 - **📈 Volume Profile** - Market structure analysis with POC and value areas
 - **⚖️ Market Imbalance** - Real-time imbalance detection and alerts
 - **🏗️ Support/Resistance** - Dynamic level identification from order flow
+- **💧 Liquidity Analysis** - Significant price level detection with volume concentration
+- **🔄 Cumulative Delta** - Net buying/selling pressure tracking
+- **🎯 Order Clustering** - Price level grouping and institutional flow detection
 
 ### 🛠️ Professional Quality
 - **🔧 Production Architecture** - Modular design with comprehensive error handling
@@ -206,23 +213,50 @@ if realtime.connect():
     realtime.disconnect()
 ```
 
+### 5. Advanced Market Microstructure Analysis
+```python
+from project_x_py import ProjectXRealtimeDataManager
+
+# Initialize advanced data manager with orderbook analytics
+data_manager = ProjectXRealtimeDataManager("MGC", client, account_id)
+data_manager.initialize(initial_days=7)
+
+# Get comprehensive market analysis
+metrics = data_manager.get_advanced_market_metrics()
+
+# Check for institutional iceberg orders
+icebergs = metrics["iceberg_detection"]
+print(f"Detected {len(icebergs['potential_icebergs'])} potential icebergs")
+
+# Analyze market imbalance
+imbalance = metrics["market_imbalance"]
+print(f"Market direction: {imbalance['direction']} (confidence: {imbalance['confidence']})")
+
+# Get volume profile with POC
+volume_profile = metrics["volume_profile"]
+poc = volume_profile["poc"]
+print(f"Point of Control: ${poc['price']:.2f} with {poc['volume']} volume")
+
+# Dynamic support/resistance levels
+sr_levels = metrics["support_resistance"]
+print(f"Found {len(sr_levels['support_levels'])} support levels")
+print(f"Found {len(sr_levels['resistance_levels'])} resistance levels")
+```
+
 ## 🚧 Advanced Features Preview (v0.3.0)
 
-The next major version will include advanced market microstructure analysis capabilities. Here's a preview of what's coming:
+The next major version will include machine learning integration and strategy development tools:
 
 ### 🎯 Planned Advanced Features
-- **🧊 Iceberg Detection** - Identify hidden institutional orders
-- **💧 Liquidity Analysis** - Find significant price levels with volume concentration
-- **📊 Order Flow Analysis** - Real-time buy/sell pressure tracking
-- **📈 Volume Profile** - Point of Control and Value Area identification
-- **⚖️ Market Imbalance** - Orderbook and trade flow imbalance detection
-- **🏗️ Support/Resistance** - Dynamic level detection from market structure
+- **🤖 Machine Learning Integration** - Pattern recognition and predictive analytics
+- **📊 Advanced Backtesting Engine** - Historical testing with tick-level precision
+- **🏗️ Strategy Development Framework** - Built-in tools for systematic trading
+- **🔬 Market Regime Detection** - Automated market condition classification
+- **📈 Smart Money Flow Analysis** - Institutional vs retail flow detection
+- **⚙️ Professional Dashboard** - Web-based interface for monitoring and analysis
 
 ### 🔬 Development Status
-These advanced features are currently in active development. For early access or to contribute to development:
-- 📋 Check the [GitHub Issues](https://github.com/TexasCoding/project-x-py/issues) for current development tasks
-- 💬 Join discussions in [GitHub Discussions](https://github.com/TexasCoding/project-x-py/discussions)
-- 📧 Contact the maintainer for collaboration opportunities
+These features are currently in active development. The advanced market microstructure analysis is production-ready and available now.
 
 ## 📖 Working Examples
 
@@ -557,31 +591,36 @@ This software is for educational and research purposes. Trading futures involves
 - [x] **Position Management** - Real-time position tracking and P&L calculations
 - [x] **Trade History** - Comprehensive trade search and analysis
 - [x] **Real-Time WebSocket** - Live order updates and market data streaming
+- [x] **Level 2 Orderbook Processing** - Full market depth analysis and visualization
+- [x] **Advanced Order Flow Analysis** - Buy/sell pressure detection and trade flow metrics
+- [x] **Iceberg Order Detection** - Hidden institutional order identification algorithms
+- [x] **Volume Profile Analysis** - Point of Control and Value Area calculations
+- [x] **Market Imbalance Detection** - Real-time imbalance monitoring and alerts
+- [x] **Dynamic Support/Resistance** - Algorithmic level identification from market structure
+- [x] **Liquidity Analysis** - Significant price level detection with volume concentration
 - [x] **Professional Architecture** - Type safety, error handling, configuration management
 - [x] **Comprehensive Documentation** - Full API docs, examples, and guides
 
 ### 🚧 In Active Development (v0.3.0 - Target: Q2 2025)
-- [ ] **Level 2 Orderbook Processing** - Full market depth analysis and visualization
-- [ ] **Advanced Order Flow Analysis** - Buy/sell pressure detection and trade flow metrics
-- [ ] **Iceberg Order Detection** - Hidden institutional order identification algorithms
-- [ ] **Volume Profile Analysis** - Point of Control and Value Area calculations
-- [ ] **Market Imbalance Detection** - Real-time imbalance monitoring and alerts
-- [ ] **Dynamic Support/Resistance** - Algorithmic level identification from market structure
-- [ ] **Liquidity Analysis** - Significant price level detection with volume concentration
-
-### 📋 Planned Features (v0.4.0+)
-- [ ] **Smart Money Flow Analysis** - Institutional vs retail flow detection
-- [ ] **Market Regime Detection** - Automated market condition classification
-- [ ] **Strategy Development Framework** - Built-in tools for systematic trading
-- [ ] **Advanced Backtesting Engine** - Historical testing with tick-level precision
-- [ ] **Risk Management Suite** - Portfolio analytics and risk monitoring
 - [ ] **Machine Learning Integration** - Pattern recognition and predictive analytics
+- [ ] **Advanced Backtesting Engine** - Historical testing with tick-level precision
+- [ ] **Strategy Development Framework** - Built-in tools for systematic trading
+- [ ] **Market Regime Detection** - Automated market condition classification
+- [ ] **Smart Money Flow Analysis** - Institutional vs retail flow detection
 - [ ] **Professional Dashboard** - Web-based interface for monitoring and analysis
 
+### 📋 Planned Features (v0.4.0+)
+- [ ] **Multi-Asset Portfolio Analytics** - Cross-market correlation and risk analysis
+- [ ] **Advanced Risk Management Suite** - Real-time portfolio risk monitoring
+- [ ] **Custom Indicator Framework** - User-defined technical indicators
+- [ ] **Cloud-Based Data Pipeline** - Scalable data processing infrastructure
+- [ ] **API Rate Optimization** - Advanced caching and request optimization
+- [ ] **Mobile Application** - iOS/Android app for portfolio monitoring
+
 ### 📊 Release Timeline
-- **v0.2.x** (Current) - Bug fixes and stability improvements
-- **v0.3.0** (Q2 2025) - Advanced market microstructure analysis
-- **v0.4.0** (Q4 2025) - Strategy framework and backtesting
+- **v0.2.x** (Current) - Advanced market microstructure analysis (Complete)
+- **v0.3.0** (Q2 2025) - Machine learning integration and strategy framework
+- **v0.4.0** (Q4 2025) - Advanced backtesting and portfolio analytics
 - **v1.0.0** (2026) - Production-ready institutional platform
 
 ### 🏗️ Contributing to Development
