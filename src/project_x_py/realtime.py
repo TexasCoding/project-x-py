@@ -14,24 +14,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from datetime import datetime
 
-# Import signalrcore conditionally to handle missing dependency
-try:
-    from signalrcore.hub_connection_builder import HubConnectionBuilder
-    from signalrcore.protocol.messagepack_protocol import MessagePackHubProtocol
-
-    SIGNALR_AVAILABLE = True
-except ImportError:
-    SIGNALR_AVAILABLE = False
-    HubConnectionBuilder = None
-    MessagePackHubProtocol = None
-    import warnings
-
-    warnings.warn(
-        "signalrcore package not found. Real-time features will not be available. "
-        "Install with: pip install signalrcore",
-        ImportWarning,
-        stacklevel=2,
-    )
+from signalrcore.hub_connection_builder import HubConnectionBuilder
 
 
 class ProjectXRealtimeClient:
