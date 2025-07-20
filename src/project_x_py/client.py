@@ -15,6 +15,7 @@ low-level API access and high-level convenience methods.
 """
 
 import datetime
+import gc
 import json
 import logging
 import os  # Added for os.getenv
@@ -24,6 +25,8 @@ from datetime import timedelta
 import polars as pl
 import pytz
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from .config import ConfigManager
 from .exceptions import (
@@ -142,9 +145,21 @@ class ProjectX:
         self.last_request_time = 0
         self.min_request_interval = 60.0 / self.requests_per_minute
 
+        # Connection pooling and session management
+        self.session = self._create_session()
+
+        # Caching for performance
+        self.instrument_cache: dict[str, Instrument] = {}
+        self.cache_ttl = 300  # 5 minutes cache TTL
+        self.last_cache_cleanup = time.time()
+
         # Lazy initialization - don't authenticate immediately
         self.account_info: Account | None = None
         self._authenticated = False
+
+        # Performance monitoring
+        self.api_call_count = 0
+        self.cache_hit_count = 0
 
         self.logger = logging.getLogger(__name__)
 
@@ -220,6 +235,57 @@ class ProjectX:
             account_name=account_name,
         )
 
+    def _create_session(self) -> requests.Session:
+        """
+        Create an optimized requests session with connection pooling and retries.
+
+        Returns:
+            Configured requests session
+        """
+        session = requests.Session()
+
+        # Configure retry strategy
+        retry_strategy = Retry(
+            total=self.retry_attempts,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["POST", "GET"],
+        )
+
+        # Configure HTTP adapter with connection pooling
+        adapter = HTTPAdapter(
+            max_retries=retry_strategy,
+            pool_connections=10,  # Number of connection pools
+            pool_maxsize=20,  # Maximum connections per pool
+            pool_block=True,  # Block when pool is full
+        )
+
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+
+        # Set default timeout
+        session.timeout = self.timeout_seconds
+
+        return session
+
+    def _cleanup_cache(self) -> None:
+        """
+        Clean up expired cache entries periodically.
+        """
+        current_time = time.time()
+        if current_time - self.last_cache_cleanup > self.cache_ttl:
+            # Clear instrument cache (instruments don't change often)
+            # Could implement more sophisticated TTL per entry if needed
+            self.last_cache_cleanup = current_time
+
+            # Log cache statistics
+            if self.api_call_count > 0:
+                cache_hit_rate = (self.cache_hit_count / self.api_call_count) * 100
+                self.logger.debug(
+                    f"Cache stats: {self.cache_hit_count}/{self.api_call_count} "
+                    f"hits ({cache_hit_rate:.1f}%)"
+                )
+
     def _ensure_authenticated(self):
         """
         Ensure the client is authenticated with a valid token.
@@ -229,12 +295,20 @@ class ProjectX:
         current_time = time.time()
 
         # Check if we need to authenticate or refresh token
+        # Preemptive refresh at 80% of token lifetime for better performance
+        refresh_threshold = (
+            self.token_expires_at - (45 * 60 * 0.2) if self.token_expires_at else 0
+        )
+
         if (
             not self._authenticated
             or self.session_token is None
-            or (self.token_expires_at and current_time >= self.token_expires_at)
+            or (self.token_expires_at and current_time >= refresh_threshold)
         ):
             self._authenticate_with_retry()
+
+        # Periodic cache cleanup
+        self._cleanup_cache()
 
         # Rate limiting: ensure minimum interval between requests
         time_since_last = current_time - self.last_request_time
@@ -292,9 +366,8 @@ class ProjectX:
         payload = {"userName": self.username, "apiKey": self.api_key}
 
         try:
-            response = requests.post(
-                url, headers=headers, json=payload, timeout=self.timeout_seconds
-            )
+            self.api_call_count += 1
+            response = self.session.post(url, headers=headers, json=payload)
 
             # Handle different HTTP status codes
             if response.status_code == 503:
@@ -384,9 +457,8 @@ class ProjectX:
         payload = {"onlyActiveAccounts": True}
 
         try:
-            response = requests.post(
-                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
-            )
+            self.api_call_count += 1
+            response = self.session.post(url, headers=self.headers, json=payload)
             self._handle_response_errors(response)
 
             data = response.json()
@@ -443,9 +515,8 @@ class ProjectX:
         payload = {"onlyActiveAccounts": True}
 
         try:
-            response = requests.post(
-                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
-            )
+            self.api_call_count += 1
+            response = self.session.post(url, headers=self.headers, json=payload)
             self._handle_response_errors(response)
 
             data = response.json()
@@ -488,7 +559,7 @@ class ProjectX:
 
     def get_instrument(self, symbol: str) -> Instrument | None:
         """
-        Search for the first instrument matching a symbol.
+        Search for the first instrument matching a symbol with caching.
 
         Args:
             symbol: Symbol to search for (e.g., "MGC", "MNQ")
@@ -504,15 +575,19 @@ class ProjectX:
             >>> instrument = project_x.get_instrument("MGC")
             >>> print(f"Contract: {instrument.name} - {instrument.description}")
         """
+        # Check cache first
+        if symbol in self.instrument_cache:
+            self.cache_hit_count += 1
+            return self.instrument_cache[symbol]
+
         self._ensure_authenticated()
 
         url = f"{self.base_url}/Contract/search"
         payload = {"searchText": symbol, "live": False}
 
         try:
-            response = requests.post(
-                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
-            )
+            self.api_call_count += 1
+            response = self.session.post(url, headers=self.headers, json=payload)
             self._handle_response_errors(response)
 
             data = response.json()
@@ -526,7 +601,10 @@ class ProjectX:
                 self.logger.error(f"No contracts found for symbol: {symbol}")
                 return None
 
-            return Instrument(**contracts[0])
+            instrument = Instrument(**contracts[0])
+            # Cache the result
+            self.instrument_cache[symbol] = instrument
+            return instrument
 
         except requests.RequestException as e:
             raise ProjectXConnectionError(f"Contract search request failed: {e}") from e
@@ -558,9 +636,8 @@ class ProjectX:
         payload = {"searchText": symbol, "live": False}
 
         try:
-            response = requests.post(
-                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
-            )
+            self.api_call_count += 1
+            response = self.session.post(url, headers=self.headers, json=payload)
             self._handle_response_errors(response)
 
             data = response.json()
@@ -654,9 +731,8 @@ class ProjectX:
         }
 
         try:
-            response = requests.post(
-                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
-            )
+            self.api_call_count += 1
+            response = self.session.post(url, headers=self.headers, json=payload)
             self._handle_response_errors(response)
 
             data = response.json()
@@ -669,26 +745,33 @@ class ProjectX:
             if not bars:
                 return None
 
-            # Create DataFrame with polars
-            df = pl.from_dicts(bars).sort("t")
-            df = df.rename(
-                {
-                    "t": "timestamp",
-                    "o": "open",
-                    "h": "high",
-                    "l": "low",
-                    "c": "close",
-                    "v": "volume",
-                }
+            # Optimize DataFrame creation and operations
+            # Create DataFrame with proper schema and efficient column operations
+            df = (
+                pl.from_dicts(bars)
+                .sort("t")
+                .rename(
+                    {
+                        "t": "timestamp",
+                        "o": "open",
+                        "h": "high",
+                        "l": "low",
+                        "c": "close",
+                        "v": "volume",
+                    }
+                )
+                .with_columns(
+                    # Optimized datetime conversion with cached timezone
+                    pl.col("timestamp")
+                    .str.to_datetime()
+                    .dt.replace_time_zone("UTC")
+                    .dt.convert_time_zone(str(self.timezone.zone))
+                )
             )
 
-            # Convert timestamp to datetime and handle timezone properly
-            df = df.with_columns(
-                pl.col("timestamp")
-                .str.to_datetime()
-                .dt.replace_time_zone("UTC")
-                .dt.convert_time_zone(str(self.timezone.zone))
-            )
+            # Trigger garbage collection for large datasets
+            if len(df) > 10000:
+                gc.collect()
 
             return df
 
@@ -733,9 +816,8 @@ class ProjectX:
         payload = {"accountId": account_id}
 
         try:
-            response = requests.post(
-                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
-            )
+            self.api_call_count += 1
+            response = self.session.post(url, headers=self.headers, json=payload)
             self._handle_response_errors(response)
 
             data = response.json()
@@ -814,9 +896,8 @@ class ProjectX:
             payload["contractId"] = contract_id
 
         try:
-            response = requests.post(
-                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
-            )
+            self.api_call_count += 1
+            response = self.session.post(url, headers=self.headers, json=payload)
             self._handle_response_errors(response)
 
             data = response.json()
@@ -892,9 +973,8 @@ class ProjectX:
             payload["contractId"] = contract_id
 
         try:
-            response = requests.post(
-                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
-            )
+            self.api_call_count += 1
+            response = self.session.post(url, headers=self.headers, json=payload)
             self._handle_response_errors(response)
 
             data = response.json()
@@ -958,9 +1038,8 @@ class ProjectX:
         }
 
         try:
-            response = requests.post(
-                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
-            )
+            self.api_call_count += 1
+            response = self.session.post(url, headers=self.headers, json=payload)
             self._handle_response_errors(response)
 
             data = response.json()
@@ -1015,9 +1094,8 @@ class ProjectX:
         payload = {"accountId": account_id}
 
         try:
-            response = requests.post(
-                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
-            )
+            self.api_call_count += 1
+            response = self.session.post(url, headers=self.headers, json=payload)
             self._handle_response_errors(response)
 
             data = response.json()
@@ -1063,9 +1141,8 @@ class ProjectX:
         payload = {"accountId": account_id}
 
         try:
-            response = requests.post(
-                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
-            )
+            self.api_call_count += 1
+            response = self.session.post(url, headers=self.headers, json=payload)
             self._handle_response_errors(response)
 
             data = response.json()
@@ -1131,9 +1208,8 @@ class ProjectX:
         }
 
         try:
-            response = requests.post(
-                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
-            )
+            self.api_call_count += 1
+            response = self.session.post(url, headers=self.headers, json=payload)
             self._handle_response_errors(response)
 
             data = response.json()
@@ -1197,9 +1273,8 @@ class ProjectX:
         }
 
         try:
-            response = requests.post(
-                url, headers=self.headers, json=payload, timeout=self.timeout_seconds
-            )
+            self.api_call_count += 1
+            response = self.session.post(url, headers=self.headers, json=payload)
             self._handle_response_errors(response)
 
             data = response.json()

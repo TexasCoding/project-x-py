@@ -52,44 +52,61 @@ class RSI(MomentumIndicator):
         self.validate_period(period, min_period=1)
         self.validate_data_length(data, period + 1)
 
-        # Calculate price changes
-        data_with_changes = data.with_columns(
-            pl.col(column).diff().alias("price_change")
-        )
-
-        # Separate gains and losses
-        data_with_gains_losses = data_with_changes.with_columns(
-            [
-                pl.when(pl.col("price_change") > 0)
-                .then(pl.col("price_change"))
-                .otherwise(0)
-                .alias("gain"),
-                pl.when(pl.col("price_change") < 0)
-                .then(-pl.col("price_change"))
-                .otherwise(0)
-                .alias("loss"),
-            ]
-        )
-
-        # Calculate average gains and losses using EMA (Wilder's smoothing)
+        # Optimized RSI calculation with chained operations
         alpha = 1.0 / period  # Wilder's smoothing factor
-        data_with_averages = data_with_gains_losses.with_columns(
-            [
-                pl.col("gain").ewm_mean(alpha=alpha, adjust=False).alias("avg_gain"),
-                pl.col("loss").ewm_mean(alpha=alpha, adjust=False).alias("avg_loss"),
-            ]
-        ).with_columns(pl.col("avg_gain").fill_null(0), pl.col("avg_loss").fill_null(0))
 
-        # Calculate RSI
-        result = data_with_averages.with_columns(
-            (
-                100
-                - (100 / (1 + safe_division(pl.col("avg_gain"), pl.col("avg_loss"))))
-            ).alias(f"rsi_{period}")
+        result = (
+            data.with_columns(
+                [
+                    # Calculate price changes and immediately process gains/losses
+                    pl.col(column).diff().alias("price_change")
+                ]
+            )
+            .with_columns(
+                [
+                    # Separate gains and losses in single operation
+                    pl.when(pl.col("price_change") > 0)
+                    .then(pl.col("price_change"))
+                    .otherwise(0)
+                    .alias("gain"),
+                    pl.when(pl.col("price_change") < 0)
+                    .then(-pl.col("price_change"))
+                    .otherwise(0)
+                    .alias("loss"),
+                ]
+            )
+            .with_columns(
+                [
+                    # Calculate averages and RSI in final chain
+                    pl.col("gain")
+                    .ewm_mean(alpha=alpha, adjust=False)
+                    .fill_null(0)
+                    .alias("avg_gain"),
+                    pl.col("loss")
+                    .ewm_mean(alpha=alpha, adjust=False)
+                    .fill_null(0)
+                    .alias("avg_loss"),
+                ]
+            )
+            .with_columns(
+                [
+                    # Calculate RSI with safe division
+                    (
+                        100
+                        - (
+                            100
+                            / (
+                                1
+                                + safe_division(pl.col("avg_gain"), pl.col("avg_loss"))
+                            )
+                        )
+                    ).alias(f"rsi_{period}")
+                ]
+            )
+            .drop(["price_change", "gain", "loss", "avg_gain", "avg_loss"])
         )
 
-        # Remove intermediate columns
-        return result.drop(["price_change", "gain", "loss", "avg_gain", "avg_loss"])
+        return result
 
 
 class MACD(MomentumIndicator):

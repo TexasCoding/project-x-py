@@ -22,8 +22,10 @@ Key Features:
 - Comprehensive liquidity and depth analysis
 """
 
+import gc
 import logging
 import threading
+import time
 from collections import defaultdict
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -65,6 +67,19 @@ class OrderBook:
 
         # Thread-safe locks for concurrent access
         self.orderbook_lock = threading.RLock()
+
+        # Memory management settings
+        self.max_trades = 10000  # Maximum trades to keep in memory
+        self.max_depth_entries = 1000  # Maximum depth entries per side
+        self.cleanup_interval = 300  # 5 minutes
+        self.last_cleanup = time.time()
+
+        # Performance monitoring
+        self.memory_stats = {
+            "total_trades": 0,
+            "trades_cleaned": 0,
+            "last_cleanup": time.time(),
+        }
 
         # Level 2 orderbook storage with Polars DataFrames
         self.orderbook_bids: pl.DataFrame = pl.DataFrame(
@@ -122,6 +137,85 @@ class OrderBook:
         self.callbacks: dict[str, list[Callable]] = defaultdict(list)
 
         self.logger.info(f"OrderBook initialized for {instrument}")
+
+    def _cleanup_old_data(self) -> None:
+        """
+        Clean up old data to manage memory usage efficiently.
+        """
+        current_time = time.time()
+
+        # Only cleanup if interval has passed
+        if current_time - self.last_cleanup < self.cleanup_interval:
+            return
+
+        with self.orderbook_lock:
+            initial_trade_count = len(self.recent_trades)
+            initial_bid_count = len(self.orderbook_bids)
+            initial_ask_count = len(self.orderbook_asks)
+
+            # Cleanup recent trades - keep only the most recent trades
+            if len(self.recent_trades) > self.max_trades:
+                self.recent_trades = self.recent_trades.tail(self.max_trades // 2)
+                self.memory_stats["trades_cleaned"] += initial_trade_count - len(
+                    self.recent_trades
+                )
+
+            # Cleanup orderbook depth - keep only recent depth entries
+            cutoff_time = datetime.now(self.timezone) - timedelta(hours=1)
+
+            if len(self.orderbook_bids) > self.max_depth_entries:
+                self.orderbook_bids = self.orderbook_bids.filter(
+                    pl.col("timestamp") > cutoff_time
+                ).tail(self.max_depth_entries // 2)
+
+            if len(self.orderbook_asks) > self.max_depth_entries:
+                self.orderbook_asks = self.orderbook_asks.filter(
+                    pl.col("timestamp") > cutoff_time
+                ).tail(self.max_depth_entries // 2)
+
+            self.last_cleanup = current_time
+            self.memory_stats["last_cleanup"] = current_time
+
+            # Log cleanup stats
+            trades_after = len(self.recent_trades)
+            bids_after = len(self.orderbook_bids)
+            asks_after = len(self.orderbook_asks)
+
+            if (
+                initial_trade_count != trades_after
+                or initial_bid_count != bids_after
+                or initial_ask_count != asks_after
+            ):
+                self.logger.debug(
+                    f"OrderBook cleanup - Trades: {initial_trade_count}→{trades_after}, "
+                    f"Bids: {initial_bid_count}→{bids_after}, "
+                    f"Asks: {initial_ask_count}→{asks_after}"
+                )
+
+                # Force garbage collection after significant cleanup
+                gc.collect()
+
+    def get_memory_stats(self) -> dict:
+        """
+        Get current memory usage statistics.
+
+        Returns:
+            Dictionary with memory statistics
+        """
+        with self.orderbook_lock:
+            return {
+                "recent_trades_count": len(self.recent_trades),
+                "orderbook_bids_count": len(self.orderbook_bids),
+                "orderbook_asks_count": len(self.orderbook_asks),
+                "total_memory_entries": (
+                    len(self.recent_trades)
+                    + len(self.orderbook_bids)
+                    + len(self.orderbook_asks)
+                ),
+                "max_trades": self.max_trades,
+                "max_depth_entries": self.max_depth_entries,
+                **self.memory_stats,
+            }
 
     def process_market_depth(self, data: dict) -> None:
         """
@@ -295,6 +389,9 @@ class OrderBook:
 
             # Trigger callbacks for any registered listeners
             self._trigger_callbacks("market_depth", data)
+
+            # Periodic memory cleanup
+            self._cleanup_old_data()
 
         except Exception as e:
             self.logger.error(f"❌ Error processing market depth: {e}")

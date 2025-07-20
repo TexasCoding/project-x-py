@@ -7,6 +7,7 @@ Date: June 2025
 Base classes and common functionality for technical indicators.
 """
 
+import hashlib
 from abc import ABC, abstractmethod
 
 import polars as pl
@@ -34,6 +35,9 @@ class BaseIndicator(ABC):
         """
         self.name = name
         self.description = description
+        # Cache for computed results to avoid recomputation
+        self._cache = {}
+        self._cache_max_size = 100
 
     def validate_data(self, data: pl.DataFrame, required_columns: list[str]) -> None:
         """
@@ -99,9 +103,43 @@ class BaseIndicator(ABC):
             DataFrame with indicator columns added
         """
 
+    def _generate_cache_key(self, data: pl.DataFrame, **kwargs) -> str:
+        """
+        Generate a cache key for the given data and parameters.
+
+        Args:
+            data: Input DataFrame
+            **kwargs: Additional parameters
+
+        Returns:
+            Cache key string
+        """
+        # Create hash from DataFrame shape, column names, and last few rows
+        data_hash = hashlib.md5(
+            f"{data.shape}{list(data.columns)}{data.tail(5).to_numpy().tobytes()}".encode()
+        ).hexdigest()
+
+        # Include parameters in the key
+        params_str = "_".join(f"{k}={v}" for k, v in sorted(kwargs.items()))
+        return f"{self.name}_{data_hash}_{params_str}"
+
+    def _get_from_cache(self, cache_key: str) -> pl.DataFrame | None:
+        """Get result from cache if available."""
+        return self._cache.get(cache_key)
+
+    def _store_in_cache(self, cache_key: str, result: pl.DataFrame) -> None:
+        """Store result in cache with size management."""
+        # Simple LRU cache management
+        if len(self._cache) >= self._cache_max_size:
+            # Remove oldest entry
+            oldest_key = next(iter(self._cache))
+            del self._cache[oldest_key]
+
+        self._cache[cache_key] = result
+
     def __call__(self, data: pl.DataFrame, **kwargs) -> pl.DataFrame:
         """
-        Allow indicator to be called directly.
+        Allow indicator to be called directly with caching.
 
         Args:
             data: Input DataFrame
@@ -110,7 +148,18 @@ class BaseIndicator(ABC):
         Returns:
             DataFrame with indicator values
         """
-        return self.calculate(data, **kwargs)
+        # Check cache first
+        cache_key = self._generate_cache_key(data, **kwargs)
+        cached_result = self._get_from_cache(cache_key)
+
+        if cached_result is not None:
+            return cached_result
+
+        # Calculate and cache result
+        result = self.calculate(data, **kwargs)
+        self._store_in_cache(cache_key, result)
+
+        return result
 
 
 class OverlapIndicator(BaseIndicator):

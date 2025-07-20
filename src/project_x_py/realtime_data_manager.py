@@ -28,8 +28,10 @@ Architecture:
 
 import asyncio
 import contextlib
+import gc
 import logging
 import threading
+import time
 from collections import defaultdict
 from collections.abc import Callable
 from datetime import datetime
@@ -217,7 +219,99 @@ class ProjectXRealtimeDataManager:
         # Contract ID for real-time subscriptions
         self.contract_id: str | None = None
 
+        # Memory management settings
+        self.max_bars_per_timeframe = 1000  # Keep last 1000 bars per timeframe
+        self.tick_buffer_size = 1000  # Max tick data to buffer
+        self.cleanup_interval = 300  # 5 minutes between cleanups
+        self.last_cleanup = time.time()
+
+        # Performance monitoring
+        self.memory_stats = {
+            "total_bars": 0,
+            "bars_cleaned": 0,
+            "ticks_processed": 0,
+            "last_cleanup": time.time(),
+        }
+
         self.logger.info(f"RealtimeDataManager initialized for {instrument}")
+
+    def _cleanup_old_data(self) -> None:
+        """
+        Clean up old OHLCV data to manage memory efficiently using sliding windows.
+        """
+        current_time = time.time()
+
+        # Only cleanup if interval has passed
+        if current_time - self.last_cleanup < self.cleanup_interval:
+            return
+
+        with self.data_lock:
+            total_bars_before = 0
+            total_bars_after = 0
+
+            # Cleanup each timeframe's data
+            for tf_key in self.timeframes:
+                if tf_key in self.data and not self.data[tf_key].is_empty():
+                    initial_count = len(self.data[tf_key])
+                    total_bars_before += initial_count
+
+                    # Keep only the most recent bars (sliding window)
+                    if initial_count > self.max_bars_per_timeframe:
+                        self.data[tf_key] = self.data[tf_key].tail(
+                            self.max_bars_per_timeframe // 2
+                        )
+
+                    total_bars_after += len(self.data[tf_key])
+
+            # Cleanup tick buffer
+            if len(self.current_tick_data) > self.tick_buffer_size:
+                self.current_tick_data = self.current_tick_data[
+                    -self.tick_buffer_size // 2 :
+                ]
+
+            # Update stats
+            self.last_cleanup = current_time
+            self.memory_stats["bars_cleaned"] += total_bars_before - total_bars_after
+            self.memory_stats["total_bars"] = total_bars_after
+            self.memory_stats["last_cleanup"] = current_time
+
+            # Log cleanup if significant
+            if total_bars_before != total_bars_after:
+                self.logger.debug(
+                    f"DataManager cleanup - Bars: {total_bars_before}→{total_bars_after}, "
+                    f"Ticks: {len(self.current_tick_data)}"
+                )
+
+                # Force garbage collection after cleanup
+                gc.collect()
+
+    def get_memory_stats(self) -> dict:
+        """
+        Get current memory usage statistics.
+
+        Returns:
+            Dictionary with memory statistics
+        """
+        with self.data_lock:
+            timeframe_stats = {}
+            total_bars = 0
+
+            for tf_key in self.timeframes:
+                if tf_key in self.data:
+                    bar_count = len(self.data[tf_key])
+                    timeframe_stats[tf_key] = bar_count
+                    total_bars += bar_count
+                else:
+                    timeframe_stats[tf_key] = 0
+
+            return {
+                "timeframe_bar_counts": timeframe_stats,
+                "total_bars": total_bars,
+                "tick_buffer_size": len(self.current_tick_data),
+                "max_bars_per_timeframe": self.max_bars_per_timeframe,
+                "max_tick_buffer": self.tick_buffer_size,
+                **self.memory_stats,
+            }
 
     def initialize(self, initial_days: int = 1) -> bool:
         """
@@ -712,6 +806,10 @@ class ProjectXRealtimeDataManager:
                 "data_update",
                 {"timestamp": timestamp, "price": price, "volume": volume},
             )
+
+            # Update memory stats and periodic cleanup
+            self.memory_stats["ticks_processed"] += 1
+            self._cleanup_old_data()
 
         except Exception as e:
             self.logger.error(f"Error processing tick data: {e}")
