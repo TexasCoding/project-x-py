@@ -84,7 +84,7 @@ from .volume import (
 )
 
 # Version info
-__version__ = "1.0.3"
+__version__ = "1.0.4"
 __author__ = "TexasCoding"
 
 
