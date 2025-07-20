@@ -36,7 +36,7 @@ class Instrument:
     tickSize: float
     tickValue: float
     activeContract: bool
-    symbolId: str
+    symbolId: str | None = None
 
 
 @dataclass
