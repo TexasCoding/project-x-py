@@ -263,9 +263,6 @@ class ProjectX:
         session.mount("http://", adapter)
         session.mount("https://", adapter)
 
-        # Set default timeout
-        session.timeout = self.timeout_seconds
-
         return session
 
     def _cleanup_cache(self) -> None:
