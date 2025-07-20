@@ -33,18 +33,47 @@ from .base import (
 
 # Momentum Indicators
 from .momentum import (
+    # NEW MOMENTUM INDICATORS
+    ADX as ADXIndicator,
+    ADXR as ADXRIndicator,
+    APO as APOIndicator,
+    AROON as AROONIndicator,
+    AROONOSC as AROONOSCIndicator,
+    BOP as BOPIndicator,
     CCI as CCIIndicator,
+    CMO as CMOIndicator,
+    DX as DXIndicator,
     MACD as MACDIndicator,
+    MACDEXT as MACDEXTIndicator,
+    MACDFIX as MACDFIXIndicator,
+    MFI as MFIIndicator,
+    MINUS_DI as MINUS_DIIndicator,
+    MINUS_DM as MINUS_DMIndicator,
     MOM as MOMIndicator,
+    PLUS_DI as PLUS_DIIndicator,
+    PLUS_DM as PLUS_DMIndicator,
+    PPO as PPOIndicator,
     ROC as ROCIndicator,
+    ROCP as ROCPIndicator,
+    ROCR as ROCRIndicator,
+    ROCR100 as ROCR100Indicator,
     RSI as RSIIndicator,
     STOCH as STOCHIndicator,
+    STOCHF as STOCHFIndicator,
     STOCHRSI as STOCHRSIIndicator,
+    TRIX as TRIXIndicator,
+    ULTOSC as ULTOSCIndicator,
     WILLR as WILLRIndicator,
+    # NEW CONVENIENCE FUNCTIONS
+    calculate_adx,
+    calculate_aroon,
     calculate_commodity_channel_index,
     calculate_macd,
+    calculate_money_flow_index,
+    calculate_ppo,
     calculate_rsi,
     calculate_stochastic,
+    calculate_ultimate_oscillator,
     calculate_williams_r,
 )
 
@@ -64,12 +93,9 @@ from .overlap import (
 
 # Volatility Indicators
 from .volatility import (
-    ADX as ADXIndicator,
     ATR as ATRIndicator,
     NATR as NATRIndicator,
     TRANGE as TRANGEIndicator,
-    ULTOSC as ULTOSCIndicator,
-    calculate_adx,
     calculate_atr,
 )
 
@@ -220,10 +246,12 @@ def STOCHRSI(
     )
 
 
-# Volatility Indicators
-def ATR(data, high_column="high", low_column="low", close_column="close", period=14):
-    """Average True Range (TA-Lib style)."""
-    return calculate_atr(
+# NEW MOMENTUM INDICATORS (TA-LIB STYLE)
+
+
+def ADX(data, high_column="high", low_column="low", close_column="close", period=14):
+    """Average Directional Movement Index (TA-Lib style)."""
+    return calculate_adx(
         data,
         high_column=high_column,
         low_column=low_column,
@@ -232,9 +260,249 @@ def ATR(data, high_column="high", low_column="low", close_column="close", period
     )
 
 
-def ADX(data, high_column="high", low_column="low", close_column="close", period=14):
-    """Average Directional Index (TA-Lib style)."""
-    return calculate_adx(
+def ADXR(data, high_column="high", low_column="low", close_column="close", period=14):
+    """Average Directional Movement Index Rating (TA-Lib style)."""
+    return ADXRIndicator().calculate(
+        data,
+        high_column=high_column,
+        low_column=low_column,
+        close_column=close_column,
+        period=period,
+    )
+
+
+def APO(data, column="close", fast_period=12, slow_period=26, ma_type="ema"):
+    """Absolute Price Oscillator (TA-Lib style)."""
+    return APOIndicator().calculate(
+        data,
+        column=column,
+        fast_period=fast_period,
+        slow_period=slow_period,
+        ma_type=ma_type,
+    )
+
+
+def AROON(data, high_column="high", low_column="low", period=14):
+    """Aroon (TA-Lib style)."""
+    return calculate_aroon(
+        data,
+        high_column=high_column,
+        low_column=low_column,
+        period=period,
+    )
+
+
+def AROONOSC(data, high_column="high", low_column="low", period=14):
+    """Aroon Oscillator (TA-Lib style)."""
+    return AROONOSCIndicator().calculate(
+        data,
+        high_column=high_column,
+        low_column=low_column,
+        period=period,
+    )
+
+
+def BOP(
+    data, high_column="high", low_column="low", open_column="open", close_column="close"
+):
+    """Balance of Power (TA-Lib style)."""
+    return BOPIndicator().calculate(
+        data,
+        high_column=high_column,
+        low_column=low_column,
+        open_column=open_column,
+        close_column=close_column,
+    )
+
+
+def CMO(data, column="close", period=14):
+    """Chande Momentum Oscillator (TA-Lib style)."""
+    return CMOIndicator().calculate(data, column=column, period=period)
+
+
+def DX(data, high_column="high", low_column="low", close_column="close", period=14):
+    """Directional Movement Index (TA-Lib style)."""
+    return DXIndicator().calculate(
+        data,
+        high_column=high_column,
+        low_column=low_column,
+        close_column=close_column,
+        period=period,
+    )
+
+
+def MACDEXT(
+    data,
+    column="close",
+    fast_period=12,
+    slow_period=26,
+    signal_period=9,
+    fast_ma_type="ema",
+    slow_ma_type="ema",
+    signal_ma_type="ema",
+):
+    """MACD with controllable MA type (TA-Lib style)."""
+    return MACDEXTIndicator().calculate(
+        data,
+        column=column,
+        fast_period=fast_period,
+        slow_period=slow_period,
+        signal_period=signal_period,
+        fast_ma_type=fast_ma_type,
+        slow_ma_type=slow_ma_type,
+        signal_ma_type=signal_ma_type,
+    )
+
+
+def MACDFIX(data, column="close", signal_period=9):
+    """MACD Fix 12/26 (TA-Lib style)."""
+    return MACDFIXIndicator().calculate(
+        data, column=column, signal_period=signal_period
+    )
+
+
+def MFI(
+    data,
+    high_column="high",
+    low_column="low",
+    close_column="close",
+    volume_column="volume",
+    period=14,
+):
+    """Money Flow Index (TA-Lib style)."""
+    return calculate_money_flow_index(
+        data,
+        high_column=high_column,
+        low_column=low_column,
+        close_column=close_column,
+        volume_column=volume_column,
+        period=period,
+    )
+
+
+def MINUS_DI(
+    data, high_column="high", low_column="low", close_column="close", period=14
+):
+    """Minus Directional Indicator (TA-Lib style)."""
+    return MINUS_DIIndicator().calculate(
+        data,
+        high_column=high_column,
+        low_column=low_column,
+        close_column=close_column,
+        period=period,
+    )
+
+
+def MINUS_DM(data, high_column="high", low_column="low", period=14):
+    """Minus Directional Movement (TA-Lib style)."""
+    return MINUS_DMIndicator().calculate(
+        data,
+        high_column=high_column,
+        low_column=low_column,
+        period=period,
+    )
+
+
+def PLUS_DI(
+    data, high_column="high", low_column="low", close_column="close", period=14
+):
+    """Plus Directional Indicator (TA-Lib style)."""
+    return PLUS_DIIndicator().calculate(
+        data,
+        high_column=high_column,
+        low_column=low_column,
+        close_column=close_column,
+        period=period,
+    )
+
+
+def PLUS_DM(data, high_column="high", low_column="low", period=14):
+    """Plus Directional Movement (TA-Lib style)."""
+    return PLUS_DMIndicator().calculate(
+        data,
+        high_column=high_column,
+        low_column=low_column,
+        period=period,
+    )
+
+
+def PPO(
+    data, column="close", fast_period=12, slow_period=26, signal_period=9, ma_type="ema"
+):
+    """Percentage Price Oscillator (TA-Lib style)."""
+    return calculate_ppo(
+        data,
+        column=column,
+        fast_period=fast_period,
+        slow_period=slow_period,
+        signal_period=signal_period,
+    )
+
+
+def ROCP(data, column="close", period=10):
+    """Rate of Change Percentage (TA-Lib style)."""
+    return ROCPIndicator().calculate(data, column=column, period=period)
+
+
+def ROCR(data, column="close", period=10):
+    """Rate of Change Ratio (TA-Lib style)."""
+    return ROCRIndicator().calculate(data, column=column, period=period)
+
+
+def ROCR100(data, column="close", period=10):
+    """Rate of Change Ratio 100 scale (TA-Lib style)."""
+    return ROCR100Indicator().calculate(data, column=column, period=period)
+
+
+def STOCHF(
+    data,
+    high_column="high",
+    low_column="low",
+    close_column="close",
+    k_period=14,
+    d_period=3,
+):
+    """Stochastic Fast (TA-Lib style)."""
+    return STOCHFIndicator().calculate(
+        data,
+        high_column=high_column,
+        low_column=low_column,
+        close_column=close_column,
+        k_period=k_period,
+        d_period=d_period,
+    )
+
+
+def TRIX(data, column="close", period=14):
+    """TRIX (TA-Lib style)."""
+    return TRIXIndicator().calculate(data, column=column, period=period)
+
+
+def ULTOSC(
+    data,
+    high_column="high",
+    low_column="low",
+    close_column="close",
+    period1=7,
+    period2=14,
+    period3=28,
+):
+    """Ultimate Oscillator (TA-Lib style)."""
+    return calculate_ultimate_oscillator(
+        data,
+        high_column=high_column,
+        low_column=low_column,
+        close_column=close_column,
+        period1=period1,
+        period2=period2,
+        period3=period3,
+    )
+
+
+# Volatility Indicators
+def ATR(data, high_column="high", low_column="low", close_column="close", period=14):
+    """Average True Range (TA-Lib style)."""
+    return calculate_atr(
         data,
         high_column=high_column,
         low_column=low_column,
@@ -258,27 +526,6 @@ def TRANGE(data, high_column="high", low_column="low", close_column="close"):
     """True Range (TA-Lib style)."""
     return TRANGEIndicator().calculate(
         data, high_column=high_column, low_column=low_column, close_column=close_column
-    )
-
-
-def ULTOSC(
-    data,
-    high_column="high",
-    low_column="low",
-    close_column="close",
-    period1=7,
-    period2=14,
-    period3=28,
-):
-    """Ultimate Oscillator (TA-Lib style)."""
-    return ULTOSCIndicator().calculate(
-        data,
-        high_column=high_column,
-        low_column=low_column,
-        close_column=close_column,
-        period1=period1,
-        period2=period2,
-        period3=period3,
     )
 
 
@@ -350,8 +597,39 @@ def get_indicator_groups():
     """Get available indicator groups."""
     return {
         "overlap": ["SMA", "EMA", "BBANDS", "DEMA", "TEMA", "WMA", "MIDPOINT"],
-        "momentum": ["RSI", "MACD", "STOCH", "WILLR", "CCI", "ROC", "MOM", "STOCHRSI"],
-        "volatility": ["ATR", "ADX", "NATR", "TRANGE", "ULTOSC"],
+        "momentum": [
+            "RSI",
+            "MACD",
+            "STOCH",
+            "WILLR",
+            "CCI",
+            "ROC",
+            "MOM",
+            "STOCHRSI",
+            "ADX",
+            "ADXR",
+            "APO",
+            "AROON",
+            "AROONOSC",
+            "BOP",
+            "CMO",
+            "DX",
+            "MACDEXT",
+            "MACDFIX",
+            "MFI",
+            "MINUS_DI",
+            "MINUS_DM",
+            "PLUS_DI",
+            "PLUS_DM",
+            "PPO",
+            "ROCP",
+            "ROCR",
+            "ROCR100",
+            "STOCHF",
+            "TRIX",
+            "ULTOSC",
+        ],
+        "volatility": ["ATR", "NATR", "TRANGE"],
         "volume": ["OBV", "VWAP", "AD", "ADOSC"],
     }
 
@@ -385,12 +663,32 @@ def get_indicator_info(indicator_name):
         "ROC": "Rate of Change - momentum indicator measuring percentage change in price",
         "MOM": "Momentum - measures the amount of change in price over a specified time period",
         "STOCHRSI": "Stochastic RSI - applies Stochastic oscillator formula to RSI values",
+        "ADX": "Average Directional Movement Index - measures trend strength regardless of direction",
+        "ADXR": "Average Directional Movement Index Rating - smoothed version of ADX",
+        "APO": "Absolute Price Oscillator - difference between fast and slow EMA",
+        "AROON": "Aroon - identifies when trends are likely to change direction",
+        "AROONOSC": "Aroon Oscillator - difference between Aroon Up and Aroon Down",
+        "BOP": "Balance of Power - measures buying vs selling pressure",
+        "CMO": "Chande Momentum Oscillator - momentum indicator without smoothing",
+        "DX": "Directional Movement Index - measures directional movement",
+        "MACDEXT": "MACD with controllable MA type - extended MACD with different MA types",
+        "MACDFIX": "MACD Fix 12/26 - MACD with fixed 12/26 periods",
+        "MFI": "Money Flow Index - volume-weighted RSI",
+        "MINUS_DI": "Minus Directional Indicator - measures negative directional movement",
+        "MINUS_DM": "Minus Directional Movement - raw negative directional movement",
+        "PLUS_DI": "Plus Directional Indicator - measures positive directional movement",
+        "PLUS_DM": "Plus Directional Movement - raw positive directional movement",
+        "PPO": "Percentage Price Oscillator - percentage difference between fast and slow MA",
+        "ROCP": "Rate of Change Percentage - (price-prevPrice)/prevPrice",
+        "ROCR": "Rate of Change Ratio - price/prevPrice",
+        "ROCR100": "Rate of Change Ratio 100 scale - (price/prevPrice)*100",
+        "STOCHF": "Stochastic Fast - fast stochastic without smoothing",
+        "TRIX": "TRIX - 1-day Rate-Of-Change of a Triple Smooth EMA",
+        "ULTOSC": "Ultimate Oscillator - momentum oscillator using three timeframes",
         # Volatility Indicators
         "ATR": "Average True Range - measures market volatility by analyzing the range of price movements",
-        "ADX": "Average Directional Index - measures trend strength regardless of direction",
         "NATR": "Normalized Average True Range - ATR as percentage of closing price",
         "TRANGE": "True Range - measures the actual range of price movement for a single period",
-        "ULTOSC": "Ultimate Oscillator - momentum oscillator using three timeframes",
         # Volume Indicators
         "OBV": "On-Balance Volume - cumulative indicator relating volume to price change",
         "VWAP": "Volume Weighted Average Price - average price weighted by volume",
@@ -446,6 +744,10 @@ __all__ = [
     "calculate_commodity_channel_index",
     "calculate_atr",
     "calculate_adx",
+    "calculate_aroon",
+    "calculate_money_flow_index",
+    "calculate_ppo",
+    "calculate_ultimate_oscillator",
     "calculate_obv",
     "calculate_vwap",
     # Helper functions
