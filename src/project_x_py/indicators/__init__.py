@@ -82,13 +82,35 @@ from .overlap import (
     BBANDS as BBANDSIndicator,
     DEMA as DEMAIndicator,
     EMA as EMAIndicator,
+    HT_TRENDLINE as HT_TRENDLINEIndicator,
+    KAMA as KAMAIndicator,
+    MA as MAIndicator,
+    MAMA as MAMAIndicator,
+    MAVP as MAVPIndicator,
     MIDPOINT as MIDPOINTIndicator,
+    MIDPRICE as MIDPRICEIndicator,
+    SAR as SARIndicator,
+    SAREXT as SAREXTIndicator,
     SMA as SMAIndicator,
+    T3 as T3Indicator,
     TEMA as TEMAIndicator,
+    TRIMA as TRIMAIndicator,
     WMA as WMAIndicator,
     calculate_bollinger_bands,
+    calculate_dema,
     calculate_ema,
+    calculate_ht_trendline,
+    calculate_kama,
+    calculate_ma,
+    calculate_mama,
+    calculate_midpoint,
+    calculate_midprice,
+    calculate_sar,
     calculate_sma,
+    calculate_t3,
+    calculate_tema,
+    calculate_trima,
+    calculate_wma,
 )
 
 # Volatility Indicators
@@ -110,7 +132,7 @@ from .volume import (
 )
 
 # Version info
-__version__ = "1.0.4"
+__version__ = "1.0.5"
 __author__ = "TexasCoding"
 
 
@@ -154,6 +176,108 @@ def WMA(data, column="close", period=20):
 def MIDPOINT(data, column="close", period=14):
     """Midpoint over period (TA-Lib style)."""
     return MIDPOINTIndicator().calculate(data, column=column, period=period)
+
+
+def MIDPRICE(data, high_column="high", low_column="low", period=14):
+    """Midpoint Price over period (TA-Lib style)."""
+    return MIDPRICEIndicator().calculate(
+        data, high_column=high_column, low_column=low_column, period=period
+    )
+
+
+def HT_TRENDLINE(data, column="close"):
+    """Hilbert Transform - Instantaneous Trendline (TA-Lib style)."""
+    return HT_TRENDLINEIndicator().calculate(data, column=column)
+
+
+def KAMA(data, column="close", period=30, fast_sc=2.0, slow_sc=30.0):
+    """Kaufman Adaptive Moving Average (TA-Lib style)."""
+    return KAMAIndicator().calculate(
+        data, column=column, period=period, fast_sc=fast_sc, slow_sc=slow_sc
+    )
+
+
+def MA(data, column="close", period=30, ma_type="sma"):
+    """Moving Average (TA-Lib style)."""
+    return MAIndicator().calculate(data, column=column, period=period, ma_type=ma_type)
+
+
+def MAMA(data, column="close", fast_limit=0.5, slow_limit=0.05):
+    """MESA Adaptive Moving Average (TA-Lib style)."""
+    return MAMAIndicator().calculate(
+        data, column=column, fast_limit=fast_limit, slow_limit=slow_limit
+    )
+
+
+def MAVP(
+    data,
+    column="close",
+    periods_column="periods",
+    min_period=2,
+    max_period=30,
+    ma_type="sma",
+):
+    """Moving Average with Variable Period (TA-Lib style)."""
+    return MAVPIndicator().calculate(
+        data,
+        column=column,
+        periods_column=periods_column,
+        min_period=min_period,
+        max_period=max_period,
+        ma_type=ma_type,
+    )
+
+
+def SAR(data, high_column="high", low_column="low", acceleration=0.02, maximum=0.2):
+    """Parabolic SAR (TA-Lib style)."""
+    return SARIndicator().calculate(
+        data,
+        high_column=high_column,
+        low_column=low_column,
+        acceleration=acceleration,
+        maximum=maximum,
+    )
+
+
+def SAREXT(
+    data,
+    high_column="high",
+    low_column="low",
+    start_value=0.0,
+    offset_on_reverse=0.0,
+    acceleration_init_long=0.02,
+    acceleration_long=0.02,
+    acceleration_max_long=0.2,
+    acceleration_init_short=0.02,
+    acceleration_short=0.02,
+    acceleration_max_short=0.2,
+):
+    """Parabolic SAR - Extended (TA-Lib style)."""
+    return SAREXTIndicator().calculate(
+        data,
+        high_column=high_column,
+        low_column=low_column,
+        start_value=start_value,
+        offset_on_reverse=offset_on_reverse,
+        acceleration_init_long=acceleration_init_long,
+        acceleration_long=acceleration_long,
+        acceleration_max_long=acceleration_max_long,
+        acceleration_init_short=acceleration_init_short,
+        acceleration_short=acceleration_short,
+        acceleration_max_short=acceleration_max_short,
+    )
+
+
+def T3(data, column="close", period=5, v_factor=0.7):
+    """Triple Exponential Moving Average (T3) (TA-Lib style)."""
+    return T3Indicator().calculate(
+        data, column=column, period=period, v_factor=v_factor
+    )
+
+
+def TRIMA(data, column="close", period=20):
+    """Triangular Moving Average (TA-Lib style)."""
+    return TRIMAIndicator().calculate(data, column=column, period=period)
 
 
 # Momentum Indicators
@@ -596,7 +720,25 @@ def ADOSC(
 def get_indicator_groups():
     """Get available indicator groups."""
     return {
-        "overlap": ["SMA", "EMA", "BBANDS", "DEMA", "TEMA", "WMA", "MIDPOINT"],
+        "overlap": [
+            "SMA",
+            "EMA",
+            "BBANDS",
+            "DEMA",
+            "TEMA",
+            "WMA",
+            "MIDPOINT",
+            "MIDPRICE",
+            "HT_TRENDLINE",
+            "KAMA",
+            "MA",
+            "MAMA",
+            "MAVP",
+            "SAR",
+            "SAREXT",
+            "T3",
+            "TRIMA",
+        ],
         "momentum": [
             "RSI",
             "MACD",
@@ -654,6 +796,16 @@ def get_indicator_info(indicator_name):
         "TEMA": "Triple Exponential Moving Average - further reduces lag compared to DEMA",
         "WMA": "Weighted Moving Average - linear weighted moving average",
         "MIDPOINT": "Midpoint over period - average of highest high and lowest low",
+        "MIDPRICE": "Midpoint Price over period - average of highest high and lowest low",
+        "HT_TRENDLINE": "Hilbert Transform - Instantaneous Trendline - trendline based on Hilbert transform",
+        "KAMA": "Kaufman Adaptive Moving Average - adaptive moving average that reacts to market volatility",
+        "MA": "Moving Average - simple moving average of prices",
+        "MAMA": "MESA Adaptive Moving Average - adaptive moving average using MESA algorithm",
+        "MAVP": "Moving Average with Variable Period - moving average with customizable periods",
+        "SAR": "Parabolic SAR - trend-following indicator",
+        "SAREXT": "Parabolic SAR - Extended - extended version of Parabolic SAR",
+        "T3": "Triple Exponential Moving Average (T3) - further reduces lag compared to TEMA",
+        "TRIMA": "Triangular Moving Average - weighted moving average of prices",
         # Momentum Indicators
         "RSI": "Relative Strength Index - momentum oscillator measuring speed and change of price movements",
         "MACD": "Moving Average Convergence Divergence - trend-following momentum indicator",
@@ -716,6 +868,16 @@ __all__ = [
     "TEMA",
     "WMA",
     "MIDPOINT",
+    "MIDPRICE",
+    "HT_TRENDLINE",
+    "KAMA",
+    "MA",
+    "MAMA",
+    "MAVP",
+    "SAR",
+    "SAREXT",
+    "T3",
+    "TRIMA",
     "RSI",
     "MACD",
     "STOCH",
@@ -737,6 +899,18 @@ __all__ = [
     "calculate_sma",
     "calculate_ema",
     "calculate_bollinger_bands",
+    "calculate_dema",
+    "calculate_tema",
+    "calculate_wma",
+    "calculate_midpoint",
+    "calculate_midprice",
+    "calculate_ht_trendline",
+    "calculate_kama",
+    "calculate_ma",
+    "calculate_mama",
+    "calculate_sar",
+    "calculate_t3",
+    "calculate_trima",
     "calculate_rsi",
     "calculate_macd",
     "calculate_stochastic",

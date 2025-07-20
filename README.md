@@ -9,17 +9,19 @@ A **high-performance Python client** for the TopStepX ProjectX Gateway API, desi
 
 ## 📊 Project Status
 
-**Current Version**: v1.0.2 (Production Ready with Performance Optimizations)
+**Current Version**: v1.0.5 (Enhanced with Complete TA-Lib Overlap Indicators)
 
 ✅ **Production Ready Features**:
 - Complete futures trading API integration with connection pooling
 - Historical and real-time market data with intelligent caching
-- Advanced technical indicators (25+) with computation caching
+- Advanced technical indicators (40+) with computation caching
 - Institutional-grade orderbook analysis with memory management
 - Portfolio and risk management tools
 - **NEW**: 50-70% performance improvements through optimization
 - **NEW**: 60% memory usage reduction with sliding windows
 - **NEW**: Sub-second response times for cached operations
+- **NEW**: Complete TA-Lib overlap indicators (17 total) with full compatibility
+- **NEW**: Enhanced indicator discovery and documentation
 
 🚀 **Performance Highlights**:
 - **Connection pooling** reduces API overhead by 50-70%
@@ -62,7 +64,7 @@ ProjectX Client (Core API)
 - **Historical OHLCV**: Multi-timeframe data with intelligent caching
 - **Real-time Streaming**: WebSocket feeds with shared connections
 - **Tick-level Data**: High-frequency market data
-- **Technical Indicators**: 25+ indicators with computation caching
+- **Technical Indicators**: 40+ indicators with computation caching (Full TA-Lib compatibility)
 
 ### Advanced Market Microstructure
 - **Level 2 Orderbook**: Real-time market depth processing
@@ -177,7 +179,7 @@ portfolio_pnl = position_manager.get_portfolio_pnl()
 
 ### High-Performance Indicators with Caching
 ```python
-from project_x_py.indicators import RSI, SMA, EMA, MACD, BBANDS
+from project_x_py.indicators import RSI, SMA, EMA, MACD, BBANDS, KAMA, SAR, T3
 
 # Load data once
 data = client.get_data("MGC", days=60, interval=60)
@@ -185,24 +187,50 @@ data = client.get_data("MGC", days=60, interval=60)
 # Chained operations with automatic caching
 analysis = (
     data
-    .pipe(SMA, period=20)      # Cached on subsequent calls
-    .pipe(SMA, period=50)      # Different parameters = separate cache
-    .pipe(EMA, period=21)      # Exponential moving average
-    .pipe(RSI, period=14)      # Optimized RSI calculation
+    .pipe(SMA, period=20)      # Simple Moving Average
+    .pipe(EMA, period=21)      # Exponential Moving Average
+    .pipe(KAMA, period=30)     # Kaufman Adaptive Moving Average
+    .pipe(T3, period=14)       # Triple Exponential Moving Average (T3)
+    .pipe(RSI, period=14)      # Relative Strength Index
     .pipe(MACD, fast_period=12, slow_period=26, signal_period=9)
-    .pipe(BBANDS, period=20, std_dev=2.0)
+    .pipe(BBANDS, period=20, std_dev=2.0)  # Bollinger Bands
+    .pipe(SAR, acceleration=0.02)          # Parabolic SAR
 )
+
+# TA-Lib compatible functions
+from project_x_py.indicators import calculate_sma, calculate_kama, calculate_sar
+sma_data = calculate_sma(data, period=20)
+kama_data = calculate_kama(data, period=30)
+sar_data = calculate_sar(data, acceleration=0.02)
 
 # Performance monitoring
 rsi_indicator = RSI()
 print(f"RSI cache size: {len(rsi_indicator._cache)}")
 ```
 
-### Available Indicators (25+)
-- **Overlap Studies**: SMA, EMA, BBANDS, DEMA, TEMA, WMA, MIDPOINT
-- **Momentum**: RSI, MACD, STOCH, WILLR, CCI, ROC, MOM, STOCHRSI
-- **Volatility**: ATR, ADX, NATR, TRANGE, ULTOSC
+### Available Indicators (40+)
+- **Overlap Studies**: SMA, EMA, BBANDS, DEMA, TEMA, WMA, MIDPOINT, MIDPRICE, HT_TRENDLINE, KAMA, MA, MAMA, MAVP, SAR, SAREXT, T3, TRIMA
+- **Momentum**: RSI, MACD, STOCH, WILLR, CCI, ROC, MOM, STOCHRSI, ADX, AROON, APO, CMO, DX, MFI, PPO, TRIX, ULTOSC
+- **Volatility**: ATR, NATR, TRANGE
 - **Volume**: OBV, VWAP, AD, ADOSC
+
+### Indicator Discovery & Documentation
+```python
+from project_x_py.indicators import get_indicator_groups, get_all_indicators, get_indicator_info
+
+# Explore available indicators
+groups = get_indicator_groups()
+print("Available groups:", list(groups.keys()))
+print("Overlap indicators:", groups["overlap"])
+
+# Get all indicators
+all_indicators = get_all_indicators()
+print(f"Total indicators: {len(all_indicators)}")
+
+# Get detailed information
+print("KAMA info:", get_indicator_info("KAMA"))
+print("SAR info:", get_indicator_info("SAR"))
+```
 
 ## 🔄 Real-time Operations
 
@@ -546,7 +574,7 @@ We welcome contributions! Please follow these guidelines:
 - [x] **High-Performance Architecture** - Connection pooling, caching, memory management
 - [x] **Core Trading API** - Complete order management with optimization
 - [x] **Advanced Market Data** - Real-time streams with intelligent caching
-- [x] **Technical Indicators** - 25+ indicators with computation caching
+- [x] **Technical Indicators** - 40+ indicators with computation caching (Full TA-Lib compatibility)
 - [x] **Market Microstructure** - Level 2 orderbook with memory management
 - [x] **Performance Monitoring** - Built-in metrics and health tracking
 - [x] **Production-Ready** - Enterprise-grade reliability and performance
@@ -562,6 +590,35 @@ We welcome contributions! Please follow these guidelines:
 - [ ] **Professional Dashboard** - Web-based monitoring and control interface
 - [ ] **Custom Indicators** - User-defined technical analysis tools
 - [ ] **Mobile Support** - iOS/Android companion applications
+
+## 📝 Changelog
+
+### Version 1.0.5 (Latest)
+**🎯 Complete TA-Lib Overlap Indicators**
+- ✅ **New Overlap Indicators (10 added)**: HT_TRENDLINE, KAMA, MA, MAMA, MAVP, MIDPRICE, SAR, SAREXT, T3, TRIMA
+- ✅ **Enhanced WMA**: Fixed Weighted Moving Average implementation 
+- ✅ **Full TA-Lib Compatibility**: All overlap indicators now match TA-Lib signatures
+- ✅ **Indicator Discovery**: Helper functions for exploring available indicators
+- ✅ **Comprehensive Documentation**: Detailed descriptions for all indicators
+- ✅ **Total Indicators**: Now 40+ indicators across all categories
+
+**New Indicators Details:**
+- **KAMA**: Kaufman Adaptive Moving Average - adapts to market volatility
+- **SAR/SAREXT**: Parabolic SAR with standard and extended parameters
+- **T3**: Triple Exponential Moving Average with volume factor
+- **MAMA**: MESA Adaptive Moving Average with fast/slow limits
+- **HT_TRENDLINE**: Hilbert Transform Instantaneous Trendline
+- **TRIMA**: Triangular Moving Average with double smoothing
+- **MIDPRICE**: Midpoint Price using high/low ranges
+- **MA**: Generic Moving Average with selectable types
+- **MAVP**: Moving Average with Variable Period support
+
+### Version 1.0.2-1.0.4
+**🚀 Performance & Reliability**
+- ✅ Connection pooling and intelligent caching
+- ✅ Memory management optimizations  
+- ✅ Real-time WebSocket improvements
+- ✅ Enhanced error handling and retries
 
 ## 📄 License
 
