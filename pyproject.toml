@@ -1,6 +1,6 @@
 [project]
 name = "project-x-py"
-version = "1.0.3"
+version = "1.0.5"
 description = "Professional Python client for TopStepX ProjectX Gateway API - futures trading, real-time data, and market analysis"
 readme = "README.md"
 license = { text = "MIT" }
@@ -164,7 +164,8 @@ unfixable = []
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.lint.per-file-ignores]
-"src/project_x_py/indicators/__init__.py" = ["N802"]  # Allow uppercase function names for TA-Lib style compatibility
+"src/project_x_py/indicators/__init__.py" = ["N801", "N802"]  # Allow uppercase class/function names for TA-Lib style compatibility
+"src/project_x_py/indicators/*.py" = ["N801"]  # Allow uppercase class names for TA-Lib style compatibility
 "tests/**/*" = ["S101", "PLR2004", "PLR0913", "PLR0915"]
 "__init__.py" = ["F401"]
 
