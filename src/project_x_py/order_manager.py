@@ -410,6 +410,9 @@ class OrderManager:
             "customTag": custom_tag,
             "linkedOrderId": linked_order_id,
         }
+        
+        # 🔍 DEBUG: Log order parameters to diagnose placement issues
+        self.logger.debug(f"🔍 Order Placement Request: {payload}")
 
         try:
             response = requests.post(
@@ -421,9 +424,14 @@ class OrderManager:
             self.project_x._handle_response_errors(response)
 
             data = response.json()
+            
+            # 🔍 DEBUG: Log the actual API response to diagnose issues
+            self.logger.debug(f"🔍 Order API Response: {data}")
+            
             if not data.get("success", False):
-                error_msg = data.get("errorMessage", "Unknown error")
+                error_msg = data.get("errorMessage") or "Unknown error - no error message provided"
                 self.logger.error(f"Order placement failed: {error_msg}")
+                self.logger.error(f"🔍 Full response data: {data}")
                 raise ProjectXOrderError(f"Order placement failed: {error_msg}")
 
             result = OrderPlaceResponse(**data)
@@ -949,7 +957,20 @@ class OrderManager:
                 return []
 
             orders = data.get("orders", [])
-            return [Order(**order) for order in orders]
+            # Filter to only include fields that Order model expects
+            expected_fields = {
+                'id', 'accountId', 'contractId', 'creationTimestamp', 'updateTimestamp',
+                'status', 'type', 'side', 'size', 'fillVolume', 'limitPrice', 'stopPrice'
+            }
+            filtered_orders = []
+            for order in orders:
+                if isinstance(order, dict):
+                    # Only keep fields that Order model expects
+                    filtered_order = {k: v for k, v in order.items() if k in expected_fields}
+                    filtered_orders.append(Order(**filtered_order))
+                else:
+                    filtered_orders.append(Order(**order))
+            return filtered_orders
 
         except requests.RequestException as e:
             self.logger.error(f"❌ Order search request failed: {e}")
