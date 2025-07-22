@@ -922,7 +922,7 @@ class PositionManager:
         payload = {
             "accountId": account_id,
             "contractId": contract_id,
-            "closeSize": close_size,
+            "size": close_size,
         }
 
         try:
