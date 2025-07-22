@@ -815,13 +815,13 @@ class PositionManager:
     # ================================================================================
 
     def close_position_direct(
-        self, position_id: int, account_id: int | None = None
+        self, contract_id: str, account_id: int | None = None
     ) -> dict[str, Any]:
         """
         Close an entire position using the direct position close API.
 
         Args:
-            position_id: ID of the position to close
+            contract_id: ID of the position to close
             account_id: Account ID. Uses default account if None.
 
         Returns:
@@ -844,7 +844,7 @@ class PositionManager:
         url = f"{self.project_x.base_url}/Position/closeContract"
         payload = {
             "accountId": account_id,
-            "positionId": position_id,
+            "contractId": contract_id,
         }
 
         try:
@@ -860,13 +860,13 @@ class PositionManager:
             success = data.get("success", False)
 
             if success:
-                self.logger.info(f"✅ Position {position_id} closed successfully")
+                self.logger.info(f"✅ Position {contract_id} closed successfully")
                 # Remove from tracked positions if present
                 with self.position_lock:
                     positions_to_remove = [
                         contract_id
                         for contract_id, pos in self.tracked_positions.items()
-                        if pos.id == position_id
+                        if pos.id == contract_id
                     ]
                     for contract_id in positions_to_remove:
                         del self.tracked_positions[contract_id]
@@ -886,13 +886,13 @@ class PositionManager:
             return {"success": False, "error": str(e)}
 
     def partially_close_position(
-        self, position_id: int, close_size: int, account_id: int | None = None
+        self, contract_id: str, close_size: int, account_id: int | None = None
     ) -> dict[str, Any]:
         """
         Partially close a position by reducing its size.
 
         Args:
-            position_id: ID of the position to partially close
+            contract_id: ID of the position to partially close
             close_size: Number of contracts to close (must be less than position size)
             account_id: Account ID. Uses default account if None.
 
@@ -921,7 +921,7 @@ class PositionManager:
         url = f"{self.project_x.base_url}/Position/partialCloseContract"
         payload = {
             "accountId": account_id,
-            "positionId": position_id,
+            "contractId": contract_id,
             "closeSize": close_size,
         }
 
@@ -939,7 +939,7 @@ class PositionManager:
 
             if success:
                 self.logger.info(
-                    f"✅ Position {position_id} partially closed: {close_size} contracts"
+                    f"✅ Position {contract_id} partially closed: {close_size} contracts"
                 )
                 # Trigger position refresh to get updated sizes
                 self.refresh_positions(account_id=account_id)
@@ -991,16 +991,20 @@ class PositionManager:
 
         for position in positions:
             try:
-                close_result = self.close_position_direct(position.id, account_id)
+                close_result = self.close_position_direct(
+                    position.contractId, account_id
+                )
                 if close_result.get("success", False):
                     results["closed"] += 1
                 else:
                     results["failed"] += 1
                     error_msg = close_result.get("errorMessage", "Unknown error")
-                    results["errors"].append(f"Position {position.id}: {error_msg}")
+                    results["errors"].append(
+                        f"Position {position.contractId}: {error_msg}"
+                    )
             except Exception as e:
                 results["failed"] += 1
-                results["errors"].append(f"Position {position.id}: {e!s}")
+                results["errors"].append(f"Position {position.contractId}: {e!s}")
 
         self.logger.info(
             f"✅ Closed {results['closed']}/{results['total_positions']} positions"
@@ -1043,10 +1047,12 @@ class PositionManager:
         # Determine if full or partial close
         if close_size is None or close_size >= position.size:
             # Full close
-            return self.close_position_direct(position.id, account_id)
+            return self.close_position_direct(position.contractId, account_id)
         else:
             # Partial close
-            return self.partially_close_position(position.id, close_size, account_id)
+            return self.partially_close_position(
+                position.contractId, close_size, account_id
+            )
 
     # ================================================================================
     # UTILITY AND STATISTICS METHODS
