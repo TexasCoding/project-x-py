@@ -841,7 +841,7 @@ class PositionManager:
                 raise ProjectXError("No account information available")
             account_id = self.project_x.account_info.id
 
-        url = f"{self.project_x.base_url}/Position/close"
+        url = f"{self.project_x.base_url}/Position/closeContract"
         payload = {
             "accountId": account_id,
             "positionId": position_id,
@@ -918,7 +918,7 @@ class PositionManager:
         if close_size <= 0:
             raise ProjectXError("Close size must be positive")
 
-        url = f"{self.project_x.base_url}/Position/partialClose"
+        url = f"{self.project_x.base_url}/Position/partialCloseContract"
         payload = {
             "accountId": account_id,
             "positionId": position_id,
