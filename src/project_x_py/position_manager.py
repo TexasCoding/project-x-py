@@ -196,6 +196,11 @@ class PositionManager:
     def _on_position_closed(self, data: dict):
         """Handle real-time position closure notifications."""
         try:
+            data = data.get("data", {})
+            if not data:
+                self.logger.error(f"No position data found in {data}")
+                return
+
             contract_id = data.get("contractId")
             if contract_id:
                 with self.position_lock:
@@ -215,8 +220,11 @@ class PositionManager:
     def _process_position_data(self, position_data: dict):
         """Process individual position data update."""
         try:
+            position_data = position_data.get("data", {})
+
             contract_id = position_data.get("contractId")
             if not contract_id:
+                self.logger.error(f"No contract ID found in {position_data}")
                 return
 
             # Create or update position
@@ -821,14 +829,14 @@ class PositionManager:
         Close an entire position using the direct position close API.
 
         Args:
-            contract_id: ID of the position to close
+            contract_id: Contract ID of the position to close
             account_id: Account ID. Uses default account if None.
 
         Returns:
             Dict with closure response details
 
         Example:
-            >>> result = position_manager.close_position_direct(12345)
+            >>> result = position_manager.close_position_direct("MGC")
             >>> if result["success"]:
             ...     print(f"Position closed: {result.get('orderId', 'N/A')}")
         """
@@ -866,7 +874,7 @@ class PositionManager:
                     positions_to_remove = [
                         contract_id
                         for contract_id, pos in self.tracked_positions.items()
-                        if pos.id == contract_id
+                        if pos.contractId == contract_id
                     ]
                     for contract_id in positions_to_remove:
                         del self.tracked_positions[contract_id]
@@ -892,7 +900,7 @@ class PositionManager:
         Partially close a position by reducing its size.
 
         Args:
-            contract_id: ID of the position to partially close
+            contract_id: Contract ID of the position to partially close
             close_size: Number of contracts to close (must be less than position size)
             account_id: Account ID. Uses default account if None.
 
@@ -901,7 +909,7 @@ class PositionManager:
 
         Example:
             >>> # Close 5 contracts from a 10 contract position
-            >>> result = position_manager.partially_close_position(12345, 5)
+            >>> result = position_manager.partially_close_position("MGC", 5)
             >>> if result["success"]:
             ...     print(f"Partially closed: {result.get('orderId', 'N/A')}")
         """
@@ -922,7 +930,7 @@ class PositionManager:
         payload = {
             "accountId": account_id,
             "contractId": contract_id,
-            "size": close_size,
+            "closeSize": close_size,
         }
 
         try:
