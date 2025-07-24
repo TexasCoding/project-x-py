@@ -61,7 +61,7 @@ class PositionManager:
         - Portfolio-level position management
         - Automated P&L calculation and risk metrics
         - Position sizing and risk management tools
-        - Event-driven position update notifications
+        - Event-driven position updates (closures detected from type=0/size=0)
         - Thread-safe operations for concurrent access
 
     Example Usage:
@@ -171,15 +171,14 @@ class PositionManager:
         if not self.realtime_client:
             return
 
-        # Register for position events
+        # Register for position events (closures are detected from position updates)
         self.realtime_client.add_callback("position_update", self._on_position_update)
-        self.realtime_client.add_callback("position_closed", self._on_position_closed)
         self.realtime_client.add_callback("account_update", self._on_account_update)
 
         self.logger.info("🔄 Real-time position callbacks registered")
 
     def _on_position_update(self, data: dict):
-        """Handle real-time position updates."""
+        """Handle real-time position updates and detect position closures."""
         try:
             with self.position_lock:
                 if isinstance(data, list):
@@ -193,32 +192,12 @@ class PositionManager:
         except Exception as e:
             self.logger.error(f"Error processing position update: {e}")
 
-    def _on_position_closed(self, data: dict):
-        """Handle real-time position closure notifications."""
-        try:
-            data = data.get("data", {})
-            if not data:
-                self.logger.error(f"No position data found in {data}")
-                return
-
-            contract_id = data.get("contractId")
-            if contract_id:
-                with self.position_lock:
-                    if contract_id in self.tracked_positions:
-                        del self.tracked_positions[contract_id]
-                        self.logger.info(f"📊 Position closed: {contract_id}")
-
-            self._trigger_callbacks("position_closed", data)
-
-        except Exception as e:
-            self.logger.error(f"Error processing position closure: {e}")
-
     def _on_account_update(self, data: dict):
         """Handle account-level updates that may affect positions."""
         self._trigger_callbacks("account_update", data)
 
     def _process_position_data(self, position_data: dict):
-        """Process individual position data update."""
+        """Process individual position data update and detect position closures."""
         try:
             position_data = position_data.get("data", {})
 
@@ -227,25 +206,41 @@ class PositionManager:
                 self.logger.error(f"No contract ID found in {position_data}")
                 return
 
-            # Create or update position
-            position = Position(**position_data)
+            # Check if this is a position closure (type=0 and/or size=0)
+            position_type = position_data.get("type", -1)
+            position_size = position_data.get("size", -1)
+            is_position_closed = position_type == 0 or position_size == 0
+
+            # Get the old position before updating
             old_position = self.tracked_positions.get(contract_id)
 
-            self.tracked_positions[contract_id] = position
+            if is_position_closed:
+                # Position is closed - remove from tracking and trigger closure callbacks
+                if contract_id in self.tracked_positions:
+                    del self.tracked_positions[contract_id]
+                    self.logger.info(f"📊 Position closed: {contract_id}")
+                    self.stats["positions_closed"] += 1
 
-            # Track position history
-            self.position_history[contract_id].append(
-                {
-                    "timestamp": datetime.now(),
-                    "position": position_data.copy(),
-                    "size_change": 0
-                    if not old_position
-                    else position.size - old_position.size,
-                }
-            )
+                # Trigger position_closed callbacks with the closure data
+                self._trigger_callbacks("position_closed", {"data": position_data})
+            else:
+                # Position is open/updated - create or update position
+                position = Position(**position_data)
+                self.tracked_positions[contract_id] = position
 
-            # Check alerts
-            self._check_position_alerts(contract_id, position, old_position)
+                # Track position history
+                self.position_history[contract_id].append(
+                    {
+                        "timestamp": datetime.now(),
+                        "position": position_data.copy(),
+                        "size_change": 0
+                        if not old_position
+                        else position.size - old_position.size,
+                    }
+                )
+
+                # Check alerts
+                self._check_position_alerts(contract_id, position, old_position)
 
         except Exception as e:
             self.logger.error(f"Error processing position data: {e}")

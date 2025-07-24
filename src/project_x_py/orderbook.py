@@ -1511,14 +1511,20 @@ class OrderBook:
                 # Calculate volume imbalance at top levels
                 top_bid_volume = bids.head(5).select(pl.col("volume").sum()).item()
                 top_ask_volume = asks.head(5).select(pl.col("volume").sum()).item()
-                
+
                 # 🔍 DEBUG: Log orderbook data availability
-                self.logger.debug(f"🔍 Orderbook data: {len(bids)} bids, {len(asks)} asks")
-                self.logger.debug(f"🔍 Top volumes: bid={top_bid_volume}, ask={top_ask_volume}")
+                self.logger.debug(
+                    f"🔍 Orderbook data: {len(bids)} bids, {len(asks)} asks"
+                )
+                self.logger.debug(
+                    f"🔍 Top volumes: bid={top_bid_volume}, ask={top_ask_volume}"
+                )
 
                 total_volume = top_bid_volume + top_ask_volume
                 if total_volume == 0:
-                    self.logger.debug(f"🔍 Zero total volume - returning neutral (bids={len(bids)}, asks={len(asks)})")
+                    self.logger.debug(
+                        f"🔍 Zero total volume - returning neutral (bids={len(bids)}, asks={len(asks)})"
+                    )
                     return {
                         "imbalance_ratio": 0,
                         "direction": "neutral",
@@ -1541,7 +1547,7 @@ class OrderBook:
                 # Normal: 0.3, Debug: 0.05 (much more sensitive)
                 bullish_threshold = 0.05  # Was 0.3
                 bearish_threshold = -0.05  # Was -0.3
-                
+
                 if imbalance_ratio > bullish_threshold:
                     direction = "bullish"
                     confidence = "high" if trade_imbalance > 0.2 else "medium"
