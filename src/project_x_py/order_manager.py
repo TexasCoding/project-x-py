@@ -30,7 +30,6 @@ Architecture:
 
 import json
 import logging
-import threading
 from collections import defaultdict
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
@@ -43,6 +42,7 @@ from .exceptions import (
     ProjectXDataError,
     ProjectXOrderError,
 )
+from .lock_coordinator import get_lock_coordinator
 from .models import (
     BracketOrderResponse,
     Order,
@@ -66,7 +66,7 @@ class OrderManager:
     Features:
         - Complete order lifecycle management
         - Bracket order strategies with automatic stop/target placement
-        - Real-time order status tracking
+        - Real-time order status tracking (fills/cancellations detected from status changes)
         - Automatic price alignment to instrument tick sizes
         - OCO (One-Cancels-Other) order support
         - Position-based order management
@@ -109,15 +109,15 @@ class OrderManager:
         self.project_x = project_x_client
         self.logger = logging.getLogger(__name__)
 
-        # Thread safety
-        self.order_lock = threading.RLock()
+        # Thread safety (coordinated with other components)
+        self.lock_coordinator = get_lock_coordinator()
+        self.order_lock = self.lock_coordinator.order_lock
 
         # Real-time integration (optional)
         self.realtime_client: ProjectXRealtimeClient | None = None
         self._realtime_enabled = False
 
-        # Order tracking
-        self.tracked_orders: dict[str, dict] = {}
+        # Order callbacks (tracking is centralized in realtime client)
         self.order_callbacks: dict[str, list] = defaultdict(list)
 
         # Statistics
@@ -166,43 +166,72 @@ class OrderManager:
         if not self.realtime_client:
             return
 
-        # Register for order events
+        # Register for order events (fills/cancellations detected from order updates)
         self.realtime_client.add_callback("order_update", self._on_order_update)
-        self.realtime_client.add_callback("order_filled", self._on_order_filled)
-        self.realtime_client.add_callback("order_cancelled", self._on_order_cancelled)
+        # Also register for trade execution events (complement to order fills)
+        self.realtime_client.add_callback("trade_execution", self._on_trade_execution)
 
         self.logger.info("🔄 Real-time order callbacks registered")
 
     def _on_order_update(self, data: dict):
-        """Handle real-time order updates."""
+        """Handle real-time order updates and detect fills/cancellations."""
         try:
             with self.order_lock:
                 if isinstance(data, list) and len(data) > 0:
                     for order_info in data:
                         if isinstance(order_info, dict) and "data" in order_info:
                             order_data = order_info["data"]
-                            order_id = str(order_data.get("id", ""))
-                            if order_id:
-                                self.tracked_orders[order_id] = order_data
+                            self._process_order_data(order_data, order_info)
                 elif isinstance(data, dict):
-                    order_id = str(data.get("id", ""))
-                    if order_id:
-                        self.tracked_orders[order_id] = data
+                    order_data = data.get("data", data)
+                    self._process_order_data(order_data, data)
 
-            self._trigger_callbacks("order_update", data)
+            # Note: No duplicate callback triggering - realtime client handles this
 
         except Exception as e:
             self.logger.error(f"Error processing order update: {e}")
 
-    def _on_order_filled(self, data: dict):
-        """Handle real-time order fill notifications."""
-        self.logger.info(f"✅ Order filled: {data}")
-        self._trigger_callbacks("order_filled", data)
+    def _process_order_data(self, order_data: dict, full_data: dict):
+        """Process individual order data and detect status changes."""
+        try:
+            order_id = str(order_data.get("id", ""))
+            if not order_id:
+                return
 
-    def _on_order_cancelled(self, data: dict):
-        """Handle real-time order cancellation notifications."""
-        self.logger.info(f"❌ Order cancelled: {data}")
-        self._trigger_callbacks("order_cancelled", data)
+            # Get current and previous order status from realtime client
+            current_status = order_data.get("status", 0)
+            old_order = {}
+            if self.realtime_client:
+                old_order = (
+                    self.realtime_client.get_tracked_order_status(order_id) or {}
+                )
+            old_status = (
+                old_order.get("status", 0) if isinstance(old_order, dict) else 0
+            )
+
+            # Detect status changes and trigger appropriate callbacks
+            if current_status != old_status:
+                self.logger.debug(
+                    f"📊 Order {order_id} status changed: {old_status} -> {current_status}"
+                )
+
+                # Check for order fill (status 2 = Filled)
+                if current_status == 2:
+                    self.logger.info(f"✅ Order filled: {order_id}")
+                    self._trigger_callbacks("order_filled", full_data)
+
+                # Check for order cancellation (status 3 = Cancelled)
+                elif current_status == 3:
+                    self.logger.info(f"❌ Order cancelled: {order_id}")
+                    self._trigger_callbacks("order_cancelled", full_data)
+
+        except Exception as e:
+            self.logger.error(f"Error processing order data: {e}")
+
+    def _on_trade_execution(self, data: dict):
+        """Handle real-time trade execution notifications."""
+        self.logger.info(f"🔄 Trade execution: {data}")
+        self._trigger_callbacks("trade_execution", data)
 
     def _trigger_callbacks(self, event_type: str, data: Any):
         """Trigger registered callbacks for order events."""
@@ -410,7 +439,7 @@ class OrderManager:
             "customTag": custom_tag,
             "linkedOrderId": linked_order_id,
         }
-        
+
         # 🔍 DEBUG: Log order parameters to diagnose placement issues
         self.logger.debug(f"🔍 Order Placement Request: {payload}")
 
@@ -424,12 +453,15 @@ class OrderManager:
             self.project_x._handle_response_errors(response)
 
             data = response.json()
-            
+
             # 🔍 DEBUG: Log the actual API response to diagnose issues
             self.logger.debug(f"🔍 Order API Response: {data}")
-            
+
             if not data.get("success", False):
-                error_msg = data.get("errorMessage") or "Unknown error - no error message provided"
+                error_msg = (
+                    data.get("errorMessage")
+                    or "Unknown error - no error message provided"
+                )
                 self.logger.error(f"Order placement failed: {error_msg}")
                 self.logger.error(f"🔍 Full response data: {data}")
                 raise ProjectXOrderError(f"Order placement failed: {error_msg}")
@@ -959,14 +991,26 @@ class OrderManager:
             orders = data.get("orders", [])
             # Filter to only include fields that Order model expects
             expected_fields = {
-                'id', 'accountId', 'contractId', 'creationTimestamp', 'updateTimestamp',
-                'status', 'type', 'side', 'size', 'fillVolume', 'limitPrice', 'stopPrice'
+                "id",
+                "accountId",
+                "contractId",
+                "creationTimestamp",
+                "updateTimestamp",
+                "status",
+                "type",
+                "side",
+                "size",
+                "fillVolume",
+                "limitPrice",
+                "stopPrice",
             }
             filtered_orders = []
             for order in orders:
                 if isinstance(order, dict):
                     # Only keep fields that Order model expects
-                    filtered_order = {k: v for k, v in order.items() if k in expected_fields}
+                    filtered_order = {
+                        k: v for k, v in order.items() if k in expected_fields
+                    }
                     filtered_orders.append(Order(**filtered_order))
                 else:
                     filtered_orders.append(Order(**order))
@@ -994,13 +1038,12 @@ class OrderManager:
         """
         # Try real-time data first if available
         if self._realtime_enabled and self.realtime_client:
-            with self.order_lock:
-                order_data = self.tracked_orders.get(str(order_id))
-                if order_data:
-                    try:
-                        return Order(**order_data)
-                    except Exception as e:
-                        self.logger.debug(f"Failed to parse cached order data: {e}")
+            order_data = self.realtime_client.get_tracked_order_status(str(order_id))
+            if order_data:
+                try:
+                    return Order(**order_data)
+                except Exception as e:
+                    self.logger.debug(f"Failed to parse cached order data: {e}")
 
         # Fallback to API search
         orders = self.search_open_orders(account_id=account_id)
@@ -1247,10 +1290,14 @@ class OrderManager:
             Dict with statistics and health information
         """
         with self.order_lock:
+            tracked_orders_count = 0
+            if self.realtime_client:
+                tracked_orders_count = len(self.realtime_client.tracked_orders)
+
             return {
                 "statistics": self.stats.copy(),
                 "realtime_enabled": self._realtime_enabled,
-                "tracked_orders": len(self.tracked_orders),
+                "tracked_orders": tracked_orders_count,
                 "callbacks_registered": {
                     event: len(callbacks)
                     for event, callbacks in self.order_callbacks.items()
@@ -1263,7 +1310,6 @@ class OrderManager:
     def cleanup(self):
         """Clean up resources and connections."""
         with self.order_lock:
-            self.tracked_orders.clear()
             self.order_callbacks.clear()
 
         self.logger.info("✅ OrderManager cleanup completed")

@@ -9,7 +9,7 @@ A **high-performance Python client** for the TopStepX ProjectX Gateway API, desi
 
 ## 📊 Project Status
 
-**Current Version**: v1.0.5 (Enhanced with Complete TA-Lib Overlap Indicators)
+**Current Version**: v1.0.11 (Enhanced with Complete TA-Lib Overlap Indicators)
 
 ✅ **Production Ready Features**:
 - Complete futures trading API integration with connection pooling
@@ -570,7 +570,7 @@ We welcome contributions! Please follow these guidelines:
 
 ## 📊 Project Status & Roadmap
 
-### ✅ Completed (v1.0.2 - Current)
+### ✅ Completed (v1.0.11 - Current)
 - [x] **High-Performance Architecture** - Connection pooling, caching, memory management
 - [x] **Core Trading API** - Complete order management with optimization
 - [x] **Advanced Market Data** - Real-time streams with intelligent caching
@@ -578,6 +578,7 @@ We welcome contributions! Please follow these guidelines:
 - [x] **Market Microstructure** - Level 2 orderbook with memory management
 - [x] **Performance Monitoring** - Built-in metrics and health tracking
 - [x] **Production-Ready** - Enterprise-grade reliability and performance
+
 
 ### 🚧 Active Development (v1.1.0 - Q1 2025)
 - [ ] **Machine Learning Integration** - Pattern recognition and predictive models
@@ -593,7 +594,7 @@ We welcome contributions! Please follow these guidelines:
 
 ## 📝 Changelog
 
-### Version 1.0.5 (Latest)
+### Version 1.0.11 (Latest)
 **🎯 Complete TA-Lib Overlap Indicators**
 - ✅ **New Overlap Indicators (10 added)**: HT_TRENDLINE, KAMA, MA, MAMA, MAVP, MIDPRICE, SAR, SAREXT, T3, TRIMA
 - ✅ **Enhanced WMA**: Fixed Weighted Moving Average implementation 
@@ -613,7 +614,7 @@ We welcome contributions! Please follow these guidelines:
 - **MA**: Generic Moving Average with selectable types
 - **MAVP**: Moving Average with Variable Period support
 
-### Version 1.0.2-1.0.4
+### Version 1.0.2-1.0.11
 **🚀 Performance & Reliability**
 - ✅ Connection pooling and intelligent caching
 - ✅ Memory management optimizations  

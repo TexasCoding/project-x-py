@@ -15,7 +15,7 @@ Date: June 2025
 
 from typing import Any, Optional
 
-__version__ = "1.0.10"
+__version__ = "1.0.11"
 __author__ = "TexasCoding"
 
 # Core client classes
@@ -203,6 +203,7 @@ def quick_start() -> dict:
             "1. Set environment variables:",
             "   export PROJECT_X_API_KEY='your_api_key'",
             "   export PROJECT_X_USERNAME='your_username'",
+            "   export PROJECT_X_ACCOUNT_ID='your_account_id'",
             "",
             "2. Basic usage:",
             "   from project_x_py import ProjectX",

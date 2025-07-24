@@ -12,10 +12,11 @@ import logging
 import time
 from collections import defaultdict
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from signalrcore.hub_connection_builder import HubConnectionBuilder
 
+from .lock_coordinator import get_lock_coordinator
 from .utils import RateLimiter
 
 
@@ -158,8 +159,17 @@ class ProjectXRealtimeClient:
         # Track subscribed contracts for reconnection
         self._subscribed_contracts: list[str] = []
 
+        # Memory management settings
+        self.max_order_tracking_hours = 24
+        self.max_position_cache_size = 1000
+        self.cleanup_interval_seconds = 300  # 5 minutes
+        self.last_cleanup_time = datetime.now()
+
         # Logger
         self.logger = logging.getLogger(__name__)
+
+        # Get shared lock coordinator
+        self.lock_coordinator = get_lock_coordinator()
 
         self.logger.info("ProjectX real-time client initialized")
         self.logger.info(f"User Hub URL: {self.user_hub_url[:50]}...")
@@ -462,28 +472,35 @@ class ProjectXRealtimeClient:
 
         # Extract and cache position data
         try:
-            # Handle list format: [{'action': 1, 'data': {...}}]
-            if isinstance(data, list) and len(data) > 0:
-                first_item = data[0]
-                if isinstance(first_item, dict):
-                    position_data = first_item.get("data", {})
+            # Use coordinated locking for thread safety
+            with self.lock_coordinator.realtime_lock:
+                # Handle list format: [{'action': 1, 'data': {...}}]
+                if isinstance(data, list) and len(data) > 0:
+                    first_item = data[0]
+                    if isinstance(first_item, dict):
+                        position_data = first_item.get("data", {})
+                    else:
+                        position_data = (
+                            first_item if isinstance(first_item, dict) else {}
+                        )
                 else:
-                    position_data = first_item if isinstance(first_item, dict) else {}
-            else:
-                position_data = data if isinstance(data, dict) else {}
+                    position_data = data if isinstance(data, dict) else {}
 
-            # Cache position data by contract ID for real-time access
-            contract_id = position_data.get("contractId")
-            if contract_id:
-                self.position_cache[contract_id] = position_data
-                size = position_data.get("size", 0)
-                avg_price = position_data.get("averagePrice", 0)
-                self.logger.debug(
-                    f"📊 Position cached for {contract_id}: size={size}, avgPrice=${avg_price}"
-                )
+                # Cache position data by contract ID for real-time access
+                contract_id = position_data.get("contractId")
+                if contract_id:
+                    self.position_cache[contract_id] = position_data
+                    size = position_data.get("size", 0)
+                    avg_price = position_data.get("averagePrice", 0)
+                    self.logger.debug(
+                        f"📊 Position cached for {contract_id}: size={size}, avgPrice=${avg_price}"
+                    )
 
         except Exception as e:
             self.logger.error(f"Error processing position update: {e}")
+
+        # Trigger automatic cleanup if needed
+        self._auto_cleanup_if_needed()
 
         self._trigger_callbacks("position_update", data)
 
@@ -492,34 +509,50 @@ class ProjectXRealtimeClient:
         self.logger.info(f"🛑 Position closed: {data}")
         self._trigger_callbacks("position_closed", data)
 
-    def _on_order_update(self, data: dict):
+    def _on_order_update(self, data: dict | list):
         """Handle real-time order status updates."""
         self.logger.info(f"📝 Order update received: {data}")
 
         try:
-            # Handle list format: [{'action': 1, 'data': {...}}]
-            if isinstance(data, list) and len(data) > 0:
-                for order_info in data:
-                    if isinstance(order_info, dict) and "data" in order_info:
-                        order_data = order_info["data"]
+            # Use coordinated locking for thread safety
+            with self.lock_coordinator.realtime_lock:
+                # Handle list format: [{'action': 1, 'data': {...}}]
+                if isinstance(data, list) and len(data) > 0:
+                    for order_info in data:
+                        if isinstance(order_info, dict) and "data" in order_info:
+                            order_data = order_info["data"]
+                            order_id = str(order_data.get("id", ""))
+                            if order_id:
+                                # FIXED: Store the actual order data, not the complete structure
+                                self.tracked_orders[order_id] = order_data
+                                self.logger.debug(
+                                    f"📊 Cached order {order_id}: type={order_data.get('type')}, status={order_data.get('status')}, contract={order_data.get('contractId')}"
+                                )
+                # Handle direct dict format
+                elif isinstance(data, dict):
+                    # Extract order data from dict format
+                    if "data" in data:
+                        order_data = data["data"]
                         order_id = str(order_data.get("id", ""))
                         if order_id:
-                            # Store the complete order structure for find_orders_for_contract
-                            self.tracked_orders[order_id] = data
+                            self.tracked_orders[order_id] = order_data
                             self.logger.debug(
                                 f"📊 Cached order {order_id}: type={order_data.get('type')}, status={order_data.get('status')}, contract={order_data.get('contractId')}"
                             )
-            # Handle direct dict format
-            elif isinstance(data, dict):
-                order_id = str(data.get("id", ""))
-                if order_id:
-                    self.tracked_orders[order_id] = data
-                    self.logger.debug(
-                        f"📊 Cached order {order_id}: type={data.get('type')}, status={data.get('status')}, contract={data.get('contractId')}"
-                    )
+                    else:
+                        # Direct order data format
+                        order_id = str(data.get("id", ""))
+                        if order_id:
+                            self.tracked_orders[order_id] = data
+                            self.logger.debug(
+                                f"📊 Cached order {order_id}: type={data.get('type')}, status={data.get('status')}, contract={data.get('contractId')}"
+                            )
 
         except Exception as e:
             self.logger.error(f"Error processing order update: {e}")
+
+        # Trigger automatic cleanup if needed
+        self._auto_cleanup_if_needed()
 
         self._trigger_callbacks("order_update", data)
 
@@ -829,22 +862,11 @@ class ProjectXRealtimeClient:
         matching_orders = []
 
         for _, order_data in self.tracked_orders.items():
-            # Handle different order data formats
-            if isinstance(order_data, list) and len(order_data) > 0:
-                # Handle [{'action': 1, 'data': {...}}] format
-                if isinstance(order_data[0], dict) and "data" in order_data[0]:
-                    actual_order = order_data[0]["data"]
-                else:
-                    actual_order = order_data[0]
-            elif isinstance(order_data, dict):
-                actual_order = order_data
-            else:
-                continue
-
-            # Check if this order matches the contract
-            order_contract_id = actual_order.get("contractId")
-            if order_contract_id == contract_id:
-                matching_orders.append(actual_order)
+            # With standardized data format, order_data is always the actual order dict
+            if isinstance(order_data, dict):
+                order_contract_id = order_data.get("contractId")
+                if order_contract_id == contract_id:
+                    matching_orders.append(order_data)
 
         return matching_orders
 
@@ -950,7 +972,7 @@ class ProjectXRealtimeClient:
             self.callbacks[event_type].remove(callback)
             self.logger.debug(f"Removed callback for {event_type}")
 
-    def _trigger_callbacks(self, event_type: str, data: dict):
+    def _trigger_callbacks(self, event_type: str, data: dict | list):
         """Trigger all callbacks for a specific event type."""
         if event_type in self.callbacks:
             for callback in self.callbacks[event_type]:
@@ -988,17 +1010,19 @@ class ProjectXRealtimeClient:
             "statistics": self.stats.copy(),
         }
 
-    def cleanup_old_tracking_data(self, max_age_hours: int = 24):
+    def cleanup_old_tracking_data(self, max_age_hours: int | None = None):
         """
         Clean up old order and position tracking data to prevent memory growth.
 
         Args:
-            max_age_hours: Maximum age in hours for tracking data
+            max_age_hours: Maximum age in hours for tracking data (uses default if None)
         """
         try:
-            from datetime import datetime, timedelta
+            if max_age_hours is None:
+                max_age_hours = self.max_order_tracking_hours
 
             cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
+            cleaned_items = 0
 
             # Clean up old order fill notifications
             old_fills = []
@@ -1008,14 +1032,79 @@ class ProjectXRealtimeClient:
 
             for order_id in old_fills:
                 self.order_fill_notifications.pop(order_id, None)
+            cleaned_items += len(old_fills)
 
-            if old_fills:
-                self.logger.debug(
-                    f"Cleaned up {len(old_fills)} old order fill notifications"
+            # Clean up old tracked orders (keep recent and active orders)
+            old_orders = []
+            for order_id, order_data in self.tracked_orders.items():
+                # Keep active orders (status 1) and recent orders
+                if isinstance(order_data, dict):
+                    status = order_data.get("status", 0)
+                    # Keep active orders regardless of age
+                    if status == 1:  # Active
+                        continue
+
+                    # For completed/cancelled orders, check age
+                    created_time_str = order_data.get("creationTimestamp")
+                    if created_time_str:
+                        try:
+                            # Parse ISO timestamp
+                            created_time = datetime.fromisoformat(
+                                created_time_str.replace("Z", "+00:00")
+                            )
+                            if created_time.replace(tzinfo=None) < cutoff_time:
+                                old_orders.append(order_id)
+                        except Exception:
+                            # If we can't parse timestamp, keep the order
+                            continue
+
+            for order_id in old_orders:
+                self.tracked_orders.pop(order_id, None)
+            cleaned_items += len(old_orders)
+
+            # Clean up old position cache entries (keep only recent)
+            if len(self.position_cache) > self.max_position_cache_size:
+                # Keep most recent positions
+                sorted_positions = sorted(
+                    self.position_cache.items(),
+                    key=lambda x: x[1].get("creationTimestamp", ""),
+                    reverse=True,
                 )
+                positions_to_keep = dict(
+                    sorted_positions[: self.max_position_cache_size]
+                )
+                removed_count = len(self.position_cache) - len(positions_to_keep)
+                self.position_cache = positions_to_keep
+                cleaned_items += removed_count
+
+            # Clean up old market data cache
+            if len(self.market_data_cache) > 100:  # Keep last 100 market data entries
+                # Remove oldest entries
+                items_to_remove = len(self.market_data_cache) - 100
+                oldest_keys = list(self.market_data_cache.keys())[:items_to_remove]
+                for key in oldest_keys:
+                    self.market_data_cache.pop(key, None)
+                cleaned_items += items_to_remove
+
+            # Update last cleanup time
+            self.last_cleanup_time = datetime.now()
+
+            if cleaned_items > 0:
+                self.logger.info(f"🧹 Cleaned up {cleaned_items} old tracking items")
 
         except Exception as e:
             self.logger.error(f"Error cleaning up tracking data: {e}")
+
+    def _auto_cleanup_if_needed(self):
+        """Automatically trigger cleanup if enough time has passed."""
+        try:
+            time_since_cleanup = (
+                datetime.now() - self.last_cleanup_time
+            ).total_seconds()
+            if time_since_cleanup >= self.cleanup_interval_seconds:
+                self.cleanup_old_tracking_data()
+        except Exception as e:
+            self.logger.error(f"Error in auto cleanup: {e}")
 
     def force_reconnect(self) -> bool:
         """

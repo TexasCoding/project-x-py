@@ -41,6 +41,7 @@ import requests
 from .exceptions import (
     ProjectXError,
 )
+from .lock_coordinator import get_lock_coordinator
 from .models import Position
 
 if TYPE_CHECKING:
@@ -94,14 +95,15 @@ class PositionManager:
         self.project_x = project_x_client
         self.logger = logging.getLogger(__name__)
 
-        # Thread safety
-        self.position_lock = threading.RLock()
+        # Thread safety (coordinated with other components)
+        self.lock_coordinator = get_lock_coordinator()
+        self.position_lock = self.lock_coordinator.position_lock
 
         # Real-time integration (optional)
         self.realtime_client: ProjectXRealtimeClient | None = None
         self._realtime_enabled = False
 
-        # Position tracking
+        # Position tracking (maintains local state for business logic)
         self.tracked_positions: dict[str, Position] = {}
         self.position_history: dict[str, list[dict]] = defaultdict(list)
         self.position_callbacks: dict[str, list] = defaultdict(list)
@@ -187,7 +189,7 @@ class PositionManager:
                 elif isinstance(data, dict):
                     self._process_position_data(data)
 
-            self._trigger_callbacks("position_update", data)
+            # Note: No duplicate callback triggering - realtime client handles this
 
         except Exception as e:
             self.logger.error(f"Error processing position update: {e}")

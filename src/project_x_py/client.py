@@ -125,7 +125,9 @@ class ProjectX:
         self.config = config
         self.api_key = api_key
         self.username = username
-        self.account_name = account_name  # Store account name for selection
+        self.account_name = (
+            account_name.upper() if account_name else None
+        )  # Store account name for selection
 
         # Set up timezone and URLs from config
         self.timezone = pytz.timezone(config.timezone)
@@ -207,7 +209,7 @@ class ProjectX:
             username=auth_config["username"],
             api_key=auth_config["api_key"],
             config=config,
-            account_name=account_name,
+            account_name=account_name.upper() if account_name else None,
         )
 
     @classmethod
@@ -232,7 +234,7 @@ class ProjectX:
             username=auth_config["username"],
             api_key=auth_config["api_key"],
             config=config,
-            account_name=account_name,
+            account_name=account_name.upper() if account_name else None,
         )
 
     def _create_session(self) -> requests.Session:
@@ -471,7 +473,7 @@ class ProjectX:
             # If account_name is provided, find the specific account by name
             if self.account_name:
                 for account in accounts:
-                    if account.get("name") == self.account_name:
+                    if account.get("name").upper() == self.account_name.upper():
                         self.account_info = Account(**account)
                         return self.account_info
                 self.logger.warning(
