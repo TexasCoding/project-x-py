@@ -120,6 +120,12 @@ class OrderManager:
         # Order callbacks (tracking is centralized in realtime client)
         self.order_callbacks: dict[str, list] = defaultdict(list)
 
+        # Order-Position relationship tracking for synchronization
+        self.position_orders: dict[str, dict[str, list[int]]] = defaultdict(
+            lambda: {"stop_orders": [], "target_orders": [], "entry_orders": []}
+        )
+        self.order_to_position: dict[int, str] = {}  # order_id -> contract_id
+
         # Statistics
         self.stats = {
             "orders_placed": 0,
@@ -690,6 +696,26 @@ class OrderManager:
             )
 
             if bracket_success:
+                # Track order-position relationships for synchronization
+                with self.order_lock:
+                    if entry_response.success:
+                        self.position_orders[contract_id]["entry_orders"].append(
+                            entry_response.orderId
+                        )
+                        self.order_to_position[entry_response.orderId] = contract_id
+
+                    if stop_response.success:
+                        self.position_orders[contract_id]["stop_orders"].append(
+                            stop_response.orderId
+                        )
+                        self.order_to_position[stop_response.orderId] = contract_id
+
+                    if target_response.success:
+                        self.position_orders[contract_id]["target_orders"].append(
+                            target_response.orderId
+                        )
+                        self.order_to_position[target_response.orderId] = contract_id
+
                 self.logger.info(
                     f"✅ Bracket order placed successfully: Entry={entry_response.orderId}, Stop={stop_response.orderId}, Target={target_response.orderId}"
                 )
@@ -1162,7 +1188,15 @@ class OrderManager:
         side = 1 if position.size > 0 else 0  # Sell long, Buy short
         size = abs(position.size)
 
-        return self.place_stop_order(contract_id, side, size, stop_price, account_id)
+        response = self.place_stop_order(
+            contract_id, side, size, stop_price, account_id
+        )
+
+        # Track the stop loss order for position synchronization
+        if response and response.success:
+            self.track_order_for_position(response.orderId, contract_id, "stop")
+
+        return response
 
     def add_take_profit(
         self, contract_id: str, target_price: float, account_id: int | None = None
@@ -1197,7 +1231,255 @@ class OrderManager:
         side = 1 if position.size > 0 else 0  # Sell long, Buy short
         size = abs(position.size)
 
-        return self.place_limit_order(contract_id, side, size, target_price, account_id)
+        response = self.place_limit_order(
+            contract_id, side, size, target_price, account_id
+        )
+
+        # Track the take profit order for position synchronization
+        if response and response.success:
+            self.track_order_for_position(response.orderId, contract_id, "target")
+
+        return response
+
+    # ================================================================================
+    # ORDER-POSITION SYNCHRONIZATION METHODS
+    # ================================================================================
+
+    def track_order_for_position(
+        self, order_id: int, contract_id: str, order_category: str
+    ):
+        """
+        Track an order as being related to a position.
+
+        Args:
+            order_id: Order ID to track
+            contract_id: Contract ID the order relates to
+            order_category: Category: 'entry', 'stop', or 'target'
+        """
+        with self.order_lock:
+            if order_category in ["entry", "stop", "target"]:
+                category_key = f"{order_category}_orders"
+                self.position_orders[contract_id][category_key].append(order_id)
+                self.order_to_position[order_id] = contract_id
+                self.logger.debug(
+                    f"📊 Tracking {order_category} order {order_id} for position {contract_id}"
+                )
+
+    def untrack_order(self, order_id: int):
+        """
+        Remove order from position tracking.
+
+        Args:
+            order_id: Order ID to untrack
+        """
+        with self.order_lock:
+            contract_id = self.order_to_position.pop(order_id, None)
+            if contract_id:
+                # Remove from all categories
+                for category in ["entry_orders", "stop_orders", "target_orders"]:
+                    if order_id in self.position_orders[contract_id][category]:
+                        self.position_orders[contract_id][category].remove(order_id)
+                self.logger.debug(
+                    f"📊 Untracked order {order_id} from position {contract_id}"
+                )
+
+    def get_position_orders(self, contract_id: str) -> dict[str, list[int]]:
+        """
+        Get all orders related to a position.
+
+        Args:
+            contract_id: Contract ID to get orders for
+
+        Returns:
+            Dict with lists of order IDs by category
+        """
+        with self.order_lock:
+            return {
+                "entry_orders": self.position_orders[contract_id][
+                    "entry_orders"
+                ].copy(),
+                "stop_orders": self.position_orders[contract_id]["stop_orders"].copy(),
+                "target_orders": self.position_orders[contract_id][
+                    "target_orders"
+                ].copy(),
+            }
+
+    def cancel_position_orders(
+        self,
+        contract_id: str,
+        categories: list[str] | None = None,
+        account_id: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Cancel all orders related to a position.
+
+        Args:
+            contract_id: Contract ID to cancel orders for
+            categories: Order categories to cancel ('stop', 'target', 'entry'). All if None.
+            account_id: Account ID. Uses default account if None.
+
+        Returns:
+            Dict with cancellation results
+        """
+        if categories is None:
+            categories = ["stop", "target", "entry"]
+
+        results = {
+            "total_cancelled": 0,
+            "failed_cancellations": 0,
+            "errors": [],
+        }
+
+        with self.order_lock:
+            orders_to_cancel = []
+            for category in categories:
+                category_key = f"{category}_orders"
+                if category_key in self.position_orders[contract_id]:
+                    orders_to_cancel.extend(
+                        self.position_orders[contract_id][category_key]
+                    )
+
+        for order_id in orders_to_cancel:
+            try:
+                if self.cancel_order(order_id, account_id):
+                    results["total_cancelled"] += 1
+                    self.untrack_order(order_id)
+                else:
+                    results["failed_cancellations"] += 1
+            except Exception as e:
+                results["failed_cancellations"] += 1
+                results["errors"].append(f"Order {order_id}: {e!s}")
+
+        self.logger.info(
+            f"✅ Cancelled {results['total_cancelled']} position orders for {contract_id}"
+        )
+        return results
+
+    def update_position_order_sizes(
+        self, contract_id: str, new_position_size: int, account_id: int | None = None
+    ) -> dict[str, Any]:
+        """
+        Update stop and target order sizes to match new position size.
+
+        Args:
+            contract_id: Contract ID of the position
+            new_position_size: New position size (signed: positive=long, negative=short)
+            account_id: Account ID. Uses default account if None.
+
+        Returns:
+            Dict with update results
+        """
+        if new_position_size == 0:
+            # Position is closed, cancel all related orders
+            return self.cancel_position_orders(contract_id, account_id=account_id)
+
+        results = {
+            "orders_updated": 0,
+            "orders_failed": 0,
+            "errors": [],
+        }
+
+        order_size = abs(new_position_size)
+        position_orders = self.get_position_orders(contract_id)
+
+        # Update stop orders
+        for order_id in position_orders["stop_orders"]:
+            try:
+                if self.modify_order(order_id, size=order_size, account_id=account_id):
+                    results["orders_updated"] += 1
+                else:
+                    results["orders_failed"] += 1
+            except Exception as e:
+                results["orders_failed"] += 1
+                results["errors"].append(f"Stop order {order_id}: {e!s}")
+
+        # Update target orders
+        for order_id in position_orders["target_orders"]:
+            try:
+                if self.modify_order(order_id, size=order_size, account_id=account_id):
+                    results["orders_updated"] += 1
+                else:
+                    results["orders_failed"] += 1
+            except Exception as e:
+                results["orders_failed"] += 1
+                results["errors"].append(f"Target order {order_id}: {e!s}")
+
+        self.logger.info(
+            f"📊 Updated {results['orders_updated']} orders for position {contract_id} (size: {new_position_size})"
+        )
+        return results
+
+    def sync_orders_with_position(
+        self, contract_id: str, account_id: int | None = None
+    ) -> dict[str, Any]:
+        """
+        Synchronize all related orders with current position state.
+
+        Args:
+            contract_id: Contract ID to synchronize
+            account_id: Account ID. Uses default account if None.
+
+        Returns:
+            Dict with synchronization results
+        """
+        # Get current position
+        positions = self.project_x.search_open_positions(account_id=account_id)
+        current_position = None
+        for pos in positions:
+            if pos.contractId == contract_id:
+                current_position = pos
+                break
+
+        if not current_position:
+            # Position is closed, cancel all related orders
+            self.logger.info(
+                f"📊 Position {contract_id} closed, cancelling related orders"
+            )
+            return self.cancel_position_orders(contract_id, account_id=account_id)
+        else:
+            # Position exists, update order sizes
+            self.logger.info(
+                f"📊 Synchronizing orders for position {contract_id} (size: {current_position.size})"
+            )
+            return self.update_position_order_sizes(
+                contract_id, current_position.size, account_id
+            )
+
+    def on_position_changed(
+        self,
+        contract_id: str,
+        old_size: int,
+        new_size: int,
+        account_id: int | None = None,
+    ):
+        """
+        Callback for when a position size changes.
+
+        Args:
+            contract_id: Contract ID of changed position
+            old_size: Previous position size
+            new_size: New position size
+            account_id: Account ID. Uses default account if None.
+        """
+        self.logger.info(f"📊 Position {contract_id} changed: {old_size} -> {new_size}")
+
+        if new_size == 0:
+            # Position closed
+            self.cancel_position_orders(contract_id, account_id=account_id)
+        elif abs(new_size) != abs(old_size):
+            # Position size changed
+            self.update_position_order_sizes(contract_id, new_size, account_id)
+
+    def on_position_closed(self, contract_id: str, account_id: int | None = None):
+        """
+        Callback for when a position is fully closed.
+
+        Args:
+            contract_id: Contract ID of closed position
+            account_id: Account ID. Uses default account if None.
+        """
+        self.logger.info(f"📊 Position {contract_id} closed, cancelling related orders")
+        self.cancel_position_orders(contract_id, account_id=account_id)
 
     # ================================================================================
     # UTILITY METHODS
@@ -1294,10 +1576,33 @@ class OrderManager:
             if self.realtime_client:
                 tracked_orders_count = len(self.realtime_client.tracked_orders)
 
+            # Count position-order relationships
+            total_position_orders = 0
+            position_summary = {}
+            for contract_id, orders in self.position_orders.items():
+                entry_count = len(orders["entry_orders"])
+                stop_count = len(orders["stop_orders"])
+                target_count = len(orders["target_orders"])
+                total_count = entry_count + stop_count + target_count
+                total_position_orders += total_count
+
+                if total_count > 0:
+                    position_summary[contract_id] = {
+                        "entry_orders": entry_count,
+                        "stop_orders": stop_count,
+                        "target_orders": target_count,
+                        "total": total_count,
+                    }
+
             return {
                 "statistics": self.stats.copy(),
                 "realtime_enabled": self._realtime_enabled,
                 "tracked_orders": tracked_orders_count,
+                "position_order_relationships": {
+                    "total_tracked_orders": total_position_orders,
+                    "positions_with_orders": len(position_summary),
+                    "position_summary": position_summary,
+                },
                 "callbacks_registered": {
                     event: len(callbacks)
                     for event, callbacks in self.order_callbacks.items()
@@ -1311,5 +1616,7 @@ class OrderManager:
         """Clean up resources and connections."""
         with self.order_lock:
             self.order_callbacks.clear()
+            self.position_orders.clear()
+            self.order_to_position.clear()
 
         self.logger.info("✅ OrderManager cleanup completed")

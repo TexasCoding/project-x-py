@@ -46,6 +46,7 @@ from .models import Position
 
 if TYPE_CHECKING:
     from .client import ProjectX
+    from .order_manager import OrderManager
     from .realtime import ProjectXRealtimeClient
 
 
@@ -103,6 +104,10 @@ class PositionManager:
         self.realtime_client: ProjectXRealtimeClient | None = None
         self._realtime_enabled = False
 
+        # Order management integration (optional)
+        self.order_manager: OrderManager | None = None
+        self._order_sync_enabled = False
+
         # Position tracking (maintains local state for business logic)
         self.tracked_positions: dict[str, Position] = {}
         self.position_history: dict[str, list[dict]] = defaultdict(list)
@@ -136,13 +141,16 @@ class PositionManager:
         self.logger.info("PositionManager initialized")
 
     def initialize(
-        self, realtime_client: Optional["ProjectXRealtimeClient"] = None
+        self,
+        realtime_client: Optional["ProjectXRealtimeClient"] = None,
+        order_manager: Optional["OrderManager"] = None,
     ) -> bool:
         """
-        Initialize the PositionManager with optional real-time capabilities.
+        Initialize the PositionManager with optional real-time capabilities and order synchronization.
 
         Args:
             realtime_client: Optional ProjectXRealtimeClient for live position tracking
+            order_manager: Optional OrderManager for automatic order synchronization
 
         Returns:
             bool: True if initialization successful
@@ -158,6 +166,14 @@ class PositionManager:
                 )
             else:
                 self.logger.info("✅ PositionManager initialized (polling mode)")
+
+            # Set up order management integration if provided
+            if order_manager:
+                self.order_manager = order_manager
+                self._order_sync_enabled = True
+                self.logger.info(
+                    "✅ PositionManager initialized with order synchronization"
+                )
 
             # Load initial positions
             self.refresh_positions()
@@ -215,6 +231,7 @@ class PositionManager:
 
             # Get the old position before updating
             old_position = self.tracked_positions.get(contract_id)
+            old_size = old_position.size if old_position else 0
 
             if is_position_closed:
                 # Position is closed - remove from tracking and trigger closure callbacks
@@ -223,6 +240,10 @@ class PositionManager:
                     self.logger.info(f"📊 Position closed: {contract_id}")
                     self.stats["positions_closed"] += 1
 
+                # Synchronize orders - cancel related orders when position is closed
+                if self._order_sync_enabled and self.order_manager:
+                    self.order_manager.on_position_closed(contract_id)
+
                 # Trigger position_closed callbacks with the closure data
                 self._trigger_callbacks("position_closed", {"data": position_data})
             else:
@@ -230,14 +251,22 @@ class PositionManager:
                 position = Position(**position_data)
                 self.tracked_positions[contract_id] = position
 
+                # Synchronize orders - update order sizes if position size changed
+                if (
+                    self._order_sync_enabled
+                    and self.order_manager
+                    and old_size != position_size
+                ):
+                    self.order_manager.on_position_changed(
+                        contract_id, old_size, position_size
+                    )
+
                 # Track position history
                 self.position_history[contract_id].append(
                     {
                         "timestamp": datetime.now(),
                         "position": position_data.copy(),
-                        "size_change": 0
-                        if not old_position
-                        else position.size - old_position.size,
+                        "size_change": position_size - old_size,
                     }
                 )
 
@@ -876,6 +905,10 @@ class PositionManager:
                     for contract_id in positions_to_remove:
                         del self.tracked_positions[contract_id]
 
+                # Synchronize orders - cancel related orders when position is closed
+                if self._order_sync_enabled and self.order_manager:
+                    self.order_manager.on_position_closed(contract_id)
+
                 self.stats["positions_closed"] += 1
             else:
                 error_msg = data.get("errorMessage", "Unknown error")
@@ -948,6 +981,13 @@ class PositionManager:
                 )
                 # Trigger position refresh to get updated sizes
                 self.refresh_positions(account_id=account_id)
+
+                # Synchronize orders - update order sizes after partial close
+                if self._order_sync_enabled and self.order_manager:
+                    self.order_manager.sync_orders_with_position(
+                        contract_id, account_id
+                    )
+
                 self.stats["positions_partially_closed"] += 1
             else:
                 error_msg = data.get("errorMessage", "Unknown error")
@@ -1074,6 +1114,7 @@ class PositionManager:
             return {
                 "statistics": self.stats.copy(),
                 "realtime_enabled": self._realtime_enabled,
+                "order_sync_enabled": self._order_sync_enabled,
                 "monitoring_active": self._monitoring_active,
                 "tracked_positions": len(self.tracked_positions),
                 "active_alerts": len(
@@ -1146,5 +1187,9 @@ class PositionManager:
             self.position_history.clear()
             self.position_callbacks.clear()
             self.position_alerts.clear()
+
+        # Clear order manager integration
+        self.order_manager = None
+        self._order_sync_enabled = False
 
         self.logger.info("✅ PositionManager cleanup completed")
