@@ -284,3 +284,5 @@ coverage.xml
 .env.production
 .env
 test.py
+test.sh
+test.log
