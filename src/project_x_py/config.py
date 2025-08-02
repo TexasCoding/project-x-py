@@ -23,46 +23,17 @@ logger = logging.getLogger(__name__)
 
 
 class ConfigManager:
-    """
-    Configuration manager for ProjectX client.
-
-    Handles loading configuration from:
-    1. Environment variables
-    2. Configuration files
-    3. Default values
-
-    Priority order: Environment variables > Config file > Defaults
-    """
-
-    def __init__(self, config_file: str | Path | None = None):
-        """
-        Initialize configuration manager.
-
-        Args:
-            config_file: Optional path to configuration file
-        """
-        self.config_file = Path(config_file) if config_file else None
-        self._config: ProjectXConfig | None = None
-
-    def load_config(self) -> ProjectXConfig:
-        """
-        Load configuration with priority order.
-
-        Returns:
-            ProjectXConfig instance
-        """
-        if self._config is not None:
-            return self._config
-
-        # Start with default configuration
-        config_dict = asdict(ProjectXConfig())
-
-        # Override with config file if it exists
-        if self.config_file and self.config_file.exists():
-            try:
-                file_config = self._load_config_file()
-                config_dict.update(file_config)
-                logger.info(f"Loaded configuration from {self.config_file}")
+    env_mappings = {
+        "PROJECT_X_API_KEY": "api_key",
+        "PROJECT_X_ACCOUNT_ID": "account_id",
+        "PROJECT_X_REQUESTS_PER_MINUTE": ("requests_per_minute", int),
+        "PROJECT_X_REALTIME_URL": "realtime_url",
+        # Legacy and new keys for backwards compatibility
+        "PROJECT_X_RATE_LIMIT": ("rate_limit_per_minute", int),
+        "PROJECT_X_WEBSOCKET_URL": "websocket_url",
+        "PROJECT_X_WEBSOCKET_PING_INTERVAL": ("websocket_ping_interval", int),
+        "PROJECT_X_WEBSOCKET_RECONNECT_DELAY": ("websocket_reconnect_delay", int),
+    }")
             except Exception as e:
                 logger.warning(f"Failed to load config file {self.config_file}: {e}")
 
@@ -81,7 +52,11 @@ class ConfigManager:
         try:
             with open(self.config_file) as f:
                 return json.load(f)
-        except (json.JSONDecodeError, OSError) as e:
+        except json.JSONDecodeError as e:
+            from .exceptions import ProjectXConfigError
+            logger.error(f"Error loading config file: {e}")
+            raise ProjectXConfigError(f"Invalid config file JSON: {e}")
+        except OSError as e:
             logger.error(f"Error loading config file: {e}")
             return {}
 
@@ -181,7 +156,7 @@ class ConfigManager:
             True if configuration is valid
 
         Raises:
-            ValueError: If configuration is invalid
+            ProjectXConfigError: If configuration is invalid
         """
         errors = []
 
@@ -215,7 +190,8 @@ class ConfigManager:
             errors.append(f"Invalid timezone: {config.timezone}")
 
         if errors:
-            raise ValueError(f"Configuration validation failed: {'; '.join(errors)}")
+            from .exceptions import ProjectXConfigError
+            raise ProjectXConfigError(f"Configuration validation failed: {'; '.join(errors)}")
 
         return True
 

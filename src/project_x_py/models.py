@@ -257,31 +257,33 @@ class BracketOrderResponse:
 # Configuration classes
 @dataclass
 class ProjectXConfig:
-    """
-    Configuration settings for the ProjectX client.
-
-    Default URLs are set for TopStepX endpoints. For custom ProjectX endpoints,
-    update the URLs accordingly using create_custom_config() or direct assignment.
-
-    TopStepX (Default):
-    - user_hub_url: "https://rtc.topstepx.com/hubs/user"
-    - market_hub_url: "https://rtc.topstepx.com/hubs/market"
-
-    Attributes:
-        api_url (str): Base URL for the API endpoints
-        realtime_url (str): URL for real-time WebSocket connections
-        user_hub_url (str): URL for user hub WebSocket (accounts, positions, orders)
-        market_hub_url (str): URL for market hub WebSocket (quotes, trades, depth)
-        timezone (str): Timezone for timestamp handling
-        timeout_seconds (int): Request timeout in seconds
-        retry_attempts (int): Number of retry attempts for failed requests
-        retry_delay_seconds (float): Delay between retry attempts
-        requests_per_minute (int): Rate limiting - requests per minute
-        burst_limit (int): Rate limiting - burst limit
-    """
-
-    api_url: str = "https://api.topstepx.com/api"
+    api_key: str
+    account_id: Optional[str] = None
+    requests_per_minute: int = 60
     realtime_url: str = "wss://realtime.topstepx.com/api"
+    # New backwards-compatibility aliases and websocket options
+    rate_limit_per_minute: int = 60   # alias for requests_per_minute
+    websocket_url: str = "wss://realtime.topstepx.com/api"  # alias for realtime_url
+    websocket_ping_interval: int = 30
+    websocket_reconnect_delay: int = 5
+
+    def __post_init__(self):
+        # Keep rate_limit_per_minute and requests_per_minute in sync
+        if hasattr(self, "requests_per_minute") and not hasattr(self, "rate_limit_per_minute"):
+            self.rate_limit_per_minute = self.requests_per_minute
+        if hasattr(self, "rate_limit_per_minute") and not hasattr(self, "requests_per_minute"):
+            self.requests_per_minute = self.rate_limit_per_minute
+        # Accept either, but ensure both are set to the same value
+        if self.rate_limit_per_minute != self.requests_per_minute:
+            # If only one was set explicitly, keep them in sync
+            self.rate_limit_per_minute = self.requests_per_minute = max(self.rate_limit_per_minute, self.requests_per_minute)
+        # Keep websocket_url and realtime_url in sync
+        if hasattr(self, "realtime_url") and not hasattr(self, "websocket_url"):
+            self.websocket_url = self.realtime_url
+        if hasattr(self, "websocket_url") and not hasattr(self, "realtime_url"):
+            self.realtime_url = self.websocket_url
+        if self.websocket_url != self.realtime_url:
+            self.websocket_url = self.realtime_url = self.websocket_url or self.realtime_url
     user_hub_url: str = "https://rtc.topstepx.com/hubs/user"
     market_hub_url: str = "https://rtc.topstepx.com/hubs/market"
     timezone: str = "America/Chicago"

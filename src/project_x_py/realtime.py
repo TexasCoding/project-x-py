@@ -4,6 +4,20 @@ Async ProjectX Realtime Client for ProjectX Gateway API
 This module provides an async Python client for the ProjectX real-time API, which provides
 access to the ProjectX trading platform real-time events via SignalR WebSocket connections.
 
+# --- Backwards compatibility alias ---
+# Expose RealtimeClient for legacy test code
+try:
+    RealtimeClient = ProjectXRealtimeClient
+except NameError:
+    # ProjectXRealtimeClient may be defined later, so define a dummy and replace after class definition if necessary
+    pass
+
+# Add to __all__ if defined
+try:
+    __all__.append("RealtimeClient")
+except Exception:
+    __all__ = ["RealtimeClient"]
+
 Key Features:
 - Full async/await support for all operations
 - Asyncio-based connection management

@@ -89,6 +89,13 @@ from .position_manager import PositionManager
 from .realtime import ProjectXRealtimeClient as ProjectXRealtimeClient
 from .realtime_data_manager import RealtimeDataManager
 
+# --- Legacy async names for backwards compatibility ---
+AsyncProjectX = ProjectX
+AsyncOrderManager = OrderManager
+AsyncPositionManager = PositionManager
+AsyncProjectXRealtimeClient = ProjectXRealtimeClient
+create_async_trading_suite = create_trading_suite
+
 # Utility functions
 from .utils import (
     RateLimiter,
@@ -168,6 +175,12 @@ __all__ = [
     "load_topstepx_config",
     "round_to_tick_size",
     "setup_logging",
+    # --- Legacy async names expected by tests ---
+    "AsyncProjectX",
+    "AsyncOrderManager",
+    "AsyncPositionManager",
+    "AsyncProjectXRealtimeClient",
+    "create_async_trading_suite",
 ]
 
 
