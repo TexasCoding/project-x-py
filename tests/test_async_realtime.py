@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from project_x_py.models import Account, ProjectXConfig
-from project_x_py.realtime import RealtimeClient
+from project_x_py.realtime import ProjectXRealtimeClient
 
 
 @pytest.fixture
@@ -20,8 +20,8 @@ def mock_config():
 
 @pytest.fixture
 def realtime_client(mock_config):
-    """Create an AsyncProjectXRealtimeClient instance."""
-    return RealtimeClient(
+    """Create a ProjectXRealtimeClient instance."""
+    return ProjectXRealtimeClient(
         jwt_token="test_token",
         account_id="test_account",
         config=mock_config,
@@ -30,15 +30,15 @@ def realtime_client(mock_config):
 
 @pytest.mark.asyncio
 async def test_initialization(mock_config):
-    """Test AsyncProjectXRealtimeClient initialization."""
-    client = RealtimeClient(
-        session_token="test_token",
-        account_info=Account(id="test_account"),
+    """Test ProjectXRealtimeClient initialization."""
+    client = ProjectXRealtimeClient(
+        jwt_token="test_token",
+        account_id="test_account",
         config=mock_config,
     )
 
-    assert client.session_token == "test_token"
-    assert client.account_info.id == "test_account"
+    assert client.jwt_token == "test_token"
+    assert client.account_id == "test_account"
     assert client.base_user_url == "https://test.com/hubs/user"
     assert client.base_market_url == "https://test.com/hubs/market"
     assert client.user_hub_url == "https://test.com/hubs/user?access_token=test_token"
@@ -52,9 +52,9 @@ async def test_initialization(mock_config):
 @pytest.mark.asyncio
 async def test_initialization_without_config():
     """Test initialization with default URLs."""
-    client = RealtimeClient(
-        session_token="test_token",
-        account_info=Account(id="test_account"),
+    client = ProjectXRealtimeClient(
+        jwt_token="test_token",
+        account_id="test_account",
     )
 
     assert client.base_user_url == "https://rtc.topstepx.com/hubs/user"
@@ -65,8 +65,8 @@ async def test_initialization_without_config():
 async def test_setup_connections_no_signalr():
     """Test setup connections when signalrcore is not available."""
     with patch("project_x_py.realtime.HubConnectionBuilder", None):
-        client = RealtimeClient(
-            session_token="test_token", account_info=Account(id="test_account")
+        client = ProjectXRealtimeClient(
+            jwt_token="test_token", account_id="test_account"
         )
 
         with pytest.raises(ImportError, match="signalrcore is required"):
@@ -84,7 +84,7 @@ async def test_setup_connections_success():
     mock_builder.build.return_value = mock_connection
 
     with patch("project_x_py.realtime.HubConnectionBuilder", mock_builder):
-        client = RealtimeClient("test_token", "test_account")
+        client = ProjectXRealtimeClient("test_token", "test_account")
         await client.setup_connections()
 
         assert client.setup_complete is True
@@ -97,7 +97,7 @@ async def test_setup_connections_success():
 @pytest.mark.asyncio
 async def test_connect_success():
     """Test successful connection."""
-    client = RealtimeClient("test_token", "test_account")
+    client = ProjectXRealtimeClient("test_token", "test_account")
 
     # Mock connections
     mock_user_conn = MagicMock()
@@ -120,7 +120,7 @@ async def test_connect_success():
 @pytest.mark.asyncio
 async def test_connect_failure():
     """Test connection failure."""
-    client = RealtimeClient("test_token", "test_account")
+    client = ProjectXRealtimeClient("test_token", "test_account")
     client.setup_complete = True
 
     # No connections available
@@ -133,7 +133,7 @@ async def test_connect_failure():
 @pytest.mark.asyncio
 async def test_disconnect():
     """Test disconnection."""
-    client = RealtimeClient("test_token", "test_account")
+    client = ProjectXRealtimeClient("test_token", "test_account")
 
     # Mock connections
     mock_user_conn = MagicMock()
@@ -152,7 +152,7 @@ async def test_disconnect():
 @pytest.mark.asyncio
 async def test_subscribe_user_updates_not_connected():
     """Test subscribing to user updates when not connected."""
-    client = RealtimeClient("test_token", "test_account")
+    client = ProjectXRealtimeClient("test_token", "test_account")
     client.user_connected = False
 
     result = await client.subscribe_user_updates()
@@ -163,7 +163,7 @@ async def test_subscribe_user_updates_not_connected():
 @pytest.mark.asyncio
 async def test_subscribe_user_updates_success():
     """Test successful user updates subscription."""
-    client = RealtimeClient("test_token", "test_account")
+    client = ProjectXRealtimeClient("test_token", "test_account")
     client.user_connected = True
 
     mock_connection = MagicMock()
@@ -179,7 +179,7 @@ async def test_subscribe_user_updates_success():
 @pytest.mark.asyncio
 async def test_subscribe_market_data_success():
     """Test successful market data subscription."""
-    client = RealtimeClient("test_token", "test_account")
+    client = ProjectXRealtimeClient("test_token", "test_account")
     client.market_connected = True
 
     mock_connection = MagicMock()
@@ -196,7 +196,7 @@ async def test_subscribe_market_data_success():
 @pytest.mark.asyncio
 async def test_unsubscribe_market_data():
     """Test market data unsubscription."""
-    client = RealtimeClient("test_token", "test_account")
+    client = ProjectXRealtimeClient("test_token", "test_account")
     client.market_connected = True
     client._subscribed_contracts = ["CON.F.US.MGC.M25", "CON.F.US.MNQ.H25"]
 
@@ -213,7 +213,7 @@ async def test_unsubscribe_market_data():
 @pytest.mark.asyncio
 async def test_add_remove_callback():
     """Test adding and removing callbacks."""
-    client = RealtimeClient("test_token", "test_account")
+    client = ProjectXRealtimeClient("test_token", "test_account")
 
     async def test_callback(data):
         pass
@@ -230,7 +230,7 @@ async def test_add_remove_callback():
 @pytest.mark.asyncio
 async def test_trigger_callbacks():
     """Test callback triggering."""
-    client = RealtimeClient("test_token", "test_account")
+    client = ProjectXRealtimeClient("test_token", "test_account")
 
     callback_data = []
 
@@ -254,7 +254,7 @@ async def test_trigger_callbacks():
 @pytest.mark.asyncio
 async def test_connection_event_handlers():
     """Test connection event handlers."""
-    client = RealtimeClient("test_token", "test_account")
+    client = ProjectXRealtimeClient("test_token", "test_account")
 
     # Test user hub events
     client._on_user_hub_open()
@@ -278,7 +278,7 @@ async def test_connection_event_handlers():
 @pytest.mark.asyncio
 async def test_forward_event_async():
     """Test async event forwarding."""
-    client = RealtimeClient("test_token", "test_account")
+    client = ProjectXRealtimeClient("test_token", "test_account")
 
     callback_data = []
 
@@ -299,7 +299,7 @@ async def test_forward_event_async():
 @pytest.mark.asyncio
 async def test_event_forwarding_methods():
     """Test event forwarding wrapper methods."""
-    client = RealtimeClient("test_token", "test_account")
+    client = ProjectXRealtimeClient("test_token", "test_account")
 
     with patch.object(client, "_forward_event_async", AsyncMock()) as mock_forward:
         # Test each forwarding method
@@ -321,7 +321,7 @@ async def test_event_forwarding_methods():
 @pytest.mark.asyncio
 async def test_is_connected():
     """Test connection status check."""
-    client = RealtimeClient("test_token", "test_account")
+    client = ProjectXRealtimeClient("test_token", "test_account")
 
     assert client.is_connected() is False
 
@@ -335,7 +335,7 @@ async def test_is_connected():
 @pytest.mark.asyncio
 async def test_get_stats():
     """Test getting statistics."""
-    client = RealtimeClient("test_token", "test_account")
+    client = ProjectXRealtimeClient("test_token", "test_account")
     client.stats["events_received"] = 100
     client.user_connected = True
     client._subscribed_contracts = ["MGC", "MNQ"]
@@ -351,7 +351,7 @@ async def test_get_stats():
 @pytest.mark.asyncio
 async def test_update_jwt_token():
     """Test JWT token update and reconnection."""
-    client = RealtimeClient("test_token", "test_account")
+    client = ProjectXRealtimeClient("test_token", "test_account")
     client._subscribed_contracts = ["MGC"]
 
     # Mock successful reconnection
@@ -374,7 +374,7 @@ async def test_update_jwt_token():
 @pytest.mark.asyncio
 async def test_cleanup():
     """Test cleanup method."""
-    client = RealtimeClient("test_token", "test_account")
+    client = ProjectXRealtimeClient("test_token", "test_account")
     client.callbacks["test"] = [lambda x: None]
 
     with patch.object(client, "disconnect", AsyncMock()):

@@ -28,14 +28,7 @@ class ConfigManager:
         "PROJECT_X_ACCOUNT_ID": "account_id",
         "PROJECT_X_REQUESTS_PER_MINUTE": ("requests_per_minute", int),
         "PROJECT_X_REALTIME_URL": "realtime_url",
-        # Legacy and new keys for backwards compatibility
-        "PROJECT_X_RATE_LIMIT": ("rate_limit_per_minute", int),
-        "PROJECT_X_WEBSOCKET_URL": "websocket_url",
-        "PROJECT_X_WEBSOCKET_PING_INTERVAL": ("websocket_ping_interval", int),
-        "PROJECT_X_WEBSOCKET_RECONNECT_DELAY": ("websocket_reconnect_delay", int),
-    }")
-            except Exception as e:
-                logger.warning(f"Failed to load config file {self.config_file}: {e}")
+    }
 
         # Override with environment variables
         env_config = self._load_env_config()
@@ -52,12 +45,8 @@ class ConfigManager:
         try:
             with open(self.config_file) as f:
                 return json.load(f)
-        except json.JSONDecodeError as e:
-            from .exceptions import ProjectXConfigError
-            logger.error(f"Error loading config file: {e}")
-            raise ProjectXConfigError(f"Invalid config file JSON: {e}")
-        except OSError as e:
-            logger.error(f"Error loading config file: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to load config file {self.config_file}: {e}")
             return {}
 
     def _load_env_config(self) -> dict[str, Any]:
@@ -156,7 +145,7 @@ class ConfigManager:
             True if configuration is valid
 
         Raises:
-            ProjectXConfigError: If configuration is invalid
+            ValueError: If configuration is invalid
         """
         errors = []
 
@@ -190,8 +179,7 @@ class ConfigManager:
             errors.append(f"Invalid timezone: {config.timezone}")
 
         if errors:
-            from .exceptions import ProjectXConfigError
-            raise ProjectXConfigError(f"Configuration validation failed: {'; '.join(errors)}")
+            raise ValueError(f"Configuration validation failed: {'; '.join(errors)}")
 
         return True
 

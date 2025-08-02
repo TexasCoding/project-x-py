@@ -5,36 +5,12 @@ Author: TexasCoding
 Date: June 2025
 
 This module defines custom exception classes for the ProjectX API client.
-
 """
 
 
 class ProjectXError(Exception):
     """Base exception for all Project X errors."""
     pass
-
-class ProjectXConfigError(ProjectXError):
-    """Configuration-related error for Project X."""
-    pass
-    """Base exception for ProjectX API errors."""
-
-    def __init__(
-        self,
-        message: str,
-        error_code: int | None = None,
-        response_data: dict | None = None,
-    ):
-        """
-        Initialize ProjectX error.
-
-        Args:
-            message: Error message
-            error_code: Optional error code
-            response_data: Optional response data from API
-        """
-        super().__init__(message)
-        self.error_code = error_code
-        self.response_data = response_data or {}
 
 
 class ProjectXAuthenticationError(ProjectXError):

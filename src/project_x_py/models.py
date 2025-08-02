@@ -258,39 +258,15 @@ class BracketOrderResponse:
 @dataclass
 class ProjectXConfig:
     api_key: str
-    account_id: Optional[str] = None
+    account_id: str | None = None
     requests_per_minute: int = 60
     realtime_url: str = "wss://realtime.topstepx.com/api"
-    # New backwards-compatibility aliases and websocket options
-    rate_limit_per_minute: int = 60   # alias for requests_per_minute
-    websocket_url: str = "wss://realtime.topstepx.com/api"  # alias for realtime_url
-    websocket_ping_interval: int = 30
-    websocket_reconnect_delay: int = 5
-
-    def __post_init__(self):
-        # Keep rate_limit_per_minute and requests_per_minute in sync
-        if hasattr(self, "requests_per_minute") and not hasattr(self, "rate_limit_per_minute"):
-            self.rate_limit_per_minute = self.requests_per_minute
-        if hasattr(self, "rate_limit_per_minute") and not hasattr(self, "requests_per_minute"):
-            self.requests_per_minute = self.rate_limit_per_minute
-        # Accept either, but ensure both are set to the same value
-        if self.rate_limit_per_minute != self.requests_per_minute:
-            # If only one was set explicitly, keep them in sync
-            self.rate_limit_per_minute = self.requests_per_minute = max(self.rate_limit_per_minute, self.requests_per_minute)
-        # Keep websocket_url and realtime_url in sync
-        if hasattr(self, "realtime_url") and not hasattr(self, "websocket_url"):
-            self.websocket_url = self.realtime_url
-        if hasattr(self, "websocket_url") and not hasattr(self, "realtime_url"):
-            self.realtime_url = self.websocket_url
-        if self.websocket_url != self.realtime_url:
-            self.websocket_url = self.realtime_url = self.websocket_url or self.realtime_url
     user_hub_url: str = "https://rtc.topstepx.com/hubs/user"
     market_hub_url: str = "https://rtc.topstepx.com/hubs/market"
     timezone: str = "America/Chicago"
     timeout_seconds: int = 30
     retry_attempts: int = 3
     retry_delay_seconds: float = 2.0
-    requests_per_minute: int = 60
     burst_limit: int = 10
 
 
