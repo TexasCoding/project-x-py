@@ -8,7 +8,9 @@ import polars as pl
 import pytest
 import pytz
 
-from project_x_py import ProjectX
+from project_x_py import ProjectX, ProjectXRealtimeClient
+AsyncProjectX = ProjectX
+AsyncProjectXRealtimeClient = ProjectXRealtimeClient
 from project_x_py.models import Instrument
 from project_x_py.realtime_data_manager import RealtimeDataManager
 

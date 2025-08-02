@@ -14,6 +14,8 @@ from project_x_py.models import Instrument, Order, Position
 from project_x_py.order_manager import OrderManager, create_order_manager
 from project_x_py.position_manager import PositionManager, create_position_manager
 from project_x_py.realtime_data_manager import ProjectXRealtimeDataManager
+from project_x_py.realtime import ProjectXRealtimeClient
+RealtimeClient = ProjectXRealtimeClient  # back-compat for existing code
 from project_x_py.utils import create_trading_suite
 
 

@@ -8,8 +8,10 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from project_x_py import OrderManager, ProjectX, create_order_manager
-from project_x_py.realtime import ProjectXRealtimeClient
+from project_x_py import OrderManager, ProjectX, create_order_manager, ProjectXRealtimeClient
+AsyncOrderManager = OrderManager
+AsyncProjectX = ProjectX
+AsyncProjectXRealtimeClient = ProjectXRealtimeClient
 
 
 class TestOrderManagerInitialization:

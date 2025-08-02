@@ -9,7 +9,6 @@ import tempfile
 import pytest
 
 from project_x_py.config import ConfigManager, ProjectXConfig
-from project_x_py.exceptions import ProjectXConfigError
 
 
 class TestConfigManagement:
@@ -112,7 +111,7 @@ class TestConfigManagement:
             config_manager = ConfigManager(config_file)
 
             # Act & Assert
-            with pytest.raises(ProjectXConfigError):
+            with pytest.raises(ValueError):
                 config_manager.load_config()
         finally:
             # Cleanup
@@ -161,7 +160,7 @@ class TestConfigManagement:
 
         try:
             # Act & Assert
-            with pytest.raises(ProjectXConfigError) as exc_info:
+            with pytest.raises(ValueError) as exc_info:
                 config_manager.load_config()
 
             assert "timeout" in str(exc_info.value).lower()

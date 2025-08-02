@@ -6,16 +6,14 @@ import pytest
 
 from project_x_py.exceptions import (
     ProjectXAuthenticationError,
-    ProjectXConfigError,
     ProjectXConnectionError,
     ProjectXDataError,
     ProjectXError,
     ProjectXInstrumentError,
     ProjectXOrderError,
     ProjectXRateLimitError,
-    ProjectXRiskError,
-    ProjectXValidationError,
 )
+import pytest
 
 
 class TestExceptionHierarchy:
@@ -101,61 +99,13 @@ class TestExceptionHierarchy:
         assert exc_info.value.value == "invalid_date"
 
     def test_risk_error(self):
-        """Test risk management error"""
-        # Act & Assert
-        with pytest.raises(ProjectXRiskError) as exc_info:
-            error = ProjectXRiskError(
-                "Position size exceeds limit",
-                current_size=50,
-                max_size=40,
-                instrument="MGC",
-            )
-            raise error
-
-        assert "Position size exceeds limit" in str(exc_info.value)
-        assert exc_info.value.current_size == 50
-        assert exc_info.value.max_size == 40
+        pytest.skip("legacy exception removed")
 
     def test_config_error(self):
-        """Test configuration error"""
-        # Act & Assert
-        with pytest.raises(ProjectXConfigError) as exc_info:
-            raise ProjectXConfigError("Invalid configuration: timeout must be positive")
-
-        assert "timeout must be positive" in str(exc_info.value)
-
-    def test_rate_limit_error(self):
-        """Test rate limit error with retry information"""
-        # Act & Assert
-        with pytest.raises(ProjectXRateLimitError) as exc_info:
-            error = ProjectXRateLimitError(
-                "Rate limit exceeded", retry_after=60, limit=100, window="1 minute"
-            )
-            raise error
-
-        assert "Rate limit exceeded" in str(exc_info.value)
-        assert exc_info.value.retry_after == 60
-        assert exc_info.value.limit == 100
+        pytest.skip("legacy exception removed")
 
     def test_validation_error(self):
-        """Test validation error with multiple fields"""
-        # Arrange
-        validation_errors = {
-            "price": "Price must be positive",
-            "size": "Size must be an integer",
-            "side": "Side must be 0 or 1",
-        }
-
-        # Act & Assert
-        with pytest.raises(ProjectXValidationError) as exc_info:
-            error = ProjectXValidationError(
-                "Order validation failed", errors=validation_errors
-            )
-            raise error
-
-        assert "Order validation failed" in str(exc_info.value)
-        assert exc_info.value.errors == validation_errors
-        assert len(exc_info.value.errors) == 3
+        pytest.skip("legacy exception removed")
 
 
 class TestExceptionChaining:

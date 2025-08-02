@@ -16,7 +16,10 @@ from project_x_py import (
     create_order_manager,
     create_position_manager,
     create_trading_suite,
+    ProjectXRealtimeClient,
 )
+AsyncProjectX = ProjectX
+AsyncProjectXRealtimeClient = ProjectXRealtimeClient
 from project_x_py.models import Instrument
 
 
@@ -319,7 +322,7 @@ class TestAsyncEndToEndWorkflows:
     @pytest.mark.asyncio
     async def test_async_real_time_data_workflow(self):
         """Test async real-time data processing workflow."""
-        with patch("project_x_py.RealtimeClient") as mock_realtime_class:
+        with patch("project_x_py.realtime.ProjectXRealtimeClient") as mock_realtime_class:
             # Mock realtime client
             mock_realtime = AsyncMock()
             mock_realtime_class.return_value = mock_realtime

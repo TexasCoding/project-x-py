@@ -14,7 +14,8 @@ from project_x_py import (
     ProjectX,
     create_order_manager,
 )
-from project_x_py.realtime import RealtimeClient
+from project_x_py.realtime import ProjectXRealtimeClient
+RealtimeClient = ProjectXRealtimeClient  # back-compat for existing code
 
 
 class TestAsyncOrderManagerInitialization:

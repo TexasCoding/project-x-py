@@ -8,6 +8,8 @@ import polars as pl
 import pytest
 
 from project_x_py.orderbook import OrderBook
+from project_x_py.realtime import ProjectXRealtimeClient
+RealtimeClient = ProjectXRealtimeClient  # back-compat for existing code
 
 
 @pytest.fixture
