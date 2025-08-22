@@ -112,6 +112,7 @@ from project_x_py.types.response_types import (
     LiquidityAnalysisResponse,
     MarketImpactResponse,
     OrderbookAnalysisResponse,
+    SpoofingDetectionResponse,
 )
 from project_x_py.utils.deprecation import deprecated
 
@@ -401,6 +402,50 @@ class OrderBook(OrderBookBase):
         See OrderDetection.get_advanced_market_metrics() for complete documentation.
         """
         return await self.detection.get_advanced_market_metrics()
+
+    async def detect_spoofing(
+        self,
+        time_window_minutes: int = 10,
+        min_placement_frequency: float = 3.0,
+        min_cancellation_rate: float = 0.8,
+        max_time_to_cancel: float = 30.0,
+        min_distance_ticks: int = 3,
+        confidence_threshold: float = 0.7,
+    ) -> list["SpoofingDetectionResponse"]:
+        """
+        Detect potential spoofing patterns in order book behavior.
+
+        Delegates to OrderDetection.detect_spoofing().
+        See OrderDetection.detect_spoofing() for complete documentation.
+
+        Args:
+            time_window_minutes: Time window for analysis (default: 10 minutes)
+            min_placement_frequency: Minimum order placements per minute to consider
+            min_cancellation_rate: Minimum cancellation rate (0.0-1.0) to flag
+            max_time_to_cancel: Maximum average time to cancellation (seconds)
+            min_distance_ticks: Minimum distance from best bid/ask in ticks
+            confidence_threshold: Minimum confidence score to include in results
+
+        Returns:
+            List of SpoofingDetectionResponse objects with detected patterns
+
+        Example:
+            >>> # Using TradingSuite with orderbook
+            >>> suite = await TradingSuite.create("MNQ", features=["orderbook"])
+            >>> spoofing = await suite.orderbook.detect_spoofing()
+            >>> for detection in spoofing:
+            ...     print(
+            ...         f"Spoofing: {detection['pattern']} at {detection['price']:.2f}"
+            ...     )
+        """
+        return await self.detection.detect_spoofing(
+            time_window_minutes,
+            min_placement_frequency,
+            min_cancellation_rate,
+            max_time_to_cancel,
+            min_distance_ticks,
+            confidence_threshold,
+        )
 
     # Delegate profile methods
     async def get_volume_profile(

@@ -1,6 +1,7 @@
 """Core risk management functionality."""
 
 import asyncio
+import contextlib
 import logging
 import statistics
 from collections import deque
@@ -86,8 +87,18 @@ class RiskManager(BaseStatisticsTracker):
         self._current_risk = Decimal("0")
         self._max_drawdown = Decimal("0")
 
+        # Track asyncio tasks for proper cleanup
+        self._active_tasks: set[asyncio.Task[Any]] = set()
+        self._trailing_stop_tasks: dict[
+            str, asyncio.Task[Any]
+        ] = {}  # position_id -> task
+
+        # Thread-safe lock for daily reset operations
+        self._daily_reset_lock = asyncio.Lock()
+
         # Initialize risk management statistics
         self._init_task = asyncio.create_task(self._initialize_risk_stats())
+        self._active_tasks.add(self._init_task)
 
     async def _initialize_risk_stats(self) -> None:
         """Initialize risk management statistics."""
@@ -97,21 +108,34 @@ class RiskManager(BaseStatisticsTracker):
             await self.set_gauge("max_positions", self.config.max_positions)
             await self.set_gauge("max_position_size", self.config.max_position_size)
             await self.set_gauge(
-                "max_risk_per_trade", self.config.max_risk_per_trade * 100
+                "max_risk_per_trade", float(self.config.max_risk_per_trade) * 100
             )
             await self.set_gauge(
-                "max_portfolio_risk", self.config.max_portfolio_risk * 100
+                "max_portfolio_risk", float(self.config.max_portfolio_risk) * 100
             )
-            await self.set_gauge("max_daily_loss", self.config.max_daily_loss * 100)
+            await self.set_gauge(
+                "max_daily_loss", float(self.config.max_daily_loss) * 100
+            )
             await self.set_status("active")
         except Exception as e:
             logger.error(f"Error initializing risk stats: {e}")
             await self.track_error(e, "initialize_risk_stats")
 
     def set_position_manager(self, position_manager: PositionManagerProtocol) -> None:
-        """Set the position manager after initialization to resolve circular dependency."""
+        """Set the position manager after initialization to resolve circular dependency.
+
+        This method should be called after RiskManager initialization but before
+        any risk validation or position-related operations.
+
+        Args:
+            position_manager: The position manager instance to use for position operations
+        """
+        if self.positions is not None:
+            logger.warning("Position manager already set, replacing existing instance")
+
         self.positions = position_manager
         self.position_manager = position_manager
+        logger.debug("Position manager successfully integrated with RiskManager")
 
     async def calculate_position_size(
         self,
@@ -143,17 +167,19 @@ class RiskManager(BaseStatisticsTracker):
             account = await self._get_account_info()
             account_balance = float(account.balance)
 
-            # Reset daily counters if needed
-            self._check_daily_reset()
+            # Reset daily counters if needed (thread-safe)
+            await self._check_daily_reset()
 
             # Determine risk amount
             if risk_amount is None:
-                risk_percent = risk_percent or self.config.max_risk_per_trade
+                risk_percent = risk_percent or float(self.config.max_risk_per_trade)
                 risk_amount = account_balance * risk_percent
 
             # Apply maximum risk limits
             if self.config.max_risk_per_trade_amount:
-                risk_amount = min(risk_amount, self.config.max_risk_per_trade_amount)
+                risk_amount = min(
+                    risk_amount, float(self.config.max_risk_per_trade_amount)
+                )
 
             # Calculate price difference and position size
             price_diff = abs(entry_price - stop_loss)
@@ -233,6 +259,9 @@ class RiskManager(BaseStatisticsTracker):
 
         Returns:
             RiskValidationResponse with validation result and reasons
+
+        Raises:
+            ValueError: If position manager not set (circular dependency not resolved)
         """
         import time
 
@@ -243,7 +272,9 @@ class RiskManager(BaseStatisticsTracker):
             is_valid = True
 
             if self.positions is None:
-                raise ValueError("Position manager not set")
+                raise ValueError(
+                    "Position manager not set. Call set_position_manager() to resolve circular dependency."
+                )
 
             # Get current positions if not provided
             if current_positions is None:
@@ -388,7 +419,9 @@ class RiskManager(BaseStatisticsTracker):
                             "ATR stop loss configured but no data manager is available. "
                             "Falling back to fixed stop."
                         )
-                        stop_distance = self.config.default_stop_distance * tick_size
+                        stop_distance = (
+                            float(self.config.default_stop_distance) * tick_size
+                        )
                     else:
                         # Fetch data to calculate ATR. A common period for ATR is 14.
                         # We need enough data for the calculation. Let's fetch 50 bars.
@@ -401,7 +434,7 @@ class RiskManager(BaseStatisticsTracker):
                                 "Not enough data to calculate ATR. Falling back to fixed stop."
                             )
                             stop_distance = (
-                                self.config.default_stop_distance * tick_size
+                                float(self.config.default_stop_distance) * tick_size
                             )
                         else:
                             from project_x_py.indicators import calculate_atr
@@ -409,22 +442,22 @@ class RiskManager(BaseStatisticsTracker):
                             data_with_atr = calculate_atr(ohlc_data, period=14)
                             latest_atr = data_with_atr["atr_14"].tail(1).item()
                             if latest_atr:
-                                stop_distance = (
-                                    latest_atr * self.config.default_stop_atr_multiplier
+                                stop_distance = latest_atr * float(
+                                    self.config.default_stop_atr_multiplier
                                 )
                             else:
                                 logger.warning(
                                     "ATR calculation resulted in None. Falling back to fixed stop."
                                 )
                                 stop_distance = (
-                                    self.config.default_stop_distance * tick_size
+                                    float(self.config.default_stop_distance) * tick_size
                                 )
                 elif self.config.stop_loss_type == "percentage":
                     stop_distance = entry_price * (
-                        self.config.default_stop_distance / 100
+                        float(self.config.default_stop_distance) / 100
                     )
                 else:  # fixed
-                    stop_distance = self.config.default_stop_distance * tick_size
+                    stop_distance = float(self.config.default_stop_distance) * tick_size
 
                 stop_loss = (
                     entry_price - stop_distance
@@ -435,7 +468,7 @@ class RiskManager(BaseStatisticsTracker):
             # Calculate take profit if not provided
             if take_profit is None and self.config.use_take_profit and stop_loss:
                 risk = abs(entry_price - stop_loss)
-                reward = risk * self.config.default_risk_reward_ratio
+                reward = risk * float(self.config.default_risk_reward_ratio)
                 take_profit = entry_price + reward if is_long else entry_price - reward
 
             # Place bracket order
@@ -499,7 +532,7 @@ class RiskManager(BaseStatisticsTracker):
             )
             if use_trailing and self.config.trailing_stop_distance > 0:
                 # Monitor position for trailing stop activation
-                _trailing_task = asyncio.create_task(
+                trailing_task = asyncio.create_task(
                     self._monitor_trailing_stop(
                         position,
                         {
@@ -507,6 +540,14 @@ class RiskManager(BaseStatisticsTracker):
                             "target_order_id": bracket_response.target_order_id,
                         },
                     )
+                )
+                # Track the task for cleanup
+                self._active_tasks.add(trailing_task)
+                self._trailing_stop_tasks[str(position.id)] = trailing_task
+
+                # Add task completion callback to remove from tracking
+                trailing_task.add_done_callback(
+                    lambda t: self._cleanup_task(t, str(position.id))
                 )
 
             # Emit risk order placed event
@@ -527,7 +568,7 @@ class RiskManager(BaseStatisticsTracker):
                 "take_profit": take_profit,
                 "bracket_order": bracket_response,
                 "use_trailing": use_trailing,
-                "risk_reward_ratio": self.config.default_risk_reward_ratio,
+                "risk_reward_ratio": float(self.config.default_risk_reward_ratio),
             }
 
         except Exception as e:
@@ -599,10 +640,15 @@ class RiskManager(BaseStatisticsTracker):
 
         Returns:
             Comprehensive risk analysis
+
+        Raises:
+            ValueError: If position manager not set (circular dependency not resolved)
         """
         try:
             if self.positions is None:
-                raise ValueError("Position manager not set")
+                raise ValueError(
+                    "Position manager not set. Call set_position_manager() to resolve circular dependency."
+                )
 
             account = await self._get_account_info()
             positions = await self.positions.get_all_positions()
@@ -624,9 +670,9 @@ class RiskManager(BaseStatisticsTracker):
 
             return RiskAnalysisResponse(
                 current_risk=float(self._current_risk),
-                max_risk=self.config.max_portfolio_risk,
+                max_risk=float(self.config.max_portfolio_risk),
                 daily_loss=float(self._daily_loss),
-                daily_loss_limit=self.config.max_daily_loss,
+                daily_loss_limit=float(self.config.max_daily_loss),
                 position_count=len(positions),
                 position_limit=self.config.max_positions,
                 daily_trades=self._daily_trades,
@@ -636,7 +682,7 @@ class RiskManager(BaseStatisticsTracker):
                 sharpe_ratio=self._calculate_sharpe_ratio(),
                 max_drawdown=float(self._max_drawdown),
                 position_risks=position_risks,
-                risk_per_trade=self.config.max_risk_per_trade,
+                risk_per_trade=float(self.config.max_risk_per_trade),
                 account_balance=float(account.balance),
                 margin_used=0.0,  # Not available in Account model
                 margin_available=float(account.balance),  # Simplified
@@ -657,13 +703,24 @@ class RiskManager(BaseStatisticsTracker):
             "No account found. RiskManager cannot proceed without account information."
         )
 
-    def _check_daily_reset(self) -> None:
-        """Reset daily counters if new day."""
+    async def _check_daily_reset(self) -> None:
+        """Reset daily counters if new day (thread-safe)."""
         current_date = datetime.now().date()
         if current_date > self._last_reset_date:
-            self._daily_loss = Decimal("0")
-            self._daily_trades = 0
-            self._last_reset_date = current_date
+            async with self._daily_reset_lock:
+                # Double-check after acquiring lock to prevent race condition
+                if current_date > self._last_reset_date:
+                    logger.info(
+                        f"Daily reset: {self._last_reset_date} -> {current_date}, "
+                        f"Daily loss: ${self._daily_loss}, Daily trades: {self._daily_trades}"
+                    )
+                    self._daily_loss = Decimal("0")
+                    self._daily_trades = 0
+                    self._last_reset_date = current_date
+
+                    # Update daily reset metrics
+                    await self.increment("daily_resets")
+                    await self.set_gauge("days_since_start", 0)  # Reset day counter
 
     def _calculate_kelly_fraction(self) -> float:
         """Calculate Kelly criterion fraction."""
@@ -682,7 +739,7 @@ class RiskManager(BaseStatisticsTracker):
         kelly = (p * b - q) / b
 
         # Apply Kelly fraction from config (partial Kelly)
-        return max(0, min(kelly * self.config.kelly_fraction, 0.25))
+        return max(0.0, min(kelly * float(self.config.kelly_fraction), 0.25))
 
     def _calculate_kelly_size(
         self,
@@ -736,10 +793,10 @@ class RiskManager(BaseStatisticsTracker):
                 risk = abs(float(position.averagePrice) - stop_price) * position.size
             else:
                 # Use default stop distance if no valid stop price
-                risk = self.config.default_stop_distance * position.size
+                risk = float(self.config.default_stop_distance) * position.size
         else:
             # Use default stop distance if no stop order
-            risk = self.config.default_stop_distance * position.size
+            risk = float(self.config.default_stop_distance) * position.size
 
         account = await self._get_account_info()
         risk_percent = risk / float(account.balance)
@@ -825,7 +882,9 @@ class RiskManager(BaseStatisticsTracker):
             while True:
                 # Get current price
                 if self.positions is None:
-                    raise ValueError("Position manager not set")
+                    raise ValueError(
+                        "Position manager not set. Call set_position_manager() to resolve circular dependency."
+                    )
 
                 current_positions = await self.positions.get_all_positions()
                 current_pos = next(
@@ -852,12 +911,12 @@ class RiskManager(BaseStatisticsTracker):
                     else (entry_price - current_price)
                 )
 
-                if profit >= self.config.trailing_stop_trigger:
+                if profit >= float(self.config.trailing_stop_trigger):
                     # Adjust stop to trail
                     new_stop = (
-                        current_price - self.config.trailing_stop_distance
+                        current_price - float(self.config.trailing_stop_distance)
                         if is_long
-                        else current_price + self.config.trailing_stop_distance
+                        else current_price + float(self.config.trailing_stop_distance)
                     )
 
                     await self.increment("trailing_stop_adjustments")
@@ -865,8 +924,16 @@ class RiskManager(BaseStatisticsTracker):
 
                 await asyncio.sleep(5)  # Check every 5 seconds
 
+        except asyncio.CancelledError:
+            logger.info(
+                f"Trailing stop monitoring cancelled for position {position.id}"
+            )
         except Exception as e:
             logger.error(f"Error monitoring trailing stop: {e}")
+        finally:
+            # Clean up the task reference
+            if str(position.id) in self._trailing_stop_tasks:
+                del self._trailing_stop_tasks[str(position.id)]
 
     def _calculate_profit_factor(self) -> float:
         """Calculate profit factor from trade history."""
@@ -986,6 +1053,90 @@ class RiskManager(BaseStatisticsTracker):
                 "daily_trades": self._daily_trades,
             },
         )
+
+    def _cleanup_task(
+        self, task: asyncio.Task[Any], position_id: str | None = None
+    ) -> None:
+        """Clean up completed or cancelled tasks."""
+        try:
+            # Remove from active tasks
+            self._active_tasks.discard(task)
+
+            # Remove from trailing stop tasks if position_id provided
+            if position_id and position_id in self._trailing_stop_tasks:
+                del self._trailing_stop_tasks[position_id]
+
+            # Log task completion
+            if task.cancelled():
+                logger.debug(f"Task cancelled: {task.get_name()}")
+            elif task.exception():
+                logger.warning(f"Task completed with exception: {task.exception()}")
+            else:
+                logger.debug(f"Task completed successfully: {task.get_name()}")
+        except Exception as e:
+            logger.error(f"Error cleaning up task: {e}")
+
+    async def stop_trailing_stops(self, position_id: str | None = None) -> None:
+        """Stop trailing stop monitoring for specific position or all positions.
+
+        Args:
+            position_id: Position to stop monitoring (None for all positions)
+        """
+        try:
+            if position_id:
+                # Stop specific trailing stop task
+                if position_id in self._trailing_stop_tasks:
+                    task = self._trailing_stop_tasks[position_id]
+                    if not task.done():
+                        task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await task
+                    del self._trailing_stop_tasks[position_id]
+                    self._active_tasks.discard(task)
+                    logger.info(
+                        f"Stopped trailing stop monitoring for position {position_id}"
+                    )
+            else:
+                # Stop all trailing stop tasks
+                tasks_to_cancel = list(self._trailing_stop_tasks.values())
+                for task in tasks_to_cancel:
+                    if not task.done():
+                        task.cancel()
+
+                # Wait for all cancellations to complete
+                if tasks_to_cancel:
+                    await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
+
+                # Clear tracking
+                self._trailing_stop_tasks.clear()
+                logger.info("Stopped all trailing stop monitoring")
+
+        except Exception as e:
+            logger.error(f"Error stopping trailing stops: {e}")
+
+    async def cleanup(self) -> None:
+        """Clean up all resources and cancel active tasks."""
+        try:
+            logger.info("Starting RiskManager cleanup...")
+
+            # Cancel all active tasks
+            active_tasks: list[asyncio.Task[Any]] = list(self._active_tasks)
+            for task in active_tasks:
+                if not task.done():
+                    task.cancel()
+
+            # Wait for all tasks to complete cancellation
+            if active_tasks:
+                await asyncio.gather(*active_tasks, return_exceptions=True)
+
+            # Clear tracking
+            self._active_tasks.clear()
+            self._trailing_stop_tasks.clear()
+
+            logger.info("RiskManager cleanup completed")
+
+        except Exception as e:
+            logger.error(f"Error during RiskManager cleanup: {e}")
 
     def _update_trade_statistics(self) -> None:
         """Update win rate and average win/loss statistics."""

@@ -35,6 +35,7 @@ Example Usage:
 
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime
+from decimal import Decimal
 from enum import Enum
 from pathlib import Path
 from types import TracebackType
@@ -64,6 +65,7 @@ from project_x_py.types.config_types import (
 from project_x_py.types.protocols import ProjectXClientProtocol
 from project_x_py.types.stats_types import TradingSuiteStats
 from project_x_py.utils import ProjectXLogger
+from project_x_py.utils.deprecation import deprecated
 
 logger = ProjectXLogger.get_logger(__name__)
 
@@ -189,13 +191,13 @@ class TradingSuiteConfig:
         if self.risk_config:
             return self.risk_config
         return RiskConfig(
-            max_risk_per_trade=0.01,  # 1% per trade
-            max_daily_loss=0.03,  # 3% daily loss
+            max_risk_per_trade=Decimal("0.01"),  # 1% per trade
+            max_daily_loss=Decimal("0.03"),  # 3% daily loss
             max_positions=3,
             use_stop_loss=True,
             use_take_profit=True,
             use_trailing_stops=True,
-            default_risk_reward_ratio=2.0,
+            default_risk_reward_ratio=Decimal("2.0"),
         )
 
 
@@ -852,25 +854,20 @@ class TradingSuite:
         """
         return await self._stats_aggregator.aggregate_stats()
 
+    @deprecated(
+        reason="Synchronous methods are being phased out in favor of async-only API",
+        version="3.3.0",
+        removal_version="4.0.0",
+        replacement="await get_stats()",
+    )
     def get_stats_sync(self) -> TradingSuiteStats:
         """
         Synchronous wrapper for get_stats for backward compatibility.
-
-        Note: This is a deprecated method that will be removed in v4.0.0.
-        Use the async get_stats() method instead.
 
         Returns:
             Structured statistics from all active components
         """
         import asyncio
-        import warnings
-
-        warnings.warn(
-            "get_stats_sync() is deprecated and will be removed in v4.0.0. "
-            "Use the async get_stats() method instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
 
         # Try to get or create event loop
         try:

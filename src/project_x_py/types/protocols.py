@@ -88,7 +88,7 @@ See Also:
 import asyncio
 import datetime
 import logging
-from collections import defaultdict
+from collections import defaultdict, deque
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -393,7 +393,7 @@ class PositionManagerProtocol(Protocol):
     order_manager: "OrderManager | None"
     _order_sync_enabled: bool
     tracked_positions: dict[str, "Position"]
-    position_history: dict[str, list[dict[str, Any]]]
+    position_history: dict[str, "deque[dict[str, Any]]"]
     _monitoring_active: bool
     _monitoring_task: "asyncio.Task[None] | None"
     position_alerts: dict[str, dict[str, Any]]

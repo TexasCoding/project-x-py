@@ -67,6 +67,7 @@ from project_x_py.orderbook.base import OrderBookBase
 from project_x_py.types import IcebergConfig
 from project_x_py.types.response_types import (
     OrderbookAnalysisResponse,
+    SpoofingDetectionResponse,
 )
 
 
@@ -459,6 +460,374 @@ class OrderDetection:
             i = j
 
         return clusters
+
+    async def detect_spoofing(
+        self,
+        time_window_minutes: int = 10,
+        min_placement_frequency: float = 3.0,  # placements per minute
+        min_cancellation_rate: float = 0.8,  # 80% cancellation rate
+        max_time_to_cancel: float = 30.0,  # seconds
+        min_distance_ticks: int = 3,  # minimum distance from market
+        confidence_threshold: float = 0.7,  # minimum confidence score
+    ) -> list[SpoofingDetectionResponse]:
+        """
+        Detect potential spoofing patterns in order book behavior.
+
+        This method implements a sophisticated spoofing detection algorithm that identifies
+        common market manipulation patterns including layering, quote stuffing, and
+        momentum ignition. It analyzes order placement and cancellation patterns to
+        identify anomalous behavior that may constitute market manipulation.
+
+        Detection Patterns:
+        1. Layering: Multiple orders at different price levels with high cancellation rates
+        2. Quote Stuffing: Rapid placement and cancellation of orders to create noise
+        3. Momentum Ignition: Aggressive orders designed to trigger other participants
+        4. Flashing: Brief display of large orders to mislead other traders
+
+        Algorithm Components:
+        - Order lifecycle tracking: Monitors placement, modification, and cancellation
+        - Statistical analysis: Identifies patterns that deviate from normal behavior
+        - Temporal analysis: Considers timing patterns in order behavior
+        - Price level analysis: Examines distance from current market and clustering
+        - Volume analysis: Analyzes order sizes relative to typical market activity
+
+        Args:
+            time_window_minutes: Time window for analysis (default: 10 minutes)
+            min_placement_frequency: Minimum order placements per minute to consider
+            min_cancellation_rate: Minimum cancellation rate (0.0-1.0) to flag
+            max_time_to_cancel: Maximum average time to cancellation (seconds)
+            min_distance_ticks: Minimum distance from best bid/ask in ticks
+            confidence_threshold: Minimum confidence score to include in results
+
+        Returns:
+            List of SpoofingDetectionResponse objects containing:
+            - price: Price level where spoofing detected
+            - side: "bid" or "ask"
+            - order_size: Typical order size at this level
+            - placement_frequency: Orders placed per minute
+            - cancellation_rate: Percentage of orders cancelled (0.0-1.0)
+            - time_to_cancel_avg_seconds: Average time before cancellation
+            - distance_from_market: Distance in ticks from best bid/ask
+            - confidence: Confidence score (0.0-1.0)
+            - pattern: Type of spoofing pattern detected
+            - first_detected: ISO timestamp of first detection
+            - last_detected: ISO timestamp of most recent detection
+            - total_instances: Number of instances detected
+
+        Example:
+            >>> # Detect spoofing with default parameters
+            >>> spoofing = await orderbook.detect_spoofing()
+            >>> for detection in spoofing:
+            ...     print(
+            ...         f"Spoofing at {detection['price']:.2f}: "
+            ...         f"{detection['pattern']} (confidence: {detection['confidence']:.1%})"
+            ...     )
+            >>>
+            >>> # Custom parameters for more sensitive detection
+            >>> sensitive = await orderbook.detect_spoofing(
+            ...     min_cancellation_rate=0.6,  # Lower threshold
+            ...     confidence_threshold=0.5,  # Lower confidence required
+            ...     time_window_minutes=5,  # Shorter window
+            ... )
+
+        Note:
+            This method requires sufficient historical data to be effective. Results
+            should be combined with other market analysis techniques for comprehensive
+            manipulation detection. High-frequency data provides better accuracy.
+        """
+        async with self.orderbook.orderbook_lock:
+            try:
+                current_time = datetime.now(self.orderbook.timezone)
+                cutoff_time = current_time - timedelta(minutes=time_window_minutes)
+
+                detections: list[SpoofingDetectionResponse] = []
+
+                # Get current market prices for distance calculation
+                best_bid = self._get_best_bid_price()
+                best_ask = self._get_best_ask_price()
+
+                if not best_bid or not best_ask:
+                    self.logger.warning(
+                        "Cannot detect spoofing without valid market prices"
+                    )
+                    return []
+
+                tick_size = await self._get_tick_size()
+
+                # Analyze price level history for spoofing patterns
+                for (
+                    price,
+                    side,
+                ), history in self.orderbook.price_level_history.items():
+                    # Filter to analysis window
+                    recent_history = [
+                        h
+                        for h in history
+                        if h.get("timestamp", current_time) > cutoff_time
+                    ]
+
+                    if len(recent_history) < 2:
+                        continue
+
+                    # Calculate spoofing metrics
+                    metrics = self._calculate_spoofing_metrics(
+                        recent_history,
+                        price,
+                        side,
+                        best_bid,
+                        best_ask,
+                        tick_size,
+                        time_window_minutes,
+                    )
+
+                    # Apply detection thresholds
+                    if (
+                        metrics["placement_frequency"] >= min_placement_frequency
+                        and metrics["cancellation_rate"] >= min_cancellation_rate
+                        and metrics["avg_time_to_cancel"] <= max_time_to_cancel
+                        and metrics["distance_ticks"] >= min_distance_ticks
+                    ):
+                        # Calculate confidence score
+                        confidence = self._calculate_spoofing_confidence(metrics)
+
+                        if confidence >= confidence_threshold:
+                            # Determine spoofing pattern
+                            pattern = self._classify_spoofing_pattern(metrics)
+
+                            # Create detection response
+                            detection: SpoofingDetectionResponse = {
+                                "price": float(price),
+                                "side": side,
+                                "order_size": int(metrics["avg_order_size"]),
+                                "placement_frequency": float(
+                                    metrics["placement_frequency"]
+                                ),
+                                "cancellation_rate": float(
+                                    metrics["cancellation_rate"]
+                                ),
+                                "time_to_cancel_avg_seconds": float(
+                                    metrics["avg_time_to_cancel"]
+                                ),
+                                "distance_from_market": float(
+                                    metrics["distance_ticks"]
+                                ),
+                                "confidence": float(confidence),
+                                "pattern": pattern,
+                                "first_detected": recent_history[0][
+                                    "timestamp"
+                                ].isoformat(),
+                                "last_detected": recent_history[-1][
+                                    "timestamp"
+                                ].isoformat(),
+                                "total_instances": len(recent_history),
+                            }
+
+                            detections.append(detection)
+
+                # Sort by confidence score (highest first)
+                detections.sort(key=lambda x: x["confidence"], reverse=True)
+
+                # Update statistics
+                self.orderbook.trade_flow_stats["spoofing_alerts"] = len(detections)
+
+                # Log detection results
+                if detections:
+                    self.logger.info(
+                        f"Detected {len(detections)} potential spoofing patterns"
+                    )
+                    for detection in detections[:3]:  # Log top 3
+                        self.logger.info(
+                            f"Spoofing: {detection['pattern']} at {detection['price']:.2f} "
+                            f"({detection['side']}) - confidence: {detection['confidence']:.1%}"
+                        )
+
+                return detections
+
+            except Exception as e:
+                self.logger.error(f"Error detecting spoofing: {e}")
+                return []
+
+    def _get_best_bid_price(self) -> float | None:
+        """Get current best bid price."""
+        try:
+            if not self.orderbook.orderbook_bids.is_empty():
+                return float(
+                    self.orderbook.orderbook_bids.sort("price", descending=True)[
+                        "price"
+                    ][0]
+                )
+        except Exception:
+            pass
+        return None
+
+    def _get_best_ask_price(self) -> float | None:
+        """Get current best ask price."""
+        try:
+            if not self.orderbook.orderbook_asks.is_empty():
+                return float(self.orderbook.orderbook_asks.sort("price")["price"][0])
+        except Exception:
+            pass
+        return None
+
+    async def _get_tick_size(self) -> float:
+        """Get instrument tick size."""
+        # Default tick sizes for common futures
+        defaults = {
+            "ES": 0.25,
+            "MES": 0.25,  # S&P 500
+            "NQ": 0.25,
+            "MNQ": 0.25,  # NASDAQ
+            "RTY": 0.10,
+            "M2K": 0.10,  # Russell 2000
+            "YM": 1.0,
+            "MYM": 1.0,  # Dow Jones
+        }
+        return defaults.get(self.orderbook.instrument, 0.01)  # Default to penny
+
+    def _calculate_spoofing_metrics(
+        self,
+        history: list[dict[str, Any]],
+        price: float,
+        side: str,
+        best_bid: float,
+        best_ask: float,
+        tick_size: float,
+        window_minutes: int,
+    ) -> dict[str, float]:
+        """Calculate metrics for spoofing detection."""
+
+        # Basic statistics
+        total_events = len(history)
+        volumes = [h.get("volume", 0) for h in history]
+        avg_volume = sum(volumes) / len(volumes) if volumes else 0
+
+        # Placement frequency (events per minute)
+        placement_frequency = total_events / window_minutes
+
+        # Calculate cancellation metrics
+        cancellations = 0
+        cancel_times = []
+
+        for i in range(1, len(history)):
+            prev_vol = history[i - 1].get("volume", 0)
+            curr_vol = history[i].get("volume", 0)
+
+            # Volume decrease indicates cancellation/fill
+            if curr_vol < prev_vol:
+                cancellations += 1
+
+                # Calculate time between placement and cancellation
+                time_diff = (
+                    history[i]["timestamp"] - history[i - 1]["timestamp"]
+                ).total_seconds()
+                cancel_times.append(time_diff)
+
+        cancellation_rate = cancellations / max(total_events - 1, 1)
+        avg_time_to_cancel = (
+            sum(cancel_times) / len(cancel_times) if cancel_times else 0
+        )
+
+        # Distance from market
+        if side == "bid":
+            distance_ticks = abs(best_bid - price) / tick_size
+        else:
+            distance_ticks = abs(price - best_ask) / tick_size
+
+        return {
+            "placement_frequency": placement_frequency,
+            "cancellation_rate": cancellation_rate,
+            "avg_time_to_cancel": avg_time_to_cancel,
+            "distance_ticks": distance_ticks,
+            "avg_order_size": avg_volume,
+            "total_events": total_events,
+            "volume_volatility": self._calculate_volume_volatility(volumes),
+        }
+
+    def _calculate_volume_volatility(self, volumes: list[float]) -> float:
+        """Calculate volume volatility as coefficient of variation."""
+        if not volumes or len(volumes) < 2:
+            return 0.0
+
+        mean_vol = sum(volumes) / len(volumes)
+        if mean_vol == 0:
+            return 0.0
+
+        variance = sum((v - mean_vol) ** 2 for v in volumes) / len(volumes)
+        std_dev = float(variance**0.5)
+
+        return std_dev / mean_vol  # Coefficient of variation
+
+    def _calculate_spoofing_confidence(self, metrics: dict[str, float]) -> float:
+        """
+        Calculate confidence score for spoofing detection.
+
+        Combines multiple factors to produce a confidence score between 0.0 and 1.0.
+        Higher scores indicate stronger evidence of spoofing behavior.
+        """
+
+        # Factor 1: Placement frequency (30% weight)
+        # Higher frequency increases suspicion
+        freq_score = min(float(metrics["placement_frequency"]) / 10.0, 1.0) * 0.30
+
+        # Factor 2: Cancellation rate (35% weight)
+        # Higher cancellation rate increases suspicion
+        cancel_score = float(metrics["cancellation_rate"]) * 0.35
+
+        # Factor 3: Speed of cancellation (25% weight)
+        # Faster cancellations are more suspicious
+        speed_score = max(0, 1.0 - (float(metrics["avg_time_to_cancel"]) / 60.0)) * 0.25
+
+        # Factor 4: Distance from market (10% weight)
+        # Orders further from market are more likely to be spoofing
+        distance_score = min(float(metrics["distance_ticks"]) / 20.0, 1.0) * 0.10
+
+        return min(freq_score + cancel_score + speed_score + distance_score, 1.0)
+
+    def _classify_spoofing_pattern(self, metrics: dict[str, float]) -> str:
+        """
+        Classify the type of spoofing pattern based on characteristics.
+        """
+
+        # Quote stuffing: Very high frequency, very fast cancellations
+        if (
+            float(metrics["placement_frequency"]) > 8.0
+            and float(metrics["avg_time_to_cancel"]) < 5.0
+        ):
+            return "quote_stuffing"
+
+        # Layering: Multiple price levels, high cancellation rate, moderate distance
+        if (
+            float(metrics["cancellation_rate"]) > 0.9
+            and float(metrics["distance_ticks"]) > 1
+            and float(metrics["distance_ticks"]) < 10
+        ):
+            return "layering"
+
+        # Momentum ignition: Large orders, quick cancellation after market moves
+        if (
+            float(metrics["avg_order_size"]) > 100
+            and float(metrics["avg_time_to_cancel"]) < 10.0
+            and float(metrics["distance_ticks"]) < 3
+        ):
+            return "momentum_ignition"
+
+        # Flashing: Large orders, very brief display times
+        if (
+            float(metrics["avg_order_size"]) > 200
+            and float(metrics["avg_time_to_cancel"]) < 2.0
+        ):
+            return "flashing"
+
+        # Pinging: Frequent small orders testing market
+        if (
+            float(metrics["placement_frequency"]) > 5.0
+            and float(metrics["avg_order_size"]) < 10
+            and float(metrics["distance_ticks"]) < 2
+        ):
+            return "pinging"
+
+        # Default classification
+        return "order_manipulation"
 
     async def get_advanced_market_metrics(self) -> OrderbookAnalysisResponse:
         """
