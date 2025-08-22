@@ -34,6 +34,9 @@ class TestPositionOperations:
             creationTimestamp=datetime.now().isoformat(),
         )
 
+        # Mock get_position to return None (position closed) for verification
+        pm.get_position = AsyncMock(return_value=None)
+
         result = await pm.close_position_direct("MGC")
 
         assert result["success"] is True

@@ -59,10 +59,13 @@ See Also:
     - `position_manager.reporting.PositionReportingMixin`
 """
 
+import asyncio
+import contextlib
 import logging
-from collections import defaultdict
+from collections import defaultdict, deque
 from collections.abc import Callable, Coroutine
 from datetime import datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from project_x_py.models import Position
@@ -104,7 +107,13 @@ class PositionTrackingMixin:
         """Initialize tracking attributes."""
         # Position tracking (maintains local state for business logic)
         self.tracked_positions: dict[str, Position] = {}
-        self.position_history: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        self.position_history: dict[str, deque[dict[str, Any]]] = defaultdict(
+            lambda: deque(maxlen=1000)
+        )
+        # Queue-based processing to prevent race conditions
+        self._position_update_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self._position_processor_task: asyncio.Task[None] | None = None
+        self._processing_enabled = False
         # EventBus is now used for all event handling
 
     async def _setup_realtime_callbacks(self) -> None:
@@ -125,6 +134,9 @@ class PositionTrackingMixin:
         if not self.realtime_client:
             return
 
+        # Start the queue processor
+        await self._start_position_processor()
+
         # Register for position events (closures are detected from position updates)
         await self.realtime_client.add_callback(
             "position_update", self._on_position_update
@@ -135,14 +147,62 @@ class PositionTrackingMixin:
 
         self.logger.info("🔄 Real-time position callbacks registered")
 
+    async def _start_position_processor(self) -> None:
+        """Start the queue-based position processor."""
+        if self._position_processor_task and not self._position_processor_task.done():
+            return
+
+        self._processing_enabled = True
+        self._position_processor_task = asyncio.create_task(self._position_processor())
+        self.logger.info("📋 Position queue processor started")
+
+    async def _stop_position_processor(self) -> None:
+        """Stop the queue-based position processor."""
+        self._processing_enabled = False
+
+        if self._position_processor_task:
+            self._position_processor_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._position_processor_task
+            self._position_processor_task = None
+
+        self.logger.info("📋 Position queue processor stopped")
+
+    async def _position_processor(self) -> None:
+        """Queue-based position processor to prevent race conditions."""
+        while self._processing_enabled:
+            try:
+                # Wait for position update with timeout
+                position_data = await asyncio.wait_for(
+                    self._position_update_queue.get(), timeout=1.0
+                )
+
+                # Process the position update with exclusive lock
+                async with self.position_lock:
+                    await self._process_position_data(position_data)
+
+                # Mark task as done
+                self._position_update_queue.task_done()
+
+            except TimeoutError:
+                # Normal timeout, continue processing
+                continue
+            except asyncio.CancelledError:
+                # Task was cancelled, exit gracefully
+                break
+            except Exception as e:
+                self.logger.error(f"Error in position processor: {e}")
+                # Continue processing other items
+
     async def _on_position_update(
         self, data: dict[str, Any] | list[dict[str, Any]]
     ) -> None:
         """
-        Handle real-time position updates and detect position closures.
+        Handle real-time position updates by queueing them for serial processing.
 
-        Processes incoming position data from the WebSocket feed, updates tracked
-        positions, detects closures (size=0), and triggers appropriate callbacks.
+        Queues incoming position data for processing by the dedicated processor task.
+        This prevents race conditions by ensuring all position updates are processed
+        serially rather than concurrently.
 
         Args:
             data (dict): Position update data from real-time feed. Can be:
@@ -151,20 +211,24 @@ class PositionTrackingMixin:
                 - Wrapped format: {"action": 1, "data": {position_data}}
 
         Note:
+            - All updates are queued for serial processing
             - Position closure is detected when size == 0 (not type == 0)
             - Type 0 means "Undefined" in PositionType enum, not closed
             - Automatically triggers position_closed callbacks on closure
         """
         try:
-            async with self.position_lock:
-                if isinstance(data, list):
-                    for position_data in data:
-                        await self._process_position_data(position_data)
-                elif isinstance(data, dict):
-                    await self._process_position_data(data)
+            if isinstance(data, list):
+                for position_data in data:
+                    await self._position_update_queue.put(position_data)
+            elif isinstance(data, dict):
+                await self._position_update_queue.put(data)
 
         except Exception as e:
-            self.logger.error(f"Error processing position update: {e}")
+            self.logger.error(f"Error queueing position update: {e}")
+
+    def get_queue_size(self) -> int:
+        """Get current size of position update queue."""
+        return self._position_update_queue.qsize()
 
     async def _on_account_update(self, data: dict[str, Any]) -> None:
         """
@@ -315,14 +379,19 @@ class PositionTrackingMixin:
                     entry_price = old_position.averagePrice
                     size = old_position.size
 
-                    # This is a simplified P&L calculation.
+                    # Use Decimal for precise P&L calculations
                     # For futures, a point_value/multiplier is needed.
                     # Assuming point_value of 1 for now.
-                    if old_position.type == PositionType.LONG:
-                        pnl = (exit_price - entry_price) * size
-                    else:  # SHORT
-                        pnl = (entry_price - exit_price) * size
+                    exit_decimal = Decimal(str(exit_price))
+                    entry_decimal = Decimal(str(entry_price))
+                    size_decimal = Decimal(str(size))
 
+                    if old_position.type == PositionType.LONG:
+                        pnl_decimal = (exit_decimal - entry_decimal) * size_decimal
+                    else:  # SHORT
+                        pnl_decimal = (entry_decimal - exit_decimal) * size_decimal
+
+                    pnl = float(pnl_decimal)  # Convert back for compatibility
                     self.stats["realized_pnl"] += pnl
                     self.stats["closed_positions"] += 1
                     if pnl > 0:
@@ -423,7 +492,7 @@ class PositionTrackingMixin:
                         contract_id, old_size, position_size
                     )
 
-                # Track position history
+                # Track position history with bounded deque
                 self.position_history[contract_id].append(
                     {
                         "timestamp": datetime.now(),
@@ -490,6 +559,24 @@ class PositionTrackingMixin:
 
         # Legacy callbacks have been removed - use EventBus
 
+    async def cleanup_tracking(self) -> None:
+        """Clean up tracking resources and stop processor."""
+        await self._stop_position_processor()
+
+        # Clear bounded collections
+        self.tracked_positions.clear()
+        self.position_history.clear()
+
+        # Clear any remaining queue items
+        while not self._position_update_queue.empty():
+            try:
+                self._position_update_queue.get_nowait()
+                self._position_update_queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+
+        self.logger.info("✅ Position tracking cleanup completed")
+
     @deprecated(
         reason="Use TradingSuite.on() with EventType enum for event handling",
         version="3.1.0",
@@ -535,3 +622,7 @@ class PositionTrackingMixin:
         self.logger.warning(
             "add_callback is deprecated. Use TradingSuite.on() with EventType enum instead."
         )
+
+    def get_position_history_size(self, contract_id: str) -> int:
+        """Get the current size of position history for a contract."""
+        return len(self.position_history.get(contract_id, deque()))

@@ -1,6 +1,6 @@
 [project]
 name = "project-x-py"
-version = "3.3.2"
+version = "3.3.3"
 description = "High-performance Python SDK for futures trading with real-time WebSocket data, technical indicators, order management, and market depth analysis"
 readme = "README.md"
 license = { text = "MIT" }

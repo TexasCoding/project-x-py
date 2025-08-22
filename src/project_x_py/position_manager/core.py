@@ -285,6 +285,9 @@ class PositionManager(
             "positions_partially_closed": 0,
             "last_update_time": None,
             "monitoring_started": None,
+            # New fields for tracking queue performance
+            "queue_size_peak": 0,
+            "queue_processing_errors": 0,
         }
 
         self.logger.info(

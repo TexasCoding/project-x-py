@@ -49,6 +49,7 @@ See Also:
     - `position_manager.monitoring.PositionMonitoringMixin`
 """
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 from project_x_py.exceptions import ProjectXError
@@ -164,15 +165,9 @@ class PositionOperationsMixin:
                             else None,
                         },
                     )
-                    # Remove from tracked positions if present
-                    async with self.position_lock:
-                        positions_to_remove = [
-                            contract_id
-                            for contract_id, pos in self.tracked_positions.items()
-                            if pos.contractId == contract_id
-                        ]
-                        for contract_id in positions_to_remove:
-                            del self.tracked_positions[contract_id]
+                    # Remove from tracked positions if present - only after API confirms success
+                    # Verify position is actually closed before removing from tracking
+                    await self._verify_and_remove_closed_position(contract_id)
 
                     # Synchronize orders - cancel related orders when position is closed
                     # Note: Order synchronization methods will be added to AsyncOrderManager
@@ -420,6 +415,52 @@ class PositionOperationsMixin:
             },
         )
         return results
+
+    async def _verify_and_remove_closed_position(
+        self: "PositionManagerProtocol", contract_id: str
+    ) -> bool:
+        """
+        Verify position closure via API before removing from tracking.
+
+        This prevents premature removal of positions from tracking when API
+        returns success but position is not actually closed.
+
+        Args:
+            contract_id (str): Contract ID to verify closure for
+
+        Returns:
+            bool: True if position was verified closed and removed, False otherwise
+        """
+        try:
+            # Wait a moment for position update to propagate
+            await asyncio.sleep(0.1)
+
+            # Verify position is actually closed by checking API
+            current_position = await self.get_position(contract_id)
+
+            async with self.position_lock:
+                if current_position is None or current_position.size == 0:
+                    # Position is truly closed, safe to remove from tracking
+                    if contract_id in self.tracked_positions:
+                        del self.tracked_positions[contract_id]
+                        self.logger.info(
+                            f"✅ Verified and removed closed position: {contract_id}"
+                        )
+                        return True
+                else:
+                    # Position still exists, do not remove from tracking
+                    self.logger.warning(
+                        f"⚠️ Position {contract_id} reported closed but still exists with size {current_position.size}"
+                    )
+                    return False
+
+        except Exception as e:
+            self.logger.error(
+                f"Error verifying position closure for {contract_id}: {e}"
+            )
+            return False
+
+        return False
 
     @handle_errors(
         "close position by contract",

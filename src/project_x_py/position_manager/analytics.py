@@ -48,6 +48,7 @@ See Also:
 """
 
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING
 
 from project_x_py.models import Position
@@ -173,26 +174,39 @@ class PositionAnalyticsMixin:
                 "error": "No current price available",
             }
 
-        # Calculate P&L based on position direction
+        # Calculate P&L based on position direction using Decimal for precision
+        current_decimal = Decimal(str(current_price))
+        avg_price_decimal = Decimal(str(position.averagePrice))
+        size_decimal = Decimal(str(position.size))
+
         if position.type == PositionType.LONG:  # LONG
-            price_change = current_price - position.averagePrice
+            price_change_decimal = current_decimal - avg_price_decimal
         elif position.type == PositionType.SHORT:  # SHORT (type == PositionType.SHORT)
-            price_change = position.averagePrice - current_price
+            price_change_decimal = avg_price_decimal - current_decimal
         else:
-            price_change = 0.0
+            price_change_decimal = Decimal("0.0")
 
         # Apply point value if provided (for accurate dollar P&L)
         if point_value is not None:
-            pnl_per_contract = price_change * point_value
+            point_value_decimal = Decimal(str(point_value))
+            pnl_per_contract_decimal = price_change_decimal * point_value_decimal
         else:
-            pnl_per_contract = price_change
+            pnl_per_contract_decimal = price_change_decimal
 
-        unrealized_pnl = pnl_per_contract * position.size
-        _market_value = current_price * position.size
+        unrealized_pnl_decimal = pnl_per_contract_decimal * size_decimal
+        market_value_decimal = current_decimal * size_decimal
+
+        # Convert back to float for compatibility, with proper rounding
+        unrealized_pnl = float(
+            unrealized_pnl_decimal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        )
+        _market_value = float(
+            market_value_decimal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        )
 
         # Calculate additional fields for PositionAnalysisResponse
-        position_value = abs(
-            current_price * position.size
+        position_value = float(
+            abs(market_value_decimal).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         )  # Absolute value of position
 
         # Simplified calculations - would need more data for accurate values
@@ -203,6 +217,7 @@ class PositionAnalyticsMixin:
         min_unrealized_pnl = unrealized_pnl if unrealized_pnl < 0 else 0.0
 
         # Risk metrics (simplified - would need market data for accurate calculations)
+        price_change = float(price_change_decimal)
         volatility = (
             abs(price_change / position.averagePrice)
             if position.averagePrice > 0
@@ -286,9 +301,9 @@ class PositionAnalyticsMixin:
         """
         positions = await self.get_all_positions(account_id=account_id)
 
-        # Calculate direct metrics without intermediate dictionaries
-        total_pnl = 0.0
-        total_value = 0.0
+        # Calculate direct metrics using Decimal for precision
+        total_pnl_decimal = Decimal("0.0")
+        total_value_decimal = Decimal("0.0")
         pnl_values: list[float] = []
 
         for position in positions:
@@ -298,11 +313,26 @@ class PositionAnalyticsMixin:
                 pnl = pnl_data["unrealized_pnl"]
                 value = pnl_data["position_value"]
 
-                total_pnl += pnl
-                total_value += value
+                total_pnl_decimal += Decimal(str(pnl))
+                total_value_decimal += Decimal(str(value))
                 pnl_values.append(pnl)
 
-        total_return = (total_pnl / total_value * 100) if total_value > 0 else 0.0
+        # Convert back to float with proper precision
+        total_pnl = float(
+            total_pnl_decimal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        )
+        total_value = float(
+            total_value_decimal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        )
+        total_return = (
+            float(
+                (total_pnl_decimal / total_value_decimal * Decimal("100")).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+            )
+            if total_value_decimal > 0
+            else 0.0
+        )
 
         from datetime import datetime
 
@@ -372,9 +402,16 @@ class PositionAnalyticsMixin:
         """
         positions = await self.get_all_positions(account_id=account_id)
 
-        # Calculate total portfolio value directly from positions
-        total_value = sum(
-            abs(position.size * position.averagePrice) for position in positions
+        # Calculate total portfolio value using Decimal for precision
+        total_value_decimal = Decimal("0.0")
+        for position in positions:
+            size_decimal = Decimal(str(position.size))
+            avg_price_decimal = Decimal(str(position.averagePrice))
+            position_value_decimal = abs(size_decimal * avg_price_decimal)
+            total_value_decimal += position_value_decimal
+
+        total_value = float(
+            total_value_decimal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         )
 
         return {
