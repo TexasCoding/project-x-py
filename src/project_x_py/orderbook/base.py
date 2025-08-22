@@ -268,10 +268,16 @@ class OrderBookBase(BaseStatisticsTracker):
         # Callbacks for orderbook events
         # EventBus is now used for all event handling
 
-        # Price level refresh history for advanced analytics
-        self.price_level_history: dict[tuple[float, str], list[dict[str, Any]]] = (
-            defaultdict(list)
+        # Price level refresh history for advanced analytics with memory bounds
+        # Using deque with maxlen to prevent unbounded memory growth
+        from collections import deque
+
+        self.price_level_history: dict[tuple[float, str], deque[dict[str, Any]]] = (
+            defaultdict(
+                lambda: deque(maxlen=1000)
+            )  # Keep last 1000 updates per price level
         )
+        self.max_price_levels_tracked = 10000  # Maximum number of price levels to track
 
         # Best bid/ask tracking
         self.best_bid_history: list[dict[str, Any]] = []

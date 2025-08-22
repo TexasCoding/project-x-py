@@ -261,16 +261,21 @@ class MemoryManager:
         for key in list(self.orderbook.price_level_history.keys()):
             history = self.orderbook.price_level_history[key]
 
-            # Remove old entries
-            history[:] = [
+            # For deque, we need to filter and rebuild
+            # Note: deque already has maxlen=1000, so it auto-limits size
+            # We only need to remove old entries based on time
+            filtered_entries = [
                 h for h in history if h.get("timestamp", current_time) > cutoff_time
             ]
 
-            # Limit to max history per level
-            if len(history) > self.config.max_history_per_level:
-                removed = len(history) - self.config.max_history_per_level
-                history[:] = history[-self.config.max_history_per_level :]
-                self.memory_stats["history_cleaned"] += removed
+            # If we have filtered entries, update the deque
+            if filtered_entries != list(history):
+                # Clear and repopulate the deque with filtered entries
+                history.clear()
+                history.extend(filtered_entries)
+                self.memory_stats["history_cleaned"] += len(history) - len(
+                    filtered_entries
+                )
 
             # Remove empty histories
             if not history:

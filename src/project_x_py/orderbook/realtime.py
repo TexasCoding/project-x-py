@@ -598,8 +598,19 @@ class RealtimeHandler:
         """
         side = "bid" if is_bid else "ask"
 
-        # Update price level history for analytics
+        # Update price level history for analytics with memory bounds
         history_key = (price, side)
+
+        # Check if we need to enforce memory bounds and key doesn't exist
+        if (
+            len(self.orderbook.price_level_history)
+            >= self.orderbook.max_price_levels_tracked
+            and history_key not in self.orderbook.price_level_history
+        ):
+            # Remove the oldest entry (first in dict)
+            oldest_key = next(iter(self.orderbook.price_level_history))
+            del self.orderbook.price_level_history[oldest_key]
+
         self.orderbook.price_level_history[history_key].append(
             {
                 "volume": volume,

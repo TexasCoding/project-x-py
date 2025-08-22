@@ -554,17 +554,35 @@ class OrderDetection:
 
                 tick_size = await self._get_tick_size()
 
-                # Analyze price level history for spoofing patterns
-                for (
-                    price,
-                    side,
-                ), history in self.orderbook.price_level_history.items():
-                    # Filter to analysis window
-                    recent_history = [
-                        h
-                        for h in history
-                        if h.get("timestamp", current_time) > cutoff_time
-                    ]
+                # Analyze price level history for spoofing patterns with optimizations
+                # Limit analysis to most recent price levels to avoid O(N²) complexity
+                price_levels_to_analyze = list(
+                    self.orderbook.price_level_history.items()
+                )
+
+                # Sort by most recent activity and limit to top 1000 price levels
+                price_levels_to_analyze.sort(
+                    key=lambda x: x[1][-1]["timestamp"] if x[1] else current_time,
+                    reverse=True,
+                )
+                price_levels_to_analyze = price_levels_to_analyze[:1000]
+                for (price, side), history in price_levels_to_analyze:
+                    # Use binary search for timestamp filtering if history is large
+                    if len(history) > 100:
+                        # Binary search to find cutoff point
+                        import bisect
+
+                        # Create a list of timestamps for binary search
+                        timestamps = [h.get("timestamp", current_time) for h in history]
+                        cutoff_idx = bisect.bisect_left(timestamps, cutoff_time)
+                        recent_history = list(history)[cutoff_idx:]
+                    else:
+                        # For small histories, use simple filtering
+                        recent_history = [
+                            h
+                            for h in history
+                            if h.get("timestamp", current_time) > cutoff_time
+                        ]
 
                     if len(recent_history) < 2:
                         continue
@@ -670,8 +688,21 @@ class OrderDetection:
         return None
 
     async def _get_tick_size(self) -> float:
-        """Get instrument tick size."""
-        # Default tick sizes for common futures
+        """Get instrument tick size from configuration or API."""
+        # First try to get from project_x client if available
+        if self.orderbook.project_x:
+            try:
+                # Try to get instrument info from the API
+                instrument_info = await self.orderbook.project_x.get_instrument(
+                    self.orderbook.instrument
+                )
+                if instrument_info and hasattr(instrument_info, "tickSize"):
+                    return float(instrument_info.tickSize)
+            except Exception:
+                # Fall back to defaults if API call fails
+                pass
+
+        # Fall back to defaults for common futures
         defaults = {
             "ES": 0.25,
             "MES": 0.25,  # S&P 500
