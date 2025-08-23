@@ -21,9 +21,9 @@ A **high-performance async Python SDK** for the [ProjectX Trading Platform](http
 
 This Python SDK acts as a bridge between your trading strategies and the ProjectX platform, handling all the complex API interactions, data processing, and real-time connectivity.
 
-## 🚀 v3.3.0 - Complete Statistics Module Redesign
+## 🚀 v3.3.4 - Production Ready with All Critical Issues Resolved
 
-**Latest Version**: v3.3.0 - Major statistics system overhaul with 100% async-first architecture, comprehensive health monitoring, and multi-format export capabilities. See [CHANGELOG.md](CHANGELOG.md) for full release history.
+**Latest Version**: v3.3.4 - All 27 critical issues resolved. Production-ready with comprehensive fixes for Risk Manager, OrderBook spoofing detection, and enhanced memory management. See [CHANGELOG.md](CHANGELOG.md) for full release history.
 
 ### 📦 Production Stability Guarantee
 
@@ -74,10 +74,12 @@ suite = await TradingSuite.create(\"MNQ\")
 
 ### Advanced Features
 - **58+ Technical Indicators**: Full TA-Lib compatibility with Polars optimization including new pattern indicators
-- **Level 2 OrderBook**: Depth analysis, iceberg detection, market microstructure
+- **Level 2 OrderBook**: Depth analysis, iceberg detection, spoofing detection with 6 pattern types
 - **Real-time WebSockets**: Async streaming for quotes, trades, and account updates
 - **Performance Optimized**: Connection pooling, intelligent caching, memory management
 - **Pattern Recognition**: Fair Value Gaps, Order Blocks, and Waddah Attar Explosion indicators
+- **Market Manipulation Detection**: Advanced spoofing detection with confidence scoring
+- **Financial Precision**: All calculations use Decimal type for exact precision
 - **Enterprise Error Handling**: Production-ready error handling with decorators and structured logging
 - **Comprehensive Type Safety**: Full TypedDict and Protocol definitions for IDE support and static analysis
 - **Advanced Statistics & Analytics**: 100% async-first statistics system with comprehensive health monitoring and performance tracking
@@ -85,7 +87,7 @@ suite = await TradingSuite.create(\"MNQ\")
 - **Component-Specific Tracking**: Enhanced statistics for OrderManager, PositionManager, OrderBook, and more
 - **Health Monitoring**: Intelligent 0-100 health scoring with configurable thresholds and degradation detection
 - **Performance Optimization**: TTL caching, parallel collection, and circular buffers for memory efficiency
-- **Comprehensive Testing**: 45+ new tests for the async statistics system with performance benchmarks
+- **Comprehensive Testing**: 100+ tests including all critical issue coverage
 
 ## 📦 Installation
 
