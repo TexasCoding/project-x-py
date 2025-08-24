@@ -114,7 +114,6 @@ from project_x_py.types.response_types import (
     OrderbookAnalysisResponse,
     SpoofingDetectionResponse,
 )
-from project_x_py.utils.deprecation import deprecated
 
 __all__ = [
     # Types
@@ -134,7 +133,8 @@ __all__ = [
     "TradeDict",
     # Profile components
     "VolumeProfile",
-    "create_orderbook",
+    # Memory management
+    "MemoryManager",
 ]
 
 
@@ -509,66 +509,3 @@ class OrderBook(OrderBookBase):
 
         # Call parent cleanup
         await super().cleanup()
-
-
-@deprecated(
-    reason="Use TradingSuite.create() with orderbook feature for integrated orderbook",
-    version="3.1.0",
-    removal_version="4.0.0",
-    replacement='TradingSuite.create(instrument, features=["orderbook"])',
-)
-def create_orderbook(
-    instrument: str,
-    event_bus: Any,
-    project_x: "ProjectXBase | None" = None,
-    realtime_client: "ProjectXRealtimeClient | None" = None,
-    timezone_str: str = DEFAULT_TIMEZONE,
-) -> OrderBook:
-    """
-    Factory function to create an orderbook.
-
-    This factory function creates and returns an OrderBook instance for the specified
-    instrument. It simplifies the process of creating an orderbook by handling the initial
-    configuration. Note that the returned orderbook is not yet initialized - you must call
-    the initialize() method separately to start the orderbook's functionality.
-
-    The factory approach provides several benefits:
-    1. Ensures consistent orderbook creation across the application
-    2. Allows for future extension with pre-configured orderbook variants
-    3. Simplifies the API for common use cases
-
-    Args:
-        instrument: Trading instrument symbol (e.g., "ES", "NQ", "MES", "MNQ").
-            This should be the base symbol without contract-specific extensions.
-        project_x: Optional AsyncProjectX client for tick size lookup and API access.
-            If provided, the orderbook will be able to look up tick sizes and other
-            contract details automatically.
-        realtime_client: Optional real-time client for WebSocket data. This is kept
-            for compatibility but should be passed to initialize() instead.
-        timezone_str: Timezone for timestamps (default: "America/Chicago").
-            All timestamps in the orderbook will be converted to this timezone.
-
-    Returns:
-        OrderBook: Orderbook instance that must be initialized with a call
-        to initialize() before use.
-
-    Example:
-        >>> # V3.1: Use TradingSuite instead of factory function
-        >>> # This function is deprecated - use TradingSuite.create()
-        >>> suite = await TradingSuite.create(
-        ...     instrument="MNQ",
-        ...     features=["orderbook"],
-        ...     timezone_str="America/Chicago",  # CME timezone
-        ... )
-        >>>
-        >>> # Orderbook is automatically initialized
-        >>> # Access via suite.orderbook
-        >>> snapshot = await suite.orderbook.get_orderbook_snapshot()
-        >>>
-        >>> # Note: create_orderbook is maintained for backward compatibility
-        >>> # but TradingSuite is the recommended approach
-    """
-    # Note: realtime_client is passed to initialize() separately to allow
-    # for async initialization
-    _ = realtime_client  # Mark as intentionally unused
-    return OrderBook(instrument, event_bus, project_x, timezone_str)

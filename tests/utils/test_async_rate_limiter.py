@@ -205,6 +205,7 @@ class TestRateLimiter:
         # Check rate limiting - for any 0.5s window, we should have at most 10 requests
         # In CI environments, allow up to 30% more due to timing variations
         import os
+
         max_allowed = 13 if os.environ.get("CI") else 10
 
         for i in range(len(times)):

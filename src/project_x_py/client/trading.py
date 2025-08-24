@@ -73,7 +73,6 @@ import pytz
 
 from project_x_py.exceptions import ProjectXError
 from project_x_py.models import Position, Trade
-from project_x_py.utils.deprecation import deprecated
 
 logger = logging.getLogger(__name__)
 
@@ -98,29 +97,6 @@ class TradingMixin:
     ) -> Any:
         """Provided by HttpMixin."""
         _ = (method, endpoint, data, params, headers, retry_count)
-
-    @deprecated(
-        reason="Method renamed for API consistency",
-        version="3.0.0",
-        removal_version="4.0.0",
-        replacement="search_open_positions()",
-    )
-    async def get_positions(self) -> list[Position]:
-        """
-        DEPRECATED: Get all open positions for the authenticated account.
-
-        This method is deprecated and will be removed in a future version.
-        Please use `search_open_positions()` instead, which provides the same
-        functionality with a more consistent API endpoint.
-
-        Args:
-            self: The client instance.
-
-        Returns:
-            A list of Position objects representing current holdings.
-        """
-        # Deprecation warning handled by decorator
-        return await self.search_open_positions()
 
     async def search_open_positions(
         self, account_id: int | None = None

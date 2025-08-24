@@ -103,6 +103,7 @@ class TestEnhancedStatsTracking:
 
         # Parse the JSON export
         import json
+
         exported_data = json.loads(exported)
 
         # Check that PII is sanitized in error details
@@ -188,9 +189,7 @@ class TestEnhancedStatsTracking:
         event_bus = EventBus()
 
         orderbook = OrderBook(
-            instrument="TEST",
-            event_bus=event_bus,
-            project_x=mock_client
+            instrument="TEST", event_bus=event_bus, project_x=mock_client
         )
 
         # Track data quality issues using the actual keys that OrderBook initializes
@@ -248,36 +247,31 @@ class TestEnhancedStatsTracking:
         comprehensive_stats = {
             "health": {
                 "overall_score": 95.0,
-                "component_scores": {
-                    "test_component": 95.0
-                }
+                "component_scores": {"test_component": 95.0},
             },
             "performance": {
                 "api_calls_total": 10,
                 "cache_hit_rate": 0.8,
-                "avg_response_time": 0.1
+                "avg_response_time": 0.1,
             },
             "memory": {
                 "total_memory_mb": stats.get("memory_usage_mb", 0.1),
                 "component_memory": {
                     "test_component": stats.get("memory_usage_mb", 0.1)
-                }
+                },
             },
             "errors": {
                 "total_errors": stats.get("error_count", 0),
                 "error_rate": 0.01,
-                "errors_by_component": {
-                    "test_component": stats.get("error_count", 0)
-                }
-            }
+                "errors_by_component": {"test_component": stats.get("error_count", 0)},
+            },
         }
 
         exporter = StatsExporter()
 
         # Export in Prometheus format
         prom_export = await exporter.export(
-            comprehensive_stats,
-            export_format="prometheus"
+            comprehensive_stats, export_format="prometheus"
         )
 
         # Check format
@@ -434,7 +428,12 @@ class TestStatisticsAggregator:
         stats = await component.get_stats()
 
         assert stats["name"] == "test_component"
-        assert stats["status"] in ["initializing", "connecting", "disconnected", "connected"]
+        assert stats["status"] in [
+            "initializing",
+            "connecting",
+            "disconnected",
+            "connected",
+        ]
         assert "uptime_seconds" in stats
         assert stats["error_count"] == 0
         assert stats["memory_usage_mb"] >= 0.0
@@ -459,16 +458,14 @@ async def test_stats_under_load():
         # Use record_timing for timing operations
         tasks.append(
             component.record_timing(
-                operation=f"trade_{i % 10}",
-                duration_ms=float(i % 100)
+                operation=f"trade_{i % 10}", duration_ms=float(i % 100)
             )
         )
         # Track errors for some operations (10% failure rate)
         if i % 10 == 0:
             tasks.append(
                 component.track_error(
-                    Exception(f"Trade error {i}"),
-                    context=f"trade_{i % 10}"
+                    Exception(f"Trade error {i}"), context=f"trade_{i % 10}"
                 )
             )
 
@@ -573,10 +570,7 @@ async def test_realtime_data_manager_stats_integration():
     await data_manager.record_timing("process_tick", 0.3)
 
     # Track an error
-    await data_manager.track_error(
-        Exception("Test error"),
-        context="process_tick"
-    )
+    await data_manager.track_error(Exception("Test error"), context="process_tick")
 
     # Get stats
     stats = await data_manager.get_stats()

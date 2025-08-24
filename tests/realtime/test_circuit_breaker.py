@@ -668,8 +668,7 @@ class TestCircuitBreakerMixin:
         handler = MockEventHandler()
         # Configure with per-event circuits only
         await handler.configure_circuit_breaker(
-            enable_global_circuit=False,
-            enable_per_event_circuits=True
+            enable_global_circuit=False, enable_per_event_circuits=True
         )
 
         # Create some circuit breakers
@@ -946,8 +945,11 @@ class TestPerformance:
         # In CI environments, overhead can be higher due to resource constraints
         # Allow up to 500% overhead in CI, 100% locally
         import os
+
         max_overhead = 5.0 if os.environ.get("CI") else 1.0
-        assert overhead < max_overhead, f"Circuit breaker overhead too high: {overhead:.2%} (max: {max_overhead*100:.0f}%)"
+        assert overhead < max_overhead, (
+            f"Circuit breaker overhead too high: {overhead:.2%} (max: {max_overhead * 100:.0f}%)"
+        )
 
         print(f"Circuit breaker overhead: {overhead:.2%}")
 

@@ -63,14 +63,12 @@ import asyncio
 import contextlib
 import logging
 from collections import defaultdict, deque
-from collections.abc import Callable, Coroutine
 from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from project_x_py.models import Position
 from project_x_py.types.trading import PositionType
-from project_x_py.utils.deprecation import deprecated
 
 if TYPE_CHECKING:
     from asyncio import Lock
@@ -576,52 +574,6 @@ class PositionTrackingMixin:
                 break
 
         self.logger.info("✅ Position tracking cleanup completed")
-
-    @deprecated(
-        reason="Use TradingSuite.on() with EventType enum for event handling",
-        version="3.1.0",
-        removal_version="4.0.0",
-        replacement="TradingSuite.on(EventType.POSITION_UPDATED, callback)",
-    )
-    async def add_callback(
-        self,
-        event_type: str,
-        callback: Callable[[dict[str, Any]], Coroutine[Any, Any, None] | None],
-    ) -> None:
-        """
-        Register a callback function for specific position events.
-
-        Allows you to listen for position updates, closures, account changes, and alerts
-        to build custom monitoring and notification systems.
-
-        Args:
-            event_type: Type of event to listen for
-                - "position_update": Position size or price changes
-                - "position_closed": Position fully closed (size = 0)
-                - "account_update": Account-level changes
-                - "position_alert": Position alert triggered
-            callback: Async function to call when event occurs
-                Should accept one argument: the event data dict
-
-        Example:
-            >>> async def on_position_update(data):
-            ...     pos = data.get("data", {})
-            ...     print(
-            ...         f"Position updated: {pos.get('contractId')} size: {pos.get('size')}"
-            ...     )
-            >>> await position_manager.add_callback(
-            ...     "position_update", on_position_update
-            ... )
-            >>> async def on_position_closed(data):
-            ...     pos = data.get("data", {})
-            ...     print(f"Position closed: {pos.get('contractId')}")
-            >>> await position_manager.add_callback(
-            ...     "position_closed", on_position_closed
-            ... )
-        """
-        self.logger.warning(
-            "add_callback is deprecated. Use TradingSuite.on() with EventType enum instead."
-        )
 
     async def get_position_history_size(self, contract_id: str) -> int:
         """Get the current size of position history for a contract."""

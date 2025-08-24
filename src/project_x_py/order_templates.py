@@ -39,7 +39,8 @@ from typing import TYPE_CHECKING, Any
 
 from project_x_py.indicators import ATR
 from project_x_py.models import BracketOrderResponse
-from project_x_py.order_tracker import OrderChainBuilder
+
+# OrderChainBuilder was deprecated and removed - using OrderManager directly
 
 if TYPE_CHECKING:
     from project_x_py.trading_suite import TradingSuite
@@ -153,32 +154,50 @@ class RiskRewardTemplate(OrderTemplate):
             else:
                 raise ValueError("Must provide size, risk_amount, or risk_percent")
 
-        # Build order chain
-        builder = OrderChainBuilder(suite)
-
-        if size is None:
+        # Calculate stop and target prices
+        # Defensive check - size should be set by now, but verify for safety
+        if size is None:  # pragma: no cover
             raise ValueError("Size is required")
 
-        if self.use_limit_entry:
-            builder.limit_order(size=size, price=entry_price, side=side)
-        else:
-            builder.market_order(size=size, side=side)
+        if not suite.instrument_id:
+            raise ValueError("No instrument ID available")
 
-        # Add stop loss and take profit
         target_dist = stop_dist * self.risk_reward_ratio
 
-        builder.with_stop_loss(offset=stop_dist)
-        builder.with_take_profit(offset=target_dist)
+        if side == 0:  # Buy
+            stop_loss_price = entry_price - stop_dist
+            take_profit_price = entry_price + target_dist
+        else:  # Sell
+            stop_loss_price = entry_price + stop_dist
+            take_profit_price = entry_price - target_dist
 
-        # Execute order
-        result = await builder.execute()
-
-        if result.success:
-            logger.info(
-                f"Created {self.risk_reward_ratio}:1 R/R order - "
-                f"Entry: ${entry_price:.2f}, Stop: ${result.stop_loss_price:.2f}, "
-                f"Target: ${result.take_profit_price:.2f}"
+        # Use OrderManager's bracket order functionality
+        if self.use_limit_entry:
+            result = await suite.orders.place_bracket_order(
+                contract_id=suite.instrument_id,
+                side=side,
+                size=size,
+                entry_price=entry_price,
+                stop_loss_price=stop_loss_price,
+                take_profit_price=take_profit_price,
+                entry_type="limit",
             )
+        else:
+            result = await suite.orders.place_bracket_order(
+                contract_id=suite.instrument_id,
+                side=side,
+                size=size,
+                entry_price=entry_price,
+                stop_loss_price=stop_loss_price,
+                take_profit_price=take_profit_price,
+                entry_type="market",
+            )
+
+        logger.info(
+            f"Created {self.risk_reward_ratio}:1 R/R bracket order - "
+            f"Entry: ${entry_price:.2f}, Stop: ${stop_loss_price:.2f}, "
+            f"Target: ${take_profit_price:.2f}"
+        )
 
         return result
 
@@ -258,25 +277,52 @@ class ATRStopTemplate(OrderTemplate):
             f"Target distance={target_distance:.2f}"
         )
 
-        # Build order
-        builder = OrderChainBuilder(suite)
-
+        # Calculate entry and stop prices
         if size is None:
             raise ValueError("Size is required")
+
+        if not suite.instrument_id:
+            raise ValueError("No instrument ID available")
 
         if use_limit_entry:
             if side == 0:  # BUY
                 entry_price = current_price - entry_offset
+                stop_loss_price = entry_price - stop_distance
+                take_profit_price = entry_price + target_distance
             else:  # SELL
                 entry_price = current_price + entry_offset
-            builder.limit_order(size=size, price=entry_price, side=side)
+                stop_loss_price = entry_price + stop_distance
+                take_profit_price = entry_price - target_distance
+
+            # Place bracket order with limit entry
+            return await suite.orders.place_bracket_order(
+                contract_id=suite.instrument_id,
+                side=side,
+                size=size,
+                entry_price=entry_price,
+                stop_loss_price=stop_loss_price,
+                take_profit_price=take_profit_price,
+                entry_type="limit",
+            )
         else:
-            builder.market_order(size=size, side=side)
+            # Market entry - use current price as reference
+            if side == 0:  # BUY
+                stop_loss_price = current_price - stop_distance
+                take_profit_price = current_price + target_distance
+            else:  # SELL
+                stop_loss_price = current_price + stop_distance
+                take_profit_price = current_price - target_distance
 
-        builder.with_stop_loss(offset=stop_distance)
-        builder.with_take_profit(offset=target_distance)
-
-        return await builder.execute()
+            # Place bracket order with market entry
+            return await suite.orders.place_bracket_order(
+                contract_id=suite.instrument_id,
+                side=side,
+                size=size,
+                entry_price=current_price,
+                stop_loss_price=stop_loss_price,
+                take_profit_price=take_profit_price,
+                entry_type="market",
+            )
 
 
 class BreakoutTemplate(OrderTemplate):
@@ -368,18 +414,23 @@ class BreakoutTemplate(OrderTemplate):
             f"Target={target_price:.2f}"
         )
 
-        # Build order
+        # Build breakout order using bracket order
         if size is None:
             raise ValueError("Size is required")
 
-        builder = (
-            OrderChainBuilder(suite)
-            .stop_order(size=size, price=entry_price, side=side)
-            .with_stop_loss(price=stop_price)
-            .with_take_profit(price=target_price)
-        )
+        if not suite.instrument_id:
+            raise ValueError("No instrument ID available")
 
-        return await builder.execute()
+        # Use stop order as entry type for breakouts
+        return await suite.orders.place_bracket_order(
+            contract_id=suite.instrument_id,
+            side=side,
+            size=size,
+            entry_price=entry_price,
+            stop_loss_price=stop_price,
+            take_profit_price=target_price,
+            entry_type="stop",  # Stop order for breakout entry
+        )
 
 
 class ScalpingTemplate(OrderTemplate):
@@ -456,31 +507,64 @@ class ScalpingTemplate(OrderTemplate):
         stop_distance = self.stop_ticks * tick_size
         target_distance = self.target_ticks * tick_size
 
-        # Build order
-        builder = OrderChainBuilder(suite)
-
+        # Build scalping order using bracket order
         if size is None:
             raise ValueError("Size is required")
 
+        if not suite.instrument_id:
+            raise ValueError("No instrument ID available")
+
         if self.use_market_entry:
-            builder.market_order(size=size, side=side)
-        else:
-            # Use limit at best bid/ask
+            # Get current price for market entry calculations
             current_price = await suite.data.get_current_price()
             if not current_price:
                 raise ValueError("Cannot get current price")
-            builder.limit_order(size=size, price=current_price, side=side)
 
-        builder.with_stop_loss(offset=stop_distance)
-        builder.with_take_profit(offset=target_distance)
+            # Calculate stop and target prices based on side
+            if side == 0:  # BUY
+                stop_loss_price = current_price - stop_distance
+                take_profit_price = current_price + target_distance
+            else:  # SELL
+                stop_loss_price = current_price + stop_distance
+                take_profit_price = current_price - target_distance
 
-        result = await builder.execute()
-
-        if result.success:
-            logger.info(
-                f"Scalp order placed: {self.stop_ticks} tick stop, "
-                f"{self.target_ticks} tick target"
+            result = await suite.orders.place_bracket_order(
+                contract_id=suite.instrument_id,
+                side=side,
+                size=size,
+                entry_price=current_price,
+                stop_loss_price=stop_loss_price,
+                take_profit_price=take_profit_price,
+                entry_type="market",
             )
+        else:
+            # Use limit at current price
+            current_price = await suite.data.get_current_price()
+            if not current_price:
+                raise ValueError("Cannot get current price")
+
+            # Calculate stop and target prices
+            if side == 0:  # BUY
+                stop_loss_price = current_price - stop_distance
+                take_profit_price = current_price + target_distance
+            else:  # SELL
+                stop_loss_price = current_price + stop_distance
+                take_profit_price = current_price - target_distance
+
+            result = await suite.orders.place_bracket_order(
+                contract_id=suite.instrument_id,
+                side=side,
+                size=size,
+                entry_price=current_price,
+                stop_loss_price=stop_loss_price,
+                take_profit_price=take_profit_price,
+                entry_type="limit",
+            )
+
+        logger.info(
+            f"Scalping bracket order placed: {self.stop_ticks} tick stop, "
+            f"{self.target_ticks} tick target"
+        )
 
         return result
 

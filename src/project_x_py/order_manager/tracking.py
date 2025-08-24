@@ -52,12 +52,10 @@ import asyncio
 import logging
 import time
 from collections import defaultdict, deque
-from collections.abc import Callable, Coroutine
+from collections.abc import Coroutine
 from typing import TYPE_CHECKING, Any, cast
 
 from cachetools import TTLCache
-
-from project_x_py.utils.deprecation import deprecated
 
 if TYPE_CHECKING:
     from project_x_py.event_bus import EventBus
@@ -1023,24 +1021,6 @@ class OrderTrackingMixin:
         async with self.order_lock:
             order_data = self.tracked_orders.get(order_id)
             return order_data if order_data is not None else None
-
-    @deprecated(
-        reason="Use TradingSuite.on() with EventType enum for event handling",
-        version="3.1.0",
-        removal_version="4.0.0",
-        replacement="TradingSuite.on(EventType.ORDER_FILLED, callback)",
-    )
-    def add_callback(
-        self,
-        _event_type: str,
-        _callback: Callable[[dict[str, Any]], None],
-    ) -> None:
-        """
-        DEPRECATED: Use TradingSuite.on() with EventType enum instead.
-
-        This method is provided for backward compatibility only and will be removed in v4.0.
-        """
-        # Deprecation warning handled by decorator
 
     async def _trigger_callbacks(self, event_type: str, data: Any) -> None:
         """

@@ -79,7 +79,6 @@ from project_x_py.orderbook.memory import MemoryManager
 from project_x_py.statistics.base import BaseStatisticsTracker
 from project_x_py.types import (
     DEFAULT_TIMEZONE,
-    CallbackType,
     DomType,
     MemoryConfig,
 )
@@ -93,7 +92,6 @@ from project_x_py.utils import (
     ProjectXLogger,
     handle_errors,
 )
-from project_x_py.utils.deprecation import deprecated
 
 logger = ProjectXLogger.get_logger(__name__)
 
@@ -693,78 +691,6 @@ class OrderBookBase(BaseStatisticsTracker):
         async with self.orderbook_lock:
             return self.order_type_stats.copy()
 
-    @deprecated(
-        reason="Use TradingSuite.on() with EventType enum for event handling",
-        version="3.1.0",
-        removal_version="4.0.0",
-        replacement="TradingSuite.on(EventType.MARKET_DEPTH_UPDATE, callback)",
-    )
-    @handle_errors("add callback", reraise=False)
-    async def add_callback(self, event_type: str, callback: CallbackType) -> None:
-        """
-        Register a callback for orderbook events.
-
-        This method allows client code to register callbacks that will be triggered when
-        specific orderbook events occur. Callbacks can be either synchronous functions or
-        asynchronous coroutines. When an event occurs, all registered callbacks for that
-        event type will be executed with the event data.
-
-        Supported event types:
-        - "depth_update": Triggered when a price level is updated
-        - "trade": Triggered when a new trade is processed
-        - "best_bid_change": Triggered when the best bid price changes
-        - "best_ask_change": Triggered when the best ask price changes
-        - "spread_change": Triggered when the bid-ask spread changes
-        - "reset": Triggered when the orderbook is reset
-
-        Args:
-            event_type: The type of event to listen for (from the list above)
-            callback: A callable function or coroutine that will receive the event data.
-                The callback should accept a single parameter: a dictionary containing
-                the event data specific to that event type.
-
-        Example:
-            >>> # Use TradingSuite with EventBus for callbacks
-            >>> from project_x_py import TradingSuite, EventType
-            >>>
-            >>> suite = await TradingSuite.create("MNQ", features=["orderbook"])
-            >>>
-            >>> @suite.events.on(EventType.TRADE_TICK)
-            >>> async def on_trade(event):
-            ...     data = event.data
-            ...     print(f"Trade: {data['size']} @ {data['price']} ({data['side']})")
-            >>>
-            >>> @suite.events.on(EventType.MARKET_DEPTH_UPDATE)
-            >>> async def on_depth_change(event):
-            ...     data = event.data
-            ...     print(
-            ...         f"New best bid: {data['bids'][0]['price'] if data['bids'] else 'None'}"
-            ...     )
-            >>> # Events automatically flow through EventBus
-        """
-        async with self._callback_lock:
-            # Deprecation warning handled by decorator
-            logger.debug(
-                LogMessages.CALLBACK_REGISTERED,
-                extra={"event_type": event_type, "component": "orderbook"},
-            )
-
-    @deprecated(
-        reason="Use TradingSuite.off() with EventType enum for event handling",
-        version="3.1.0",
-        removal_version="4.0.0",
-        replacement="TradingSuite.off(EventType.MARKET_DEPTH_UPDATE, callback)",
-    )
-    @handle_errors("remove callback", reraise=False)
-    async def remove_callback(self, event_type: str, callback: CallbackType) -> None:
-        """Remove a registered callback."""
-        async with self._callback_lock:
-            # Deprecation warning handled by decorator
-            logger.debug(
-                LogMessages.CALLBACK_REMOVED,
-                extra={"event_type": event_type, "component": "orderbook"},
-            )
-
     async def _trigger_callbacks(self, event_type: str, data: dict[str, Any]) -> None:
         """
         Trigger all callbacks for a specific event type.
@@ -814,7 +740,7 @@ class OrderBookBase(BaseStatisticsTracker):
         self._ask_updates += levels
         await self._track_update_frequency()
 
-    async def track_trade_processed(self, volume: int, price: float) -> None:
+    async def track_trade_processed(self, volume: int, _price: float) -> None:
         """Track trade execution processing."""
         await self.increment("trades_processed", 1)
         await self.increment("total_volume", volume)

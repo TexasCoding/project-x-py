@@ -180,18 +180,7 @@ from project_x_py.order_templates import (
     ScalpingTemplate,
     get_template,
 )
-
-# Deprecated: These are re-exported for backward compatibility only
-# Use TradingSuite.track_order() and TradingSuite.order_chain() instead
-from project_x_py.order_tracker import (
-    OrderChainBuilder,  # Deprecated: Use TradingSuite.order_chain()
-    OrderLifecycleError,
-    OrderTracker,  # Deprecated: Use TradingSuite.track_order()
-)
-from project_x_py.orderbook import (
-    OrderBook,
-    create_orderbook,
-)
+from project_x_py.orderbook import OrderBook
 from project_x_py.position_manager import PositionManager
 from project_x_py.realtime import ProjectXRealtimeClient as ProjectXRealtimeClient
 from project_x_py.realtime_data_manager import RealtimeDataManager
@@ -249,13 +238,10 @@ __all__ = [
     "Order",
     # Core classes (now async-only but with original names)
     "OrderBook",
-    "OrderChainBuilder",
-    "OrderLifecycleError",
     "OrderManager",
     "OrderManagerConfig",
     "OrderPlaceResponse",
     "OrderTemplate",
-    "OrderTracker",
     "OrderSide",
     "OrderStatus",
     "OrderType",
@@ -314,7 +300,6 @@ __all__ = [
     "calculate_vwap",
     "calculate_williams_r",
     "create_custom_config",
-    "create_orderbook",
     "get_env_var",
     "load_default_config",
     "load_topstepx_config",

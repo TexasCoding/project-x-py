@@ -28,9 +28,9 @@ class AsyncChecker(ast.NodeVisitor):
         # Explicitly exclude utility classes that don't need to be async
         excluded_classes = [
             "ConfigManager",  # Configuration management - sync utility
-            "ErrorContext",   # Error context manager - has async context but methods can be sync
-            "Deprecation",    # Deprecation utilities
-            "Logger",         # Logging utilities
+            "ErrorContext",  # Error context manager - has async context but methods can be sync
+            "Deprecation",  # Deprecation utilities
+            "Logger",  # Logging utilities
         ]
 
         if node.name in excluded_classes:
@@ -38,7 +38,9 @@ class AsyncChecker(ast.NodeVisitor):
         else:
             # Check if it's a class that should be async based on patterns
             is_async_class = (
-                ("Manager" in node.name and node.name != "ConfigManager")  # Managers except ConfigManager
+                (
+                    "Manager" in node.name and node.name != "ConfigManager"
+                )  # Managers except ConfigManager
                 or "Client" in node.name
                 or "Suite" in node.name
                 or "Realtime" in node.name
@@ -101,7 +103,14 @@ class AsyncChecker(ast.NodeVisitor):
 
                         # Check for known I/O objects and their methods
                         if obj_name in ["httpx", "aiohttp", "requests", "urllib"]:
-                            if attr_name in ["get", "post", "put", "delete", "patch", "request"]:
+                            if attr_name in [
+                                "get",
+                                "post",
+                                "put",
+                                "delete",
+                                "patch",
+                                "request",
+                            ]:
                                 return True
                         elif obj_name in ["socket", "websocket", "ws"]:
                             if attr_name in ["connect", "send", "recv", "close"]:
@@ -109,7 +118,13 @@ class AsyncChecker(ast.NodeVisitor):
                         elif obj_name in ["file", "f", "fp"]:
                             if attr_name in ["read", "write", "seek", "tell"]:
                                 return True
-                        elif obj_name in ["db", "database", "conn", "connection", "cursor"]:
+                        elif obj_name in [
+                            "db",
+                            "database",
+                            "conn",
+                            "connection",
+                            "cursor",
+                        ]:
                             if attr_name in ["execute", "fetch", "commit", "rollback"]:
                                 return True
 
@@ -117,13 +132,35 @@ class AsyncChecker(ast.NodeVisitor):
                     if isinstance(item.func.value, ast.Attribute):
                         if hasattr(item.func.value, "attr"):
                             obj_attr = item.func.value.attr
-                            if obj_attr in ["client", "http", "session", "api", "_client", "_http"]:
-                                if attr_name in ["get", "post", "put", "delete", "patch", "request", "fetch"]:
+                            if obj_attr in [
+                                "client",
+                                "http",
+                                "session",
+                                "api",
+                                "_client",
+                                "_http",
+                            ]:
+                                if attr_name in [
+                                    "get",
+                                    "post",
+                                    "put",
+                                    "delete",
+                                    "patch",
+                                    "request",
+                                    "fetch",
+                                ]:
                                     return True
 
                     # Check for common async I/O patterns that should be async
-                    if attr_name in ["request", "fetch_data", "api_call", "send_request",
-                                    "make_request", "http_get", "http_post"]:
+                    if attr_name in [
+                        "request",
+                        "fetch_data",
+                        "api_call",
+                        "send_request",
+                        "make_request",
+                        "http_get",
+                        "http_post",
+                    ]:
                         return True
 
                 elif isinstance(item.func, ast.Name):
@@ -148,7 +185,13 @@ class AsyncChecker(ast.NodeVisitor):
             if isinstance(item, ast.Call):
                 # Check if any calls might be I/O
                 if isinstance(item.func, ast.Attribute):
-                    if item.func.attr in ["request", "fetch", "api_call", "http_get", "http_post"]:
+                    if item.func.attr in [
+                        "request",
+                        "fetch",
+                        "api_call",
+                        "http_get",
+                        "http_post",
+                    ]:
                         has_io_call = True
                         break
                 elif isinstance(item.func, ast.Name):

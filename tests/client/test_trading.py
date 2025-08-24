@@ -15,7 +15,7 @@ class TestTrading:
     """Tests for the trading functionality of the ProjectX client."""
 
     @pytest.mark.asyncio
-    async def test_get_positions(
+    async def test_search_open_positions(
         self, mock_httpx_client, mock_auth_response, mock_positions_response
     ):
         """Test getting positions."""
@@ -33,7 +33,7 @@ class TestTrading:
                 client.rate_limiter = RateLimiter(max_requests=100, window_seconds=60)
                 await client.authenticate()
 
-                positions = await client.get_positions()
+                positions = await client.search_open_positions()
 
                 assert len(positions) == 2
                 assert positions[0].contractId == "MGC"
@@ -42,7 +42,7 @@ class TestTrading:
                 assert positions[1].size == 2  # Short position has positive size
 
     @pytest.mark.asyncio
-    async def test_get_positions_empty(
+    async def test_search_open_positions_empty(
         self, mock_httpx_client, mock_auth_response, mock_response
     ):
         """Test getting positions with empty response."""
@@ -62,12 +62,12 @@ class TestTrading:
                 client.rate_limiter = RateLimiter(max_requests=100, window_seconds=60)
                 await client.authenticate()
 
-                positions = await client.get_positions()
+                positions = await client.search_open_positions()
 
                 assert len(positions) == 0
 
     @pytest.mark.asyncio
-    async def test_get_positions_no_account(self, mock_httpx_client):
+    async def test_search_open_positions_no_account(self, mock_httpx_client):
         """Test error when getting positions without account."""
         with patch("httpx.AsyncClient", return_value=mock_httpx_client):
             async with ProjectX("testuser", "test-api-key") as client:
@@ -76,13 +76,13 @@ class TestTrading:
                 client.rate_limiter = RateLimiter(max_requests=100, window_seconds=60)
                 # No authentication, no account info
                 with pytest.raises(ProjectXError):
-                    await client.get_positions()
+                    await client.search_open_positions()
 
     @pytest.mark.asyncio
-    async def test_search_open_positions(
+    async def test_search_open_positions_basic(
         self, mock_httpx_client, mock_auth_response, mock_response
     ):
-        """Test searching open positions."""
+        """Test searching open positions with basic functionality."""
         auth_response, accounts_response = mock_auth_response
         positions_response = mock_response(
             json_data={
@@ -173,7 +173,7 @@ class TestTrading:
                 assert last_call[1]["json"]["accountId"] == 67890
 
     @pytest.mark.asyncio
-    async def test_search_open_positions_no_account(self, mock_httpx_client):
+    async def test_search_open_positions_no_account_error(self, mock_httpx_client):
         """Test error when searching positions without account."""
         with patch("httpx.AsyncClient", return_value=mock_httpx_client):
             async with ProjectX("testuser", "test-api-key") as client:
@@ -185,7 +185,7 @@ class TestTrading:
                     await client.search_open_positions()
 
     @pytest.mark.asyncio
-    async def test_search_open_positions_empty(
+    async def test_search_open_positions_empty_response(
         self, mock_httpx_client, mock_auth_response, mock_response
     ):
         """Test searching open positions with empty response."""

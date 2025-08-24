@@ -33,40 +33,6 @@ class TestTradingMixin:
         return MockTradingClient()
 
     @pytest.mark.asyncio
-    async def test_get_positions_deprecated(self, trading_client):
-        """Test that get_positions shows deprecation warning."""
-        trading_client.account_info = Account(
-            id=12345,
-            name="Test Account",
-            balance=10000.0,
-            canTrade=True,
-            isVisible=True,
-            simulated=False,
-        )
-
-        mock_response = {
-            "success": True,
-            "positions": [
-                {
-                    "id": "pos1",
-                    "accountId": 12345,
-                    "contractId": "MNQ",
-                    "creationTimestamp": datetime.datetime.now(pytz.UTC).isoformat(),
-                    "size": 2,
-                    "averagePrice": 15000.0,
-                    "type": 1,
-                }
-            ],
-        }
-        trading_client._make_request.return_value = mock_response
-
-        with pytest.warns(DeprecationWarning, match="(get_positions|Method renamed)"):
-            positions = await trading_client.get_positions()
-
-        assert len(positions) == 1
-        assert positions[0].contractId == "MNQ"
-
-    @pytest.mark.asyncio
     async def test_search_open_positions_success(self, trading_client):
         """Test successful position search."""
         trading_client.account_info = Account(
@@ -588,7 +554,6 @@ class TestTradingMixin:
         await trading_client.search_trades()
         assert trading_client._ensure_authenticated.call_count == 2
 
-        # Test get_positions (deprecated)
-        with pytest.warns(DeprecationWarning, match="(get_positions|Method renamed)"):
-            await trading_client.get_positions()
+        # Test search_open_positions
+        await trading_client.search_open_positions()
         assert trading_client._ensure_authenticated.call_count == 3

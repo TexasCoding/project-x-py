@@ -49,7 +49,6 @@ from project_x_py.client.base import ProjectXBase
 from project_x_py.event_bus import EventBus, EventType
 from project_x_py.models import Instrument
 from project_x_py.order_manager import OrderManager
-from project_x_py.order_tracker import OrderChainBuilder, OrderTracker
 from project_x_py.orderbook import OrderBook
 from project_x_py.position_manager import PositionManager
 from project_x_py.realtime import ProjectXRealtimeClient
@@ -65,7 +64,6 @@ from project_x_py.types.config_types import (
 from project_x_py.types.protocols import ProjectXClientProtocol
 from project_x_py.types.stats_types import TradingSuiteStats
 from project_x_py.utils import ProjectXLogger
-from project_x_py.utils.deprecation import deprecated
 
 logger = ProjectXLogger.get_logger(__name__)
 
@@ -695,78 +693,6 @@ class TradingSuite:
         """
         await self.events.off(event, handler)
 
-    def track_order(self, order: Any = None) -> OrderTracker:
-        """
-        Create an OrderTracker for comprehensive order lifecycle management.
-
-        This provides automatic order state tracking with async waiting capabilities,
-        eliminating the need for manual order status polling.
-
-        Args:
-            order: Optional order to track immediately (Order, OrderPlaceResponse, or order ID)
-
-        Returns:
-            OrderTracker instance (use as context manager)
-
-        Example:
-            ```python
-            from project_x_py.types.trading import OrderSide
-
-            # Track a new order
-            async with suite.track_order() as tracker:
-                order = await suite.orders.place_limit_order(
-                    contract_id=suite.instrument_id,
-                    side=OrderSide.BUY,
-                    size=1,
-                    price=current_price - 10,
-                )
-                tracker.track(order)
-
-                try:
-                    filled = await tracker.wait_for_fill(timeout=60)
-                    print(f"Order filled at {filled.filledPrice}")
-                except TimeoutError:
-                    await tracker.modify_or_cancel(new_price=current_price - 5)
-            ```
-        """
-        tracker = OrderTracker(self, order)
-        return tracker
-
-    def order_chain(self) -> OrderChainBuilder:
-        """
-        Create an order chain builder for complex order structures.
-
-        Provides a fluent API for building multi-part orders (entry + stops + targets)
-        with clean, readable syntax.
-
-        Returns:
-            OrderChainBuilder instance
-
-        Example:
-            ```python
-            # Build a bracket order with stops and targets
-            # Note: side=0 for BUY, side=1 for SELL
-            order_chain = (
-                suite.order_chain()
-                .market_order(size=2, side=0)  # BUY 2 contracts
-                .with_stop_loss(offset=50)
-                .with_take_profit(offset=100)
-                .with_trail_stop(offset=25, trigger_offset=50)
-            )
-
-            result = await order_chain.execute()
-
-            # Or use a limit entry
-            order_chain = (
-                suite.order_chain()
-                .limit_order(size=1, price=16000, side=0)  # BUY limit
-                .with_stop_loss(price=15950)
-                .with_take_profit(price=16100)
-            )
-            ```
-        """
-        return OrderChainBuilder(self)
-
     def managed_trade(
         self,
         max_risk_percent: float | None = None,
@@ -853,28 +779,3 @@ class TradingSuite:
             Structured statistics from all active components with accurate metrics
         """
         return await self._stats_aggregator.aggregate_stats()
-
-    @deprecated(
-        reason="Synchronous methods are being phased out in favor of async-only API",
-        version="3.3.0",
-        removal_version="4.0.0",
-        replacement="await get_stats()",
-    )
-    def get_stats_sync(self) -> TradingSuiteStats:
-        """
-        Synchronous wrapper for get_stats for backward compatibility.
-
-        Returns:
-            Structured statistics from all active components
-        """
-        import asyncio
-
-        # Try to get or create event loop
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        # Run the async method
-        return loop.run_until_complete(self.get_stats())

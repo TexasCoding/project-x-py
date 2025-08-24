@@ -112,7 +112,7 @@ class TestClientIntegration:
         assert client._authenticated is True
 
         # Step 2: Get positions
-        positions = await client.get_positions()
+        positions = await client.search_open_positions()
         assert len(positions) == 2
         assert positions[0].contractId == "MGC"
         assert positions[1].contractId == "MNQ"

@@ -222,7 +222,9 @@ class TestMMapIntegration:
 
         # Verify data was sampled, not completely lost
         assert len(manager.data["1hr"]) > 0
-        assert len(manager.data["1hr"]) == int(manager.max_bars_per_timeframe * 0.7)  # Should be 70% of max
+        assert len(manager.data["1hr"]) == int(
+            manager.max_bars_per_timeframe * 0.7
+        )  # Should be 70% of max
 
     @pytest.mark.asyncio
     async def test_restore_from_overflow(self, mock_project_x, mock_realtime_client):
