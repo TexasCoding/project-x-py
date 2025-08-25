@@ -446,8 +446,18 @@ class TestOrderTrackingMixin:
         om.event_bus = MagicMock()
         om.event_bus.emit = AsyncMock()
 
-        # Test filled status
-        order_data = {"id": 123, "status": 2}  # Filled
+        # Test filled status with complete order data
+        order_data = {
+            "id": 123,
+            "status": 2,  # Filled
+            "accountId": 1,
+            "contractId": "MNQ",
+            "creationTimestamp": "2024-01-01T00:00:00Z",
+            "updateTimestamp": "2024-01-01T00:00:01Z",
+            "type": 1,  # Limit
+            "side": 0,  # Buy
+            "size": 1
+        }
         await om._on_order_update(order_data)
 
         # Should have emitted ORDER_FILLED event
@@ -467,8 +477,18 @@ class TestOrderTrackingMixin:
         # Mock cancel_order method
         om.cancel_order = AsyncMock(return_value=True)
 
-        # Process fill for first order
-        order_data = {"id": 123, "status": 2}  # Filled
+        # Process fill for first order with complete order data
+        order_data = {
+            "id": 123,
+            "status": 2,  # Filled
+            "accountId": 1,
+            "contractId": "MNQ",
+            "creationTimestamp": "2024-01-01T00:00:00Z",
+            "updateTimestamp": "2024-01-01T00:00:01Z",
+            "type": 1,  # Limit
+            "side": 0,  # Buy
+            "size": 1
+        }
         await om._on_order_update(order_data)
 
         # Allow time for background task to complete
@@ -1001,7 +1021,17 @@ class TestOrderTrackingEdgeCases:
         om.cancel_order = AsyncMock(return_value=False)
 
         # Process fill for first order
-        order_data = {"id": 123, "status": 2}  # Filled
+        order_data = {
+            "id": 123,
+            "status": 2,  # Filled
+            "accountId": 1,
+            "contractId": "MNQ",
+            "creationTimestamp": "2024-01-01T00:00:00Z",
+            "updateTimestamp": "2024-01-01T00:00:01Z",
+            "type": 1,  # Limit
+            "side": 0,  # Buy
+            "size": 1
+        }
         await om._on_order_update(order_data)
 
         # Allow time for background task to complete

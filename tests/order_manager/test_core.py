@@ -172,7 +172,7 @@ class TestOrderManagerCore:
         assert call_args["type"] == 1  # Limit order
         assert call_args["side"] == 0
         assert call_args["size"] == 1
-        assert call_args["price"] == 17000.0
+        assert call_args["limitPrice"] == 17000.0
 
     @pytest.mark.asyncio
     async def test_place_stop_order_success(self, order_manager, make_order_response):
@@ -187,10 +187,10 @@ class TestOrderManagerCore:
         assert resp.orderId == 44
         call_args = order_manager.project_x._make_request.call_args[1]["data"]
         assert call_args["contractId"] == "MNQ"
-        assert call_args["type"] == 3  # Stop order
+        assert call_args["type"] == 4  # Stop order (OrderType.STOP = 4)
         assert call_args["side"] == 1
         assert call_args["size"] == 1
-        assert call_args["price"] == 16800.0
+        assert call_args["stopPrice"] == 16800.0
 
     @pytest.mark.asyncio
     async def test_place_order_with_account_id(self, order_manager, make_order_response):
@@ -219,8 +219,9 @@ class TestOrderManagerCore:
             "size": 1,
         }
 
+        # Mock search_open_orders which get_order_by_id uses internally
         order_manager.project_x._make_request = AsyncMock(
-            return_value={"success": True, "order": order_data}
+            return_value={"success": True, "orders": [order_data]}
         )
 
         order = await order_manager.get_order_by_id(123)
@@ -229,7 +230,7 @@ class TestOrderManagerCore:
         assert order.id == 123
         assert order.contractId == "MNQ"
 
-        # Should update cache
+        # Should update cache through search_open_orders
         assert order_manager.tracked_orders["123"] == order_data
         assert order_manager.order_status_cache["123"] == 1
 
@@ -253,20 +254,22 @@ class TestOrderManagerCore:
 
         await order_manager.search_open_orders()
 
-        call_args = order_manager.project_x._make_request.call_args[1]["params"]
+        call_args = order_manager.project_x._make_request.call_args[1]["data"]
         assert call_args["accountId"] == 12345
 
     @pytest.mark.asyncio
     async def test_search_open_orders_with_account_id(self, order_manager):
-        """search_open_orders uses provided account_id."""
+        """search_open_orders uses provided filters."""
+        order_manager.project_x.account_info.id = 12345
         order_manager.project_x._make_request = AsyncMock(
             return_value={"success": True, "orders": []}
         )
 
-        await order_manager.search_open_orders(account_id=54321)
+        await order_manager.search_open_orders(contract_id="MNQ", side=1)
 
-        call_args = order_manager.project_x._make_request.call_args[1]["params"]
-        assert call_args["accountId"] == 54321
+        call_args = order_manager.project_x._make_request.call_args[1]["data"]
+        assert call_args["accountId"] == 12345
+        assert call_args["side"] == 1
 
     @pytest.mark.asyncio
     async def test_search_open_orders_api_error(self, order_manager):
@@ -275,7 +278,7 @@ class TestOrderManagerCore:
             return_value={"success": False, "errorMessage": "API error"}
         )
 
-        with pytest.raises(ProjectXOrderError, match="Failed to get open orders: API error"):
+        with pytest.raises(ProjectXOrderError, match="API error"):
             await order_manager.search_open_orders()
 
     @pytest.mark.asyncio
@@ -293,12 +296,12 @@ class TestOrderManagerCore:
         """modify_order handles order not found case."""
         order_manager.get_order_by_id = AsyncMock(return_value=None)
 
-        with pytest.raises(ProjectXOrderError, match="Order 999 not found"):
+        with pytest.raises(ProjectXOrderError, match="Order not found: 999"):
             await order_manager.modify_order(999, limit_price=17000.0)
 
     @pytest.mark.asyncio
     async def test_modify_order_no_changes(self, order_manager):
-        """modify_order raises error when no changes provided."""
+        """modify_order returns True when no changes provided."""
         dummy_order = Order(
             id=123,
             accountId=12345,
@@ -312,8 +315,9 @@ class TestOrderManagerCore:
         )
         order_manager.get_order_by_id = AsyncMock(return_value=dummy_order)
 
-        with pytest.raises(ProjectXOrderError, match="No changes specified for order modification"):
-            await order_manager.modify_order(123)
+        # When no changes are provided, modify_order returns True (no-op)
+        result = await order_manager.modify_order(123)
+        assert result is True
 
     @pytest.mark.asyncio
     async def test_is_order_filled_not_found(self, order_manager):

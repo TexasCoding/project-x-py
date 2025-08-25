@@ -130,6 +130,13 @@ class BracketOrderMixin:
         if not hasattr(self, "project_x"):
             return None
 
+        # First check if recovery_manager attribute exists and is already set
+        if (
+            hasattr(self, "recovery_manager")
+            and getattr(self, "recovery_manager", None) is not None
+        ):
+            return getattr(self, "recovery_manager", None)
+
         if not self._recovery_manager:
             try:
                 # Type: ignore because self will be OrderManager when this mixin is used
@@ -205,7 +212,7 @@ class BracketOrderMixin:
         contract_id: str,
         side: int,
         size: int,
-        entry_price: float,
+        entry_price: float | None,
         stop_loss_price: float,
         take_profit_price: float,
         entry_type: str = "limit",
@@ -234,7 +241,7 @@ class BracketOrderMixin:
             contract_id: The contract ID to trade (e.g., "MGC", "MES", "F.US.EP")
             side: Order side: 0=Buy, 1=Sell
             size: Number of contracts to trade (positive integer)
-            entry_price: Entry price for the position (ignored for market entries)
+            entry_price: Entry price for the position (required for limit orders, None for market)
             stop_loss_price: Stop loss price for risk management
             take_profit_price: Take profit price (profit target)
             entry_type: Entry order type: "limit" (default) or "market"
@@ -246,6 +253,19 @@ class BracketOrderMixin:
         Raises:
             ProjectXOrderError: If bracket order validation or placement fails completely
         """
+        # Validate entry_type parameter
+        entry_type_lower = entry_type.lower()
+        if entry_type_lower not in ["market", "limit"]:
+            raise ProjectXOrderError(
+                f"Invalid entry_type '{entry_type}'. Must be 'market' or 'limit'."
+            )
+
+        # Validate entry_price for limit orders
+        if entry_type_lower == "limit" and entry_price is None:
+            raise ProjectXOrderError(
+                "entry_price is required for limit orders. Use entry_type='market' for market orders."
+            )
+
         # Initialize recovery manager for this operation (if available)
         recovery_manager: OperationRecoveryManager | None = self._get_recovery_manager()
         operation: RecoveryOperation | None = None
@@ -260,9 +280,10 @@ class BracketOrderMixin:
             if hasattr(self, "project_x") and self.project_x:
                 from .utils import validate_price_tick_size
 
-                await validate_price_tick_size(
-                    entry_price, contract_id, self.project_x, "entry_price"
-                )
+                if entry_price is not None:  # Only validate if not market order
+                    await validate_price_tick_size(
+                        entry_price, contract_id, self.project_x, "entry_price"
+                    )
                 await validate_price_tick_size(
                     stop_loss_price, contract_id, self.project_x, "stop_loss_price"
                 )
@@ -271,29 +292,54 @@ class BracketOrderMixin:
                 )
 
             # Convert prices to Decimal for precise comparisons
-            entry_decimal = Decimal(str(entry_price))
-            stop_decimal = Decimal(str(stop_loss_price))
-            target_decimal = Decimal(str(take_profit_price))
+            # For market orders, use a placeholder for entry_decimal that won't affect validation
+            if entry_type_lower == "market":
+                # For market orders, we need to determine validation based on side
+                # Buy: stop should be below target, Sell: stop should be above target
+                stop_decimal = Decimal(str(stop_loss_price))
+                target_decimal = Decimal(str(take_profit_price))
 
-            # Validate prices using Decimal precision
-            if side == 0:  # Buy
-                if stop_decimal >= entry_decimal:
-                    raise ProjectXOrderError(
-                        f"Buy order stop loss ({stop_loss_price}) must be below entry ({entry_price})"
-                    )
-                if target_decimal <= entry_decimal:
-                    raise ProjectXOrderError(
-                        f"Buy order take profit ({take_profit_price}) must be above entry ({entry_price})"
-                    )
-            else:  # Sell
-                if stop_decimal <= entry_decimal:
-                    raise ProjectXOrderError(
-                        f"Sell order stop loss ({stop_loss_price}) must be above entry ({entry_price})"
-                    )
-                if target_decimal >= entry_decimal:
-                    raise ProjectXOrderError(
-                        f"Sell order take profit ({take_profit_price}) must be below entry ({entry_price})"
-                    )
+                # Validate stop and target relationship for market orders
+                if side == 0:  # Buy
+                    if stop_decimal >= target_decimal:
+                        raise ProjectXOrderError(
+                            f"Buy order: stop loss ({stop_loss_price}) must be below take profit ({take_profit_price})"
+                        )
+                else:  # Sell
+                    if stop_decimal <= target_decimal:
+                        raise ProjectXOrderError(
+                            f"Sell order: stop loss ({stop_loss_price}) must be above take profit ({take_profit_price})"
+                        )
+                # Skip entry price validations for market orders
+                entry_decimal = None
+            else:
+                # Limit order validation with entry price
+                entry_decimal = Decimal(str(entry_price))
+                stop_decimal = Decimal(str(stop_loss_price))
+                target_decimal = Decimal(str(take_profit_price))
+
+            # Validate prices using Decimal precision (only for limit orders)
+            if (
+                entry_decimal is not None
+            ):  # Only validate against entry for limit orders
+                if side == 0:  # Buy
+                    if stop_decimal >= entry_decimal:
+                        raise ProjectXOrderError(
+                            f"Buy order stop loss ({stop_loss_price}) must be below entry ({entry_price})"
+                        )
+                    if target_decimal <= entry_decimal:
+                        raise ProjectXOrderError(
+                            f"Buy order take profit ({take_profit_price}) must be above entry ({entry_price})"
+                        )
+                else:  # Sell
+                    if stop_decimal <= entry_decimal:
+                        raise ProjectXOrderError(
+                            f"Sell order stop loss ({stop_loss_price}) must be above entry ({entry_price})"
+                        )
+                    if target_decimal >= entry_decimal:
+                        raise ProjectXOrderError(
+                            f"Sell order take profit ({take_profit_price}) must be below entry ({entry_price})"
+                        )
 
             # Add order references to the recovery operation (if available)
             entry_ref: OrderReference | None = None
@@ -333,13 +379,18 @@ class BracketOrderMixin:
 
             # Place entry order
             entry_response: OrderPlaceResponse
-            if entry_type.lower() == "market":
+            if entry_type_lower == "market":
                 entry_response = await self.place_market_order(
                     contract_id, side, size, account_id
                 )
             else:  # limit
+                # entry_price is guaranteed to not be None here due to validation
                 entry_response = await self.place_limit_order(
-                    contract_id, side, size, entry_price, account_id
+                    contract_id,
+                    side,
+                    size,
+                    entry_price,  # type: ignore[arg-type]
+                    account_id,
                 )
 
             if not entry_response or not entry_response.success:
@@ -516,6 +567,52 @@ class BracketOrderMixin:
                         )
                     logger.error(f"Take profit order failed: {error_msg}")
 
+                # CRITICAL BUG FIX: Check if protective orders failed
+                stop_failed = not stop_response or not stop_response.success
+                target_failed = not target_response or not target_response.success
+
+                if stop_failed or target_failed:
+                    # CRITICAL: Position is unprotected! Must close immediately
+                    logger.critical(
+                        f"CRITICAL: Protective orders failed! Position is UNPROTECTED. "
+                        f"Stop: {'FAILED' if stop_failed else 'OK'}, "
+                        f"Target: {'FAILED' if target_failed else 'OK'}. "
+                        f"Attempting emergency position closure..."
+                    )
+
+                    try:
+                        # Attempt to close the unprotected position immediately
+                        close_response = await self.close_position(
+                            contract_id, account_id=account_id
+                        )
+
+                        if close_response and close_response.success:
+                            logger.info(
+                                f"Emergency position closure successful. Order ID: {close_response.orderId}"
+                            )
+                        else:
+                            logger.critical(
+                                f"Emergency position closure FAILED! Manual intervention required for {contract_id}!"
+                            )
+                    except Exception as close_error:
+                        logger.critical(
+                            f"EMERGENCY CLOSURE EXCEPTION for {contract_id}: {close_error}. "
+                            f"MANUAL INTERVENTION REQUIRED!"
+                        )
+
+                    # Force rollback if recovery manager available
+                    if recovery_manager and operation:
+                        await recovery_manager.force_rollback_operation(
+                            operation.operation_id
+                        )
+
+                    # Raise error to indicate failure
+                    raise ProjectXOrderError(
+                        f"CRITICAL: Bracket order failed - position was unprotected. "
+                        f"Emergency closure attempted. Stop: {'FAILED' if stop_failed else 'OK'}, "
+                        f"Target: {'FAILED' if target_failed else 'OK'}."
+                    )
+
                 # Add OCO relationship for protective orders if both succeeded
                 if (
                     recovery_manager
@@ -589,7 +686,7 @@ class BracketOrderMixin:
                         target_order_id=target_ref.order_id
                         if target_ref
                         else (target_response.orderId if target_response else None),
-                        entry_price=entry_price,
+                        entry_price=entry_price if entry_price is not None else 0.0,
                         stop_loss_price=stop_loss_price,
                         take_profit_price=take_profit_price,
                         entry_response=entry_response,
@@ -614,7 +711,7 @@ class BracketOrderMixin:
                         target_order_id=target_ref.order_id
                         if target_ref
                         else (target_response.orderId if target_response else None),
-                        entry_price=entry_price,
+                        entry_price=entry_price if entry_price is not None else 0.0,
                         stop_loss_price=stop_loss_price,
                         take_profit_price=take_profit_price,
                         entry_response=entry_response,
