@@ -155,3 +155,248 @@ class TestOrderManagerCore:
         assert "market_orders" in stats
         assert "limit_orders" in stats
         assert "bracket_orders" in stats
+
+    @pytest.mark.asyncio
+    async def test_place_limit_order_success(self, order_manager, make_order_response):
+        """place_limit_order hits /Order/place with correct payload."""
+        order_manager.project_x._make_request = AsyncMock(
+            return_value=make_order_response(43)
+        )
+
+        resp = await order_manager.place_limit_order("MNQ", 0, 1, 17000.0)
+
+        assert isinstance(resp, OrderPlaceResponse)
+        assert resp.orderId == 43
+        call_args = order_manager.project_x._make_request.call_args[1]["data"]
+        assert call_args["contractId"] == "MNQ"
+        assert call_args["type"] == 1  # Limit order
+        assert call_args["side"] == 0
+        assert call_args["size"] == 1
+        assert call_args["price"] == 17000.0
+
+    @pytest.mark.asyncio
+    async def test_place_stop_order_success(self, order_manager, make_order_response):
+        """place_stop_order hits /Order/place with correct payload."""
+        order_manager.project_x._make_request = AsyncMock(
+            return_value=make_order_response(44)
+        )
+
+        resp = await order_manager.place_stop_order("MNQ", 1, 1, 16800.0)
+
+        assert isinstance(resp, OrderPlaceResponse)
+        assert resp.orderId == 44
+        call_args = order_manager.project_x._make_request.call_args[1]["data"]
+        assert call_args["contractId"] == "MNQ"
+        assert call_args["type"] == 3  # Stop order
+        assert call_args["side"] == 1
+        assert call_args["size"] == 1
+        assert call_args["price"] == 16800.0
+
+    @pytest.mark.asyncio
+    async def test_place_order_with_account_id(self, order_manager, make_order_response):
+        """place_order includes account_id when provided."""
+        order_manager.project_x._make_request = AsyncMock(
+            return_value=make_order_response(45)
+        )
+
+        resp = await order_manager.place_order("MNQ", 2, 0, 1, account_id=12345)
+
+        call_args = order_manager.project_x._make_request.call_args[1]["data"]
+        assert call_args["accountId"] == 12345
+
+    @pytest.mark.asyncio
+    async def test_get_order_by_id_success(self, order_manager):
+        """get_order_by_id returns Order object on success."""
+        order_data = {
+            "id": 123,
+            "accountId": 12345,
+            "contractId": "MNQ",
+            "creationTimestamp": "2024-01-01T01:00:00Z",
+            "updateTimestamp": None,
+            "status": 1,
+            "type": 1,
+            "side": 0,
+            "size": 1,
+        }
+
+        order_manager.project_x._make_request = AsyncMock(
+            return_value={"success": True, "order": order_data}
+        )
+
+        order = await order_manager.get_order_by_id(123)
+
+        assert isinstance(order, Order)
+        assert order.id == 123
+        assert order.contractId == "MNQ"
+
+        # Should update cache
+        assert order_manager.tracked_orders["123"] == order_data
+        assert order_manager.order_status_cache["123"] == 1
+
+    @pytest.mark.asyncio
+    async def test_get_order_by_id_not_found(self, order_manager):
+        """get_order_by_id returns None when order not found."""
+        order_manager.project_x._make_request = AsyncMock(
+            return_value={"success": False, "errorMessage": "Order not found"}
+        )
+
+        order = await order_manager.get_order_by_id(999)
+        assert order is None
+
+    @pytest.mark.asyncio
+    async def test_search_open_orders_no_account_id(self, order_manager):
+        """search_open_orders uses default account when no ID provided."""
+        order_manager.project_x.account_info.id = 12345
+        order_manager.project_x._make_request = AsyncMock(
+            return_value={"success": True, "orders": []}
+        )
+
+        await order_manager.search_open_orders()
+
+        call_args = order_manager.project_x._make_request.call_args[1]["params"]
+        assert call_args["accountId"] == 12345
+
+    @pytest.mark.asyncio
+    async def test_search_open_orders_with_account_id(self, order_manager):
+        """search_open_orders uses provided account_id."""
+        order_manager.project_x._make_request = AsyncMock(
+            return_value={"success": True, "orders": []}
+        )
+
+        await order_manager.search_open_orders(account_id=54321)
+
+        call_args = order_manager.project_x._make_request.call_args[1]["params"]
+        assert call_args["accountId"] == 54321
+
+    @pytest.mark.asyncio
+    async def test_search_open_orders_api_error(self, order_manager):
+        """search_open_orders handles API errors."""
+        order_manager.project_x._make_request = AsyncMock(
+            return_value={"success": False, "errorMessage": "API error"}
+        )
+
+        with pytest.raises(ProjectXOrderError, match="Failed to get open orders: API error"):
+            await order_manager.search_open_orders()
+
+    @pytest.mark.asyncio
+    async def test_cancel_order_not_found(self, order_manager):
+        """cancel_order handles order not found case."""
+        order_manager.project_x._make_request = AsyncMock(
+            return_value={"success": False, "errorMessage": "Order not found"}
+        )
+
+        with pytest.raises(ProjectXOrderError, match="Failed to cancel order 999: Order not found"):
+            await order_manager.cancel_order(999)
+
+    @pytest.mark.asyncio
+    async def test_modify_order_not_found(self, order_manager):
+        """modify_order handles order not found case."""
+        order_manager.get_order_by_id = AsyncMock(return_value=None)
+
+        with pytest.raises(ProjectXOrderError, match="Order 999 not found"):
+            await order_manager.modify_order(999, limit_price=17000.0)
+
+    @pytest.mark.asyncio
+    async def test_modify_order_no_changes(self, order_manager):
+        """modify_order raises error when no changes provided."""
+        dummy_order = Order(
+            id=123,
+            accountId=12345,
+            contractId="MNQ",
+            creationTimestamp="2024-01-01T01:00:00Z",
+            updateTimestamp=None,
+            status=1,
+            type=1,
+            side=0,
+            size=1,
+        )
+        order_manager.get_order_by_id = AsyncMock(return_value=dummy_order)
+
+        with pytest.raises(ProjectXOrderError, match="No changes specified for order modification"):
+            await order_manager.modify_order(123)
+
+    @pytest.mark.asyncio
+    async def test_is_order_filled_not_found(self, order_manager):
+        """is_order_filled returns False when order not found."""
+        order_manager._realtime_enabled = False
+        order_manager.get_order_by_id = AsyncMock(return_value=None)
+
+        result = await order_manager.is_order_filled(999)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_is_order_filled_various_statuses(self, order_manager):
+        """is_order_filled correctly identifies filled vs non-filled statuses."""
+        order_manager._realtime_enabled = True
+
+        # Test filled status
+        order_manager.order_status_cache["100"] = 2  # Filled
+        assert await order_manager.is_order_filled(100) is True
+
+        # Test working status
+        order_manager.order_status_cache["101"] = 1  # Working
+        assert await order_manager.is_order_filled(101) is False
+
+        # Test cancelled status
+        order_manager.order_status_cache["102"] = 3  # Cancelled
+        assert await order_manager.is_order_filled(102) is False
+
+        # Test rejected status
+        order_manager.order_status_cache["103"] = 5  # Rejected
+        assert await order_manager.is_order_filled(103) is False
+
+    @pytest.mark.asyncio
+    async def test_initialize_with_realtime_client(self, order_manager):
+        """Test initialize method with realtime client."""
+        mock_realtime_client = AsyncMock()
+        mock_realtime_client.add_callback = AsyncMock()
+
+        await order_manager.initialize(mock_realtime_client)
+
+        assert order_manager.realtime_client == mock_realtime_client
+        assert order_manager._realtime_enabled is True
+
+        # Should have set up callbacks
+        mock_realtime_client.add_callback.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_initialize_without_realtime_client(self, order_manager):
+        """Test initialize method without realtime client."""
+        await order_manager.initialize(None)
+
+        assert order_manager.realtime_client is None
+        assert order_manager._realtime_enabled is False
+
+    def test_get_order_statistics_calculations(self, order_manager):
+        """Test order statistics calculations."""
+        # Set up test statistics
+        order_manager.stats.update({
+            "orders_placed": 100,
+            "orders_filled": 80,
+            "orders_cancelled": 15,
+            "market_orders": 30,
+            "limit_orders": 70,
+            "bracket_orders": 25
+        })
+
+        stats = order_manager.get_order_statistics()
+
+        assert stats["orders_placed"] == 100
+        assert stats["orders_filled"] == 80
+        assert stats["orders_cancelled"] == 15
+        assert stats["fill_rate"] == 0.8  # 80/100
+        assert stats["market_orders"] == 30
+        assert stats["limit_orders"] == 70
+        assert stats["bracket_orders"] == 25
+
+    def test_get_order_statistics_zero_division(self, order_manager):
+        """Test order statistics with zero orders placed."""
+        order_manager.stats.update({
+            "orders_placed": 0,
+            "orders_filled": 0,
+            "orders_cancelled": 0
+        })
+
+        stats = order_manager.get_order_statistics()
+
+        assert stats["fill_rate"] == 0.0  # Should handle division by zero
