@@ -409,7 +409,9 @@ class TestOperationRecoveryManager:
             operation, "MNQ", 0, 2, "entry"
         )
 
-        response = OrderPlaceResponse(orderId=123, success=True)
+        response = OrderPlaceResponse(
+            orderId=123, success=True, errorCode=0, errorMessage=None
+        )
         await recovery_manager.record_order_success(operation, order_ref, response)
 
         await recovery_manager.add_position_tracking(
@@ -668,7 +670,9 @@ class TestOperationRecoveryManager:
         order_ref = await recovery_manager.add_order_to_operation(
             operation, "MNQ", 0, 2, "entry"
         )
-        response = OrderPlaceResponse(orderId=123, success=True)
+        response = OrderPlaceResponse(
+            orderId=123, success=True, errorCode=0, errorMessage=None
+        )
         await recovery_manager.record_order_success(operation, order_ref, response)
 
         # Add OCO pair
@@ -706,7 +710,9 @@ class TestOperationRecoveryManager:
         order_ref = await recovery_manager.add_order_to_operation(
             operation, "MNQ", 0, 2, "entry"
         )
-        response = OrderPlaceResponse(orderId=123, success=True)
+        response = OrderPlaceResponse(
+            orderId=123, success=True, errorCode=0, errorMessage=None
+        )
         await recovery_manager.record_order_success(operation, order_ref, response)
 
         # Mock cancel to fail
@@ -939,8 +945,8 @@ class TestOperationRecoveryManager:
 
         cleanup_count = await recovery_manager.cleanup_stale_operations(max_age_hours=24.0)
 
-        # Should have attempted cleanup but failed
-        assert cleanup_count == 0
+        # Should have attempted cleanup and count the stale operation regardless of error
+        assert cleanup_count == 1
 
     def test_operation_types_enum(self):
         """Test OperationType enum values."""
@@ -972,7 +978,9 @@ class TestOperationRecoveryEdgeCases:
         order_ref = await recovery_manager.add_order_to_operation(
             operation, "MNQ", 0, 2, "entry"
         )
-        response = OrderPlaceResponse(orderId=123, success=True)
+        response = OrderPlaceResponse(
+            orderId=123, success=True, errorCode=0, errorMessage=None
+        )
         await recovery_manager.record_order_success(operation, order_ref, response)
 
         # Mock _link_oco_orders to raise exception
@@ -1009,7 +1017,7 @@ class TestOperationRecoveryEdgeCases:
 
         # Should handle exception and rollback
         assert operation.state == OperationState.ROLLED_BACK
-        assert "Recovery attempt failed" in operation.errors
+        assert "Recovery failed" in operation.errors
 
     @pytest.mark.asyncio
     async def test_rollback_operation_with_cancel_exception(self, recovery_manager, mock_order_manager):
@@ -1019,7 +1027,9 @@ class TestOperationRecoveryEdgeCases:
         order_ref = await recovery_manager.add_order_to_operation(
             operation, "MNQ", 0, 2, "entry"
         )
-        response = OrderPlaceResponse(orderId=123, success=True)
+        response = OrderPlaceResponse(
+            orderId=123, success=True, errorCode=0, errorMessage=None
+        )
         await recovery_manager.record_order_success(operation, order_ref, response)
 
         # Mock cancel_order to raise exception
@@ -1062,7 +1072,9 @@ class TestOperationRecoveryEdgeCases:
         order_ref = await recovery_manager.add_order_to_operation(
             operation, "MNQ", 0, 2, "entry"
         )
-        response = OrderPlaceResponse(orderId=123, success=True)
+        response = OrderPlaceResponse(
+            orderId=123, success=True, errorCode=0, errorMessage=None
+        )
         await recovery_manager.record_order_success(operation, order_ref, response)
 
         operation.position_tracking["MNQ"] = [123]

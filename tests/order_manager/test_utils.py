@@ -113,7 +113,7 @@ class TestAlignPriceToTickEdgeCases:
     def test_large_tick_sizes(self):
         """Handle large tick sizes correctly."""
         assert utils.align_price_to_tick(1234.56, 10.0) == 1230.0
-        assert utils.align_price_to_tick(1235.0, 10.0) == 1235.0
+        assert utils.align_price_to_tick(1235.0, 10.0) == 1240.0  # Rounds to nearest tick
         assert utils.align_price_to_tick(1239.99, 10.0) == 1240.0
 
     def test_negative_prices(self):

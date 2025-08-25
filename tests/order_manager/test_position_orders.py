@@ -161,7 +161,7 @@ class TestPositionOrderMixin:
         """Test add_stop_loss with specific account ID."""
         mixin = PositionOrderMixin()
         mixin.project_x = MagicMock()
-        position = MagicMock(contractId="MNQ", size=1, side=0)  # Long position
+        position = MagicMock(contractId="MNQ", size=1, type=1)  # Long position (PositionType.LONG=1)
         mixin.project_x.search_open_positions = AsyncMock(return_value=[position])
         mixin.place_stop_order = AsyncMock(
             return_value=OrderPlaceResponse(
@@ -183,7 +183,7 @@ class TestPositionOrderMixin:
         """Test add_stop_loss for short position (opposite side)."""
         mixin = PositionOrderMixin()
         mixin.project_x = MagicMock()
-        position = MagicMock(contractId="MNQ", size=-1, side=1)  # Short position
+        position = MagicMock(contractId="MNQ", size=-1, type=2)  # Short position (PositionType.SHORT=2)
         mixin.project_x.search_open_positions = AsyncMock(return_value=[position])
         mixin.place_stop_order = AsyncMock(
             return_value=OrderPlaceResponse(
@@ -201,7 +201,7 @@ class TestPositionOrderMixin:
         """Test add_take_profit with specific account ID."""
         mixin = PositionOrderMixin()
         mixin.project_x = MagicMock()
-        position = MagicMock(contractId="MNQ", size=1, side=0)  # Long position
+        position = MagicMock(contractId="MNQ", size=1, type=1)  # Long position (PositionType.LONG=1)
         mixin.project_x.search_open_positions = AsyncMock(return_value=[position])
         mixin.place_limit_order = AsyncMock(
             return_value=OrderPlaceResponse(
@@ -223,7 +223,7 @@ class TestPositionOrderMixin:
         """Test add_take_profit for short position (opposite side)."""
         mixin = PositionOrderMixin()
         mixin.project_x = MagicMock()
-        position = MagicMock(contractId="MNQ", size=-1, side=1)  # Short position
+        position = MagicMock(contractId="MNQ", size=-1, type=2)  # Short position (PositionType.SHORT=2)
         mixin.project_x.search_open_positions = AsyncMock(return_value=[position])
         mixin.place_limit_order = AsyncMock(
             return_value=OrderPlaceResponse(
@@ -242,7 +242,7 @@ class TestPositionOrderMixin:
         mixin = PositionOrderMixin()
         mixin.project_x = MagicMock()
 
-        position = MagicMock(contractId="MNQ", size=2, side=0)  # Long 2 contracts
+        position = MagicMock(contractId="MNQ", size=2, type=1)  # Long 2 contracts (PositionType.LONG=1)
         mixin.project_x.search_open_positions = AsyncMock(return_value=[position])
         mixin.place_market_order = AsyncMock(
             return_value=OrderPlaceResponse(
@@ -261,7 +261,7 @@ class TestPositionOrderMixin:
         mixin = PositionOrderMixin()
         mixin.project_x = MagicMock()
 
-        position = MagicMock(contractId="MNQ", size=-1, side=1)  # Short 1 contract
+        position = MagicMock(contractId="MNQ", size=-1, type=2)  # Short 1 contract (PositionType.SHORT=2)
         mixin.project_x.search_open_positions = AsyncMock(return_value=[position])
         mixin.place_market_order = AsyncMock(
             return_value=OrderPlaceResponse(
@@ -289,7 +289,7 @@ class TestPositionOrderMixin:
         mixin = PositionOrderMixin()
         mixin.project_x = MagicMock()
 
-        position = MagicMock(contractId="MNQ", size=1, side=0)
+        position = MagicMock(contractId="MNQ", size=1, type=1)  # Long position
         mixin.project_x.search_open_positions = AsyncMock(return_value=[position])
         mixin.place_market_order = AsyncMock(
             return_value=OrderPlaceResponse(
