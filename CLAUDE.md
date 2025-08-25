@@ -90,6 +90,106 @@ The standardized deprecation utilities provide:
 - Metadata tracking for deprecation management
 - Support for functions, methods, classes, and parameters
 
+## Test-Driven Development (TDD) Methodology
+
+**CRITICAL**: This project follows strict Test-Driven Development principles. Tests define the specification, not the implementation.
+
+### Core TDD Rules
+
+1. **Write Tests FIRST**
+   - Tests must be written BEFORE implementation code
+   - Tests define the contract/specification of how code should behave
+   - Follow Red-Green-Refactor cycle religiously
+
+2. **Tests as Source of Truth**
+   - Tests validate EXPECTED behavior, not current behavior
+   - If existing code fails a test, FIX THE CODE, not the test
+   - Tests document how the system SHOULD work
+   - Never write tests that simply match faulty logic
+
+3. **Red-Green-Refactor Cycle**
+   ```
+   1. RED: Write a failing test that defines expected behavior
+   2. GREEN: Write minimal code to make the test pass
+   3. REFACTOR: Improve code while keeping tests green
+   4. REPEAT: Continue for next feature/requirement
+   ```
+
+4. **Testing Existing Code**
+   - Treat tests as debugging tools
+   - Write tests for what the code SHOULD do, not what it currently does
+   - If tests reveal bugs, fix the implementation
+   - Only modify tests if requirements have genuinely changed
+
+5. **Test Writing Principles**
+   - Each test should have a single, clear purpose
+   - Test outcomes and behavior, not implementation details
+   - Tests should be independent and isolated
+   - Use descriptive test names that explain the expected behavior
+
+### Example TDD Workflow
+
+```python
+# Step 1: Write the test FIRST (Red phase)
+@pytest.mark.asyncio
+async def test_order_manager_places_bracket_order():
+    """Test that bracket orders create parent, stop, and target orders."""
+    # Define expected behavior
+    order_manager = OrderManager(mock_client)
+
+    result = await order_manager.place_bracket_order(
+        instrument="MNQ",
+        quantity=1,
+        stop_offset=10,
+        target_offset=20
+    )
+
+    # Assert expected outcomes
+    assert result.parent_order is not None
+    assert result.stop_order is not None
+    assert result.target_order is not None
+    assert result.stop_order.price == result.parent_order.price - 10
+    assert result.target_order.price == result.parent_order.price + 20
+
+# Step 2: Run test - it SHOULD fail (Red confirmed)
+# Step 3: Implement minimal code to pass (Green phase)
+# Step 4: Refactor implementation while keeping test green
+# Step 5: Write next test for edge cases
+```
+
+### Testing as Debugging
+
+When testing existing code:
+```python
+# WRONG: Writing test to match buggy behavior
+def test_buggy_calculation():
+    # This matches what the code currently does (wrong!)
+    assert calculate_risk(100, 10) == 1100  # Bug: should be 110
+
+# CORRECT: Write test for expected behavior
+def test_risk_calculation():
+    # This defines what the code SHOULD do
+    assert calculate_risk(100, 10) == 110  # 10% of 100 is 10, total 110
+    # If this fails, FIX calculate_risk(), don't change the test
+```
+
+### Test Organization
+
+- `tests/unit/` - Fast, isolated unit tests (mock all dependencies)
+- `tests/integration/` - Test component interactions
+- `tests/e2e/` - End-to-end tests with real services
+- Always run tests with `./test.sh` for proper environment setup
+
+### TDD Benefits for This Project
+
+1. **API Stability**: Tests ensure backward compatibility
+2. **Async Safety**: Tests catch async/await issues early
+3. **Financial Accuracy**: Tests validate pricing and calculations
+4. **Documentation**: Tests serve as living documentation
+5. **Refactoring Confidence**: Tests enable safe refactoring
+
+Remember: The test suite is the specification. Code must conform to tests, not vice versa.
+
 ## Specialized Agent Usage Guidelines
 
 ### IMPORTANT: Use Appropriate Subagents for Different Tasks
