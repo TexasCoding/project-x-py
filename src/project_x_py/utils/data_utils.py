@@ -76,7 +76,7 @@ import polars as pl
 
 def get_polars_rows(df: pl.DataFrame) -> int:
     """Get number of rows from polars DataFrame safely."""
-    return getattr(df, "n_rows", 0)
+    return getattr(df, "height", 0)
 
 
 def get_polars_last_value(df: pl.DataFrame, column: str) -> Any:

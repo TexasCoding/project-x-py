@@ -1,33 +1,21 @@
 {
   "mcpServers": {
-    "upstash-context-7-mcp": {
-      "type": "http",
-      "url": "https://server.smithery.ai/@upstash/context7-mcp/mcp"
-    },
-    "aakarsh-sasi-memory-bank-mcp": {
-      "type": "http",
-      "url": "https://server.smithery.ai/@aakarsh-sasi/memory-bank-mcp/mcp"
-    },
-    "itseasy-21-mcp-knowledge-graph": {
-      "type": "http",
-      "url": "https://server.smithery.ai/@itseasy21/mcp-knowledge-graph/mcp"
-    },
-    "smithery-ai-filesystem": {
-      "type": "stdio",
+    "desktop-commander": {
       "command": "npx",
       "args": [
         "-y",
-        "@smithery/cli@latest",
-        "run",
-        "@smithery-ai/filesystem",
-        "--profile",
-        "yummy-owl-S0TDf6",
-        "--key",
-        "af08fae1-5f3a-43f6-9e94-86f9638a08a0",
-        "--config",
-        "\"{\\\"allowedDirs\\\":[\\\"src\\\",\\\"examples\\\",\\\"tests\\\"]}\""
+        "@wonderwhy-er/desktop-commander"
+      ]
+    },
+    "github": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
       ],
-      "env": {}
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+      }
     },
     "project-x-py Docs": {
       "command": "npx",
@@ -56,10 +44,6 @@
       "env": {
         "TAVILY_API_KEY": "${TAVILY_API_KEY}"
       }
-    },
-    "waldzellai-clear-thought": {
-      "type": "http",
-      "url": "https://server.smithery.ai/@waldzellai/clear-thought/mcp"
     },
     "graphiti-memory": {
       "transport": "stdio",
