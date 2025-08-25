@@ -271,7 +271,7 @@ class PositionReportingMixin:
         positions = await self.get_all_positions()
         pnl_data = await self.get_portfolio_pnl()
         risk_data = await self.get_risk_metrics()
-        stats = self.get_position_statistics()
+        stats = await self.get_position_statistics()
 
         return {
             "report_timestamp": datetime.now(),

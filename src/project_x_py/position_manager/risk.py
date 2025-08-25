@@ -319,6 +319,10 @@ class RiskManagementMixin:
             - Size is unusually large (>10 contracts)
         """
         try:
+            # Validate inputs
+            if risk_amount <= 0:
+                raise ValueError("risk_amount must be positive")
+
             # Get account balance if not provided
             if account_balance is None:
                 if self.project_x.account_info:
@@ -380,6 +384,9 @@ class RiskManagementMixin:
                 sizing_method="fixed_risk",
             )
 
+        except ValueError:
+            # Re-raise validation errors
+            raise
         except Exception as e:
             self.logger.error(f"❌ Position sizing calculation failed: {e}")
 
