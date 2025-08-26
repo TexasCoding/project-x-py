@@ -63,7 +63,7 @@ Example Usage:
 
 
     # V3.1: Register for tick updates
-    @suite.events.on(EventType.TICK_UPDATE)
+    @suite.events.on(EventType.DATA_UPDATE)
     async def on_tick(event):
         # This is called on every tick - keep it lightweight!
         data = event.data

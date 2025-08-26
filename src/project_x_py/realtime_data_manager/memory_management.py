@@ -213,7 +213,8 @@ class MemoryManagementMixin(TaskManagerMixin):
 
         current_size = len(self.data[timeframe])
         threshold = self._buffer_overflow_thresholds.get(
-            timeframe, self.max_bars_per_timeframe
+            timeframe,
+            self.max_bars_per_timeframe * 2,  # Use 2x max as default threshold
         )
 
         utilization = (current_size / threshold) * 100 if threshold > 0 else 0.0
@@ -414,12 +415,13 @@ class MemoryManagementMixin(TaskManagerMixin):
                 initial_count = len(self.data[tf_key])
                 total_bars_before += initial_count
 
-                # Check for buffer overflow first
-                is_overflow, utilization = await self._check_buffer_overflow(tf_key)
-                if is_overflow:
-                    await self._handle_buffer_overflow(tf_key, utilization)
-                    total_bars_after += len(self.data[tf_key])
-                    continue
+                # Check for buffer overflow first (only if dynamic buffer is enabled)
+                if self._dynamic_buffer_enabled:
+                    is_overflow, utilization = await self._check_buffer_overflow(tf_key)
+                    if is_overflow:
+                        await self._handle_buffer_overflow(tf_key, utilization)
+                        total_bars_after += len(self.data[tf_key])
+                        continue
 
                 # Check if overflow is needed (if mixin is available)
                 if hasattr(

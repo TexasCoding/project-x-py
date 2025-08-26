@@ -362,6 +362,18 @@ class RealtimeDataManager(
             which loads historical data for all timeframes. After initialization, call
             start_realtime_feed() to begin receiving real-time updates.
         """
+        # Validate required parameters
+        if instrument is None or instrument == "":
+            raise ValueError(
+                "instrument parameter is required and cannot be None or empty"
+            )
+        if project_x is None:
+            raise ValueError("project_x parameter is required and cannot be None")
+        if realtime_client is None:
+            raise ValueError("realtime_client parameter is required and cannot be None")
+        if timeframes is not None and len(timeframes) == 0:
+            raise ValueError("timeframes list cannot be empty if provided")
+
         if timeframes is None:
             timeframes = ["5min"]
 
@@ -460,11 +472,14 @@ class RealtimeDataManager(
             self, component_name="realtime_data_manager", max_errors=100, cache_ttl=5.0
         )
 
-        # Set initial status asynchronously after init is complete
-        self._initial_status_task = asyncio.create_task(self._set_initial_status())
+        # Set initial status asynchronously after init is complete when event loop is available
+        self._initial_status_task: asyncio.Task[None] | None = None
 
-        # Set timezone for consistent timestamp handling
-        self.timezone: Any = pytz.timezone(timezone)  # CME timezone
+        # Set timezone for consistent timestamp handling - prioritize config over parameter
+        effective_timezone = config.get("timezone") if config else None
+        if effective_timezone is None:
+            effective_timezone = timezone
+        self.timezone: Any = pytz.timezone(effective_timezone)  # CME timezone default
 
         timeframes_dict: dict[str, dict[str, Any]] = {
             "1sec": {"interval": 1, "unit": 1, "name": "1sec"},
@@ -500,6 +515,7 @@ class RealtimeDataManager(
 
         # Async synchronization
         self.is_running: bool = False
+        self._initialized: bool = False
         # EventBus is now used for all event handling
         self.indicator_cache: defaultdict[str, dict[str, Any]] = defaultdict(dict)
 
@@ -703,6 +719,9 @@ class RealtimeDataManager(
         self.historical_data_cache = self.config.get("historical_data_cache", True)
         self.cache_expiry_hours = self.config.get("cache_expiry_hours", 24)
 
+        # Configuration for historical data loading
+        self.default_initial_days = self.config.get("initial_days", 1)
+
         # Set memory management attributes based on config
         self.tick_buffer_size = self.buffer_size
         self.cleanup_interval = float(
@@ -719,7 +738,7 @@ class RealtimeDataManager(
             len(self.timeframes) if hasattr(self, "timeframes") else 0,
         )
 
-    @handle_errors("initialize", reraise=False, default_return=False)
+    @handle_errors("initialize", reraise=True, default_return=False)
     async def initialize(self, initial_days: int = 1) -> bool:
         """
         Initialize the real-time data manager by loading historical OHLCV data.
@@ -768,6 +787,14 @@ class RealtimeDataManager(
             - If data for a specific timeframe fails to load, the method will log a warning
               but continue with the other timeframes
         """
+        # Skip if already initialized (idempotent behavior)
+        if self._initialized:
+            self.logger.debug(
+                "Skipping initialization - already initialized",
+                extra={"instrument": self.instrument},
+            )
+            return True
+
         with LogContext(
             self.logger,
             operation="initialize",
@@ -831,6 +858,17 @@ class RealtimeDataManager(
             len([tf for tf in self.timeframes if tf in self.data]),
         )
 
+        # Start cleanup scheduler now that event loop is available
+        if hasattr(self, "_ensure_cleanup_scheduler_started"):
+            await self._ensure_cleanup_scheduler_started()
+
+        # Start initial status task now that event loop is available
+        if self._initial_status_task is None:
+            self._initial_status_task = asyncio.create_task(self._set_initial_status())
+
+        # Mark as initialized
+        self._initialized = True
+
         self.logger.debug(
             LogMessages.DATA_RECEIVED,
             extra={"status": "initialized", "instrument": self.instrument},
@@ -865,6 +903,10 @@ class RealtimeDataManager(
             from datetime import datetime
 
             current_time = datetime.now(self.timezone)
+            # Ensure both datetimes have timezone information for comparison
+            if last_bar_time.tzinfo is None:
+                # Assume last_bar_time is in the same timezone as configured
+                last_bar_time = self.timezone.localize(last_bar_time)
             time_gap = current_time - last_bar_time
 
             # Warn if historical data is more than 5 minutes old
@@ -889,7 +931,7 @@ class RealtimeDataManager(
                 extra={"timeframe": tf_key, "error": "No data loaded"},
             )
 
-    @handle_errors("start realtime feed", reraise=False, default_return=False)
+    @handle_errors("start realtime feed", reraise=True, default_return=False)
     async def start_realtime_feed(self) -> bool:
         """
         Start the real-time OHLCV data feed using WebSocket connections.
@@ -960,7 +1002,16 @@ class RealtimeDataManager(
                 raise ProjectXError(
                     format_error_message(
                         ErrorMessages.INTERNAL_ERROR,
-                        reason="Contract ID not set - call initialize() first",
+                        reason="not initialized - call initialize() first",
+                    )
+                )
+
+            # Check if realtime client is connected
+            if not self.realtime_client.is_connected():
+                raise ProjectXError(
+                    format_error_message(
+                        ErrorMessages.INTERNAL_ERROR,
+                        reason="Realtime client not connected",
                     )
                 )
 
@@ -1102,6 +1153,9 @@ class RealtimeDataManager(
         if isinstance(dom_attr, dict):
             for _k in list(dom_attr.keys()):
                 dom_attr[_k] = []
+
+        # Mark as not initialized
+        self._initialized = False
 
         self.logger.info("✅ RealtimeDataManager cleanup completed")
 

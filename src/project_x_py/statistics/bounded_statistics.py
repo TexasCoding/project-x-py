@@ -707,15 +707,24 @@ class BoundedStatisticsMixin:
 
         self.logger = ProjectXLogger.get_logger(f"{__name__}.bounded_stats")
 
-        # Start cleanup scheduler automatically
-        asyncio.create_task(self._start_cleanup_scheduler())
+        # Schedule cleanup scheduler to start when event loop is available
+        self._cleanup_scheduler_started = False
 
     async def _start_cleanup_scheduler(self) -> None:
         """Start the cleanup scheduler in the background."""
+        if self._cleanup_scheduler_started:
+            return
+
         try:
             await self._cleanup_scheduler.start()
+            self._cleanup_scheduler_started = True
         except Exception as e:
             self.logger.error(f"Failed to start cleanup scheduler: {e}")
+
+    async def _ensure_cleanup_scheduler_started(self) -> None:
+        """Ensure cleanup scheduler is started when event loop is available."""
+        if not self._cleanup_scheduler_started:
+            await self._start_cleanup_scheduler()
 
     async def increment_bounded(self, metric: str, value: float = 1.0) -> None:
         """

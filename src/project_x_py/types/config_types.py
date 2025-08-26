@@ -168,6 +168,8 @@ class DataManagerConfig(TypedDict):
     cleanup_interval_minutes: NotRequired[int]
     historical_data_cache: NotRequired[bool]
     cache_expiry_hours: NotRequired[int]
+    timezone: NotRequired[str]  # Timezone for timestamp handling
+    initial_days: NotRequired[int]  # Initial days of historical data to load
 
     # Dynamic resource management
     enable_dynamic_limits: NotRequired[bool]

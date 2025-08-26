@@ -681,8 +681,8 @@ class DataProcessingMixin:
 
             # Check if we need to create a new bar or update existing
             if current_data.height == 0:
-                # First bar - ensure minimum volume for pattern detection
-                bar_volume = max(volume, 1) if volume > 0 else 1
+                # First bar - use actual volume (0 for quotes, >0 for trades)
+                bar_volume = volume
                 new_bar = pl.DataFrame(
                     {
                         "timestamp": [bar_time],
@@ -705,8 +705,8 @@ class DataProcessingMixin:
                 last_bar_time = current_data.select(pl.col("timestamp")).tail(1).item()
 
                 if bar_time > last_bar_time:
-                    # New bar needed
-                    bar_volume = max(volume, 1) if volume > 0 else 1
+                    # New bar needed - use actual volume (0 for quotes, >0 for trades)
+                    bar_volume = volume
                     new_bar = pl.DataFrame(
                         {
                             "timestamp": [bar_time],
@@ -761,7 +761,7 @@ class DataProcessingMixin:
                     new_low = align_price_to_tick(
                         min(current_low, aligned_price), self.tick_size
                     )
-                    new_volume = max(current_volume + volume, 1)
+                    new_volume = current_volume + volume
 
                     # Update with new values
                     self.data[tf_key] = current_data.with_columns(
@@ -815,7 +815,13 @@ class DataProcessingMixin:
         """
         # Ensure timestamp is timezone-aware
         if timestamp.tzinfo is None:
-            timestamp = self.timezone.localize(timestamp)
+            # Handle both pytz timezone objects and datetime.timezone objects
+            if hasattr(self.timezone, "localize"):
+                # pytz timezone object
+                timestamp = self.timezone.localize(timestamp)
+            else:
+                # datetime.timezone object
+                timestamp = timestamp.replace(tzinfo=self.timezone)
 
         if unit == 1:  # Seconds
             # Round down to the nearest interval in seconds

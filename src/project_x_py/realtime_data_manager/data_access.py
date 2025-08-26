@@ -196,17 +196,21 @@ class DataAccessMixin:
         """
         # Check for optimized read lock (AsyncRWLock) and use it for better parallelism
         if hasattr(self, "data_rw_lock"):
-            from project_x_py.utils.lock_optimization import AsyncRWLock
+            try:
+                from project_x_py.utils.lock_optimization import AsyncRWLock
 
-            if isinstance(self.data_rw_lock, AsyncRWLock):
-                async with self.data_rw_lock.read_lock():
-                    if timeframe not in self.data:
-                        return None
+                if isinstance(self.data_rw_lock, AsyncRWLock):
+                    async with self.data_rw_lock.read_lock():
+                        if timeframe not in self.data:
+                            return None
 
-                    df = self.data[timeframe]
-                    if bars is not None and len(df) > bars:
-                        return df.tail(bars)
-                    return df
+                        df = self.data[timeframe]
+                        if bars is not None and len(df) > bars:
+                            return df.tail(bars)
+                        return df
+            except (ImportError, TypeError):
+                # Fall back to regular lock if AsyncRWLock not available or type check fails
+                pass
 
         # Fallback to regular data_lock for backward compatibility
         async with self.data_lock:  # type: ignore
@@ -264,24 +268,39 @@ class DataAccessMixin:
         """
         # Try to get from tick data first
         if self.current_tick_data:
-            # Import here to avoid circular import
-            from project_x_py.order_manager.utils import align_price_to_tick
+            try:
+                # Import here to avoid circular import
+                from project_x_py.order_manager.utils import align_price_to_tick
 
-            raw_price = float(self.current_tick_data[-1]["price"])
-            # Align the price to tick size
-            return align_price_to_tick(raw_price, self.tick_size)
+                raw_price = float(self.current_tick_data[-1]["price"])
+                # Align the price to tick size
+                return align_price_to_tick(raw_price, self.tick_size)
+            except (ValueError, TypeError, KeyError) as e:
+                # Handle corrupted tick data gracefully - log and fall back to bar data
+                logger.warning(
+                    f"Invalid tick data encountered: {e}. Falling back to bar data."
+                )
+                # Continue to fallback logic below
 
         # Fallback to most recent bar close (already aligned)
         # Use optimized read lock if available
         if hasattr(self, "data_rw_lock"):
-            from project_x_py.utils.lock_optimization import AsyncRWLock
+            try:
+                from project_x_py.utils.lock_optimization import AsyncRWLock
 
-            if isinstance(self.data_rw_lock, AsyncRWLock):
-                async with self.data_rw_lock.read_lock():
-                    for tf_key in ["1min", "5min", "15min"]:  # Check common timeframes
-                        if tf_key in self.data and not self.data[tf_key].is_empty():
-                            return float(self.data[tf_key]["close"][-1])
-                return None
+                if isinstance(self.data_rw_lock, AsyncRWLock):
+                    async with self.data_rw_lock.read_lock():
+                        for tf_key in [
+                            "1min",
+                            "5min",
+                            "15min",
+                        ]:  # Check common timeframes
+                            if tf_key in self.data and not self.data[tf_key].is_empty():
+                                return float(self.data[tf_key]["close"][-1])
+                    return None
+            except (ImportError, TypeError):
+                # Fall back to regular lock if AsyncRWLock not available or type check fails
+                pass
 
         # Fallback to regular lock
         async with self.data_lock:  # type: ignore
@@ -305,11 +324,15 @@ class DataAccessMixin:
         """
         # Use optimized read lock if available
         if hasattr(self, "data_rw_lock"):
-            from project_x_py.utils.lock_optimization import AsyncRWLock
+            try:
+                from project_x_py.utils.lock_optimization import AsyncRWLock
 
-            if isinstance(self.data_rw_lock, AsyncRWLock):
-                async with self.data_rw_lock.read_lock():
-                    return {tf: df.clone() for tf, df in self.data.items()}
+                if isinstance(self.data_rw_lock, AsyncRWLock):
+                    async with self.data_rw_lock.read_lock():
+                        return {tf: df.clone() for tf, df in self.data.items()}
+            except (ImportError, TypeError):
+                # Fall back to regular lock if AsyncRWLock not available or type check fails
+                pass
 
         # Fallback to regular lock
         async with self.data_lock:  # type: ignore
@@ -524,13 +547,18 @@ class DataAccessMixin:
             ...     strategy.start()
         """
         # Handle both Lock and AsyncRWLock types
-        from project_x_py.utils.lock_optimization import AsyncRWLock
+        try:
+            from project_x_py.utils.lock_optimization import AsyncRWLock
 
-        if isinstance(self.data_lock, AsyncRWLock):
-            async with self.data_lock.read_lock():
-                return await self._check_data_readiness(timeframe, min_bars)
-        else:
-            async with self.data_lock:
+            if isinstance(self.data_lock, AsyncRWLock):
+                async with self.data_lock.read_lock():
+                    return await self._check_data_readiness(timeframe, min_bars)
+            else:
+                async with self.data_lock:
+                    return await self._check_data_readiness(timeframe, min_bars)
+        except (ImportError, TypeError):
+            # Fall back to regular lock if AsyncRWLock not available or type check fails
+            async with self.data_lock:  # type: ignore[union-attr]
                 return await self._check_data_readiness(timeframe, min_bars)
 
     async def _check_data_readiness(self, timeframe: str | None, min_bars: int) -> bool:

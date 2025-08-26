@@ -325,9 +325,9 @@ class DataValidationMixin:
         self, trade_data: dict[str, Any]
     ) -> dict[str, Any] | None:
         """Basic trade validation fallback when ValidationMixin methods are not available."""
-        # Basic required field check
-        required_fields = {"symbolId", "price", "timestamp", "volume"}
-        if not all(field in trade_data for field in required_fields):
+        # Basic required field check - be more flexible with what fields are required
+        # Only check for symbolId as price and volume can be checked in later validation steps
+        if "symbolId" not in trade_data:
             return None
 
         return trade_data
@@ -535,7 +535,8 @@ class DataValidationMixin:
         remainder = price % tick_size
 
         # Check if remainder is within tolerance (accounting for floating point precision)
-        tolerance = min(self._validation_config.tick_tolerance, tick_size * 0.1)
+        # Use a more generous tolerance for floating point precision issues
+        tolerance = max(self._validation_config.tick_tolerance, tick_size * 0.01)
         return remainder < tolerance or (tick_size - remainder) < tolerance
 
     async def _validate_volume(self, trade_data: dict[str, Any]) -> bool:
