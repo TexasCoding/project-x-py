@@ -52,6 +52,7 @@ def mock_position():
     position.averagePrice = 18000.0
     position.id = 12345
     position.accountId = 67890
+    position.creationTimestamp = "2025-08-25T10:00:00Z"
     return position
 
 
@@ -334,7 +335,11 @@ class TestPositionDataProcessing:
 
         with patch("project_x_py.position_manager.tracking.Position") as MockPosition:
             mock_pos = Mock()
+            mock_pos.id = mock_position.id
+            mock_pos.accountId = mock_position.accountId
             mock_pos.contractId = "MNQ"
+            mock_pos.creationTimestamp = mock_position.creationTimestamp
+            mock_pos.type = mock_position.type
             mock_pos.size = 5
             mock_pos.averagePrice = 18000.0
             MockPosition.return_value = mock_pos
@@ -475,7 +480,32 @@ class TestOrderSynchronization:
         """Test order synchronization when enabled."""
         tracking_mixin._order_sync_enabled = True
         tracking_mixin.order_manager = AsyncMock()
-        tracking_mixin.order_manager.refresh_open_orders = AsyncMock()
+        tracking_mixin.order_manager.on_position_changed = AsyncMock()
+        tracking_mixin.order_manager.on_position_closed = AsyncMock()
+
+        with patch("project_x_py.position_manager.tracking.Position") as MockPosition:
+            mock_pos = Mock()
+            mock_pos.contractId = "MNQ"
+            mock_pos.id = 1
+            mock_pos.accountId = 67890
+            mock_pos.creationTimestamp = "2025-08-25T10:00:00Z"
+            mock_pos.type = 1
+            mock_pos.size = 2
+            mock_pos.averagePrice = 18000.0
+            MockPosition.return_value = mock_pos
+
+            await tracking_mixin._process_position_data(mock_position_data)
+
+            # Should call on_position_changed even for new position (old_size=0, new_size=2)
+            tracking_mixin.order_manager.on_position_changed.assert_called_once_with("MNQ", 0, 2)
+
+    @pytest.mark.asyncio
+    async def test_order_sync_disabled(self, tracking_mixin, mock_position_data):
+        """Test no order sync when disabled."""
+        tracking_mixin._order_sync_enabled = False
+        tracking_mixin.order_manager = AsyncMock()
+        tracking_mixin.order_manager.on_position_changed = AsyncMock()
+        tracking_mixin.order_manager.on_position_closed = AsyncMock()
 
         with patch("project_x_py.position_manager.tracking.Position") as MockPosition:
             mock_pos = Mock()
@@ -484,19 +514,9 @@ class TestOrderSynchronization:
 
             await tracking_mixin._process_position_data(mock_position_data)
 
-            # Should refresh orders
-            tracking_mixin.order_manager.refresh_open_orders.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_order_sync_disabled(self, tracking_mixin, mock_position_data):
-        """Test no order sync when disabled."""
-        tracking_mixin._order_sync_enabled = False
-        tracking_mixin.order_manager = AsyncMock()
-
-        await tracking_mixin._process_position_data(mock_position_data)
-
-        # Should not refresh orders
-        tracking_mixin.order_manager.refresh_open_orders.assert_not_called()
+            # Should not call any order sync methods when disabled
+            tracking_mixin.order_manager.on_position_changed.assert_not_called()
+            tracking_mixin.order_manager.on_position_closed.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_order_sync_no_manager(self, tracking_mixin, mock_position_data):
@@ -522,8 +542,13 @@ class TestAlertIntegration:
 
         with patch("project_x_py.position_manager.tracking.Position") as MockPosition:
             mock_pos = Mock()
+            mock_pos.id = mock_position.id
+            mock_pos.accountId = mock_position.accountId
             mock_pos.contractId = "MNQ"
+            mock_pos.creationTimestamp = mock_position.creationTimestamp
+            mock_pos.type = mock_position.type
             mock_pos.size = 5
+            mock_pos.averagePrice = mock_position.averagePrice
             MockPosition.return_value = mock_pos
 
             await tracking_mixin._process_position_data(update_data)
@@ -544,14 +569,19 @@ class TestEventBusIntegration:
         """Test callbacks are triggered for position updates."""
         with patch("project_x_py.position_manager.tracking.Position") as MockPosition:
             mock_pos = Mock()
+            mock_pos.id = 1
+            mock_pos.accountId = 67890
             mock_pos.contractId = "MNQ"
+            mock_pos.creationTimestamp = "2025-08-25T10:00:00Z"
+            mock_pos.type = 1
             mock_pos.size = 2
+            mock_pos.averagePrice = 18000.0
             MockPosition.return_value = mock_pos
 
             await tracking_mixin._process_position_data(mock_position_data)
 
-            # Should trigger position_update callback
-            tracking_mixin._trigger_callbacks.assert_any_call("position_update", mock_position_data)
+            # Should trigger position_update callback (for new positions it's position_opened)
+            tracking_mixin._trigger_callbacks.assert_any_call("position_opened", mock_position_data)
 
     @pytest.mark.asyncio
     async def test_trigger_callbacks_position_closed(self, tracking_mixin, mock_position_data, mock_position):
