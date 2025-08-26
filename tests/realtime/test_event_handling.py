@@ -30,10 +30,11 @@ class MockEventHandler(EventHandlingMixin):
     """Mock class that includes EventHandlingMixin for testing."""
 
     def __init__(self):
+        from collections import defaultdict
         super().__init__()
         self._loop = None
         self._callback_lock = asyncio.Lock()
-        self.callbacks = {}
+        self.callbacks = defaultdict(list)  # Must be defaultdict like real implementation
         self.logger = MagicMock()
         self.stats = {
             "events_received": 0,
@@ -65,8 +66,8 @@ class TestEventHandlingMixinInitialization:
         """Test that TaskManagerMixin is properly initialized."""
         # Should have task management attributes from TaskManagerMixin
         assert hasattr(event_handler, 'get_task_stats')
-        assert hasattr(event_handler, 'cancel_all_tasks')
-        assert hasattr(event_handler, '_track_task')
+        assert hasattr(event_handler, '_cleanup_tasks')
+        assert hasattr(event_handler, '_create_task')
 
 
 class TestEventCallbackRegistration:
@@ -77,7 +78,7 @@ class TestEventCallbackRegistration:
         """Test registering an async callback."""
         async_callback = AsyncMock()
 
-        await event_handler.register_callback('test_event', async_callback)
+        await event_handler.add_callback('test_event', async_callback)
 
         assert 'test_event' in event_handler.callbacks
         assert async_callback in event_handler.callbacks['test_event']
@@ -87,7 +88,7 @@ class TestEventCallbackRegistration:
         """Test registering a sync callback."""
         sync_callback = Mock()
 
-        await event_handler.register_callback('test_event', sync_callback)
+        await event_handler.add_callback('test_event', sync_callback)
 
         assert 'test_event' in event_handler.callbacks
         assert sync_callback in event_handler.callbacks['test_event']
@@ -99,9 +100,9 @@ class TestEventCallbackRegistration:
         callback2 = AsyncMock()
         callback3 = Mock()
 
-        await event_handler.register_callback('test_event', callback1)
-        await event_handler.register_callback('test_event', callback2)
-        await event_handler.register_callback('test_event', callback3)
+        await event_handler.add_callback('test_event', callback1)
+        await event_handler.add_callback('test_event', callback2)
+        await event_handler.add_callback('test_event', callback3)
 
         assert len(event_handler.callbacks['test_event']) == 3
         assert all(cb in event_handler.callbacks['test_event']
@@ -113,10 +114,10 @@ class TestEventCallbackRegistration:
         callback1 = AsyncMock()
         callback2 = AsyncMock()
 
-        await event_handler.register_callback('test_event', callback1)
-        await event_handler.register_callback('test_event', callback2)
+        await event_handler.add_callback('test_event', callback1)
+        await event_handler.add_callback('test_event', callback2)
 
-        await event_handler.unregister_callback('test_event', callback1)
+        await event_handler.remove_callback('test_event', callback1)
 
         assert callback1 not in event_handler.callbacks['test_event']
         assert callback2 in event_handler.callbacks['test_event']
@@ -127,22 +128,24 @@ class TestEventCallbackRegistration:
         callback = AsyncMock()
 
         # Should not raise
-        await event_handler.unregister_callback('test_event', callback)
+        await event_handler.remove_callback('test_event', callback)
 
         # Event type should not be in callbacks
         assert 'test_event' not in event_handler.callbacks or \
                len(event_handler.callbacks['test_event']) == 0
 
     @pytest.mark.asyncio
-    async def test_unregister_all_callbacks(self, event_handler):
-        """Test unregistering all callbacks for an event type."""
+    async def test_remove_all_callbacks_manually(self, event_handler):
+        """Test removing all callbacks for an event type manually."""
         callback1 = AsyncMock()
         callback2 = AsyncMock()
 
-        await event_handler.register_callback('test_event', callback1)
-        await event_handler.register_callback('test_event', callback2)
+        await event_handler.add_callback('test_event', callback1)
+        await event_handler.add_callback('test_event', callback2)
 
-        await event_handler.unregister_all_callbacks('test_event')
+        # Remove callbacks manually since there's no unregister_all method
+        await event_handler.remove_callback('test_event', callback1)
+        await event_handler.remove_callback('test_event', callback2)
 
         assert 'test_event' not in event_handler.callbacks or \
                len(event_handler.callbacks['test_event']) == 0
@@ -154,7 +157,7 @@ class TestEventCallbackRegistration:
 
         # Register callbacks concurrently
         tasks = [
-            event_handler.register_callback(f'event_{i}', cb)
+            event_handler.add_callback(f'event_{i}', cb)
             for i, cb in enumerate(callbacks)
         ]
 
@@ -175,8 +178,8 @@ class TestEventProcessing:
         async_callback = AsyncMock()
         event_data = {"test": "data", "value": 123}
 
-        await event_handler.register_callback('test_event', async_callback)
-        await event_handler._process_event('test_event', event_data)
+        await event_handler.add_callback('test_event', async_callback)
+        await event_handler._trigger_callbacks('test_event', event_data)
 
         async_callback.assert_called_once_with(event_data)
 
@@ -186,8 +189,8 @@ class TestEventProcessing:
         sync_callback = Mock()
         event_data = {"test": "data", "value": 123}
 
-        await event_handler.register_callback('test_event', sync_callback)
-        await event_handler._process_event('test_event', event_data)
+        await event_handler.add_callback('test_event', sync_callback)
+        await event_handler._trigger_callbacks('test_event', event_data)
 
         sync_callback.assert_called_once_with(event_data)
 
@@ -199,11 +202,11 @@ class TestEventProcessing:
         callback3 = AsyncMock()
         event_data = {"test": "data"}
 
-        await event_handler.register_callback('test_event', callback1)
-        await event_handler.register_callback('test_event', callback2)
-        await event_handler.register_callback('test_event', callback3)
+        await event_handler.add_callback('test_event', callback1)
+        await event_handler.add_callback('test_event', callback2)
+        await event_handler.add_callback('test_event', callback3)
 
-        await event_handler._process_event('test_event', event_data)
+        await event_handler._trigger_callbacks('test_event', event_data)
 
         callback1.assert_called_once_with(event_data)
         callback2.assert_called_once_with(event_data)
@@ -215,7 +218,7 @@ class TestEventProcessing:
         event_data = {"test": "data"}
 
         # Should not raise
-        await event_handler._process_event('test_event', event_data)
+        await event_handler._trigger_callbacks('test_event', event_data)
 
     @pytest.mark.asyncio
     async def test_process_event_callback_error_isolation(self, event_handler):
@@ -225,11 +228,11 @@ class TestEventProcessing:
         callback3 = AsyncMock()
         event_data = {"test": "data"}
 
-        await event_handler.register_callback('test_event', callback1)
-        await event_handler.register_callback('test_event', callback2)
-        await event_handler.register_callback('test_event', callback3)
+        await event_handler.add_callback('test_event', callback1)
+        await event_handler.add_callback('test_event', callback2)
+        await event_handler.add_callback('test_event', callback3)
 
-        await event_handler._process_event('test_event', event_data)
+        await event_handler._trigger_callbacks('test_event', event_data)
 
         # First and third callbacks should still be called
         callback1.assert_called_once_with(event_data)
@@ -241,10 +244,10 @@ class TestEventProcessing:
         callback = AsyncMock()
         event_data = {"test": "data"}
 
-        await event_handler.register_callback('test_event', callback)
+        await event_handler.add_callback('test_event', callback)
 
         initial_count = event_handler.stats["events_received"]
-        await event_handler._process_event('test_event', event_data)
+        await event_handler._trigger_callbacks('test_event', event_data)
 
         assert event_handler.stats["events_received"] == initial_count + 1
         assert event_handler.stats["last_event_time"] is not None
@@ -257,7 +260,7 @@ class TestBatchedEventHandling:
     @pytest.mark.asyncio
     async def test_enable_batching(self, event_handler):
         """Test enabling batched event handling."""
-        await event_handler.enable_batching(
+        event_handler.enable_batching(
             batch_size=100,
             batch_timeout=0.1,
             max_queue_size=1000
@@ -267,26 +270,25 @@ class TestBatchedEventHandling:
         assert event_handler._batched_handler is not None
         assert isinstance(event_handler._batched_handler, OptimizedRealtimeHandler)
 
-    @pytest.mark.asyncio
-    async def test_disable_batching(self, event_handler):
+    def test_disable_batching(self, event_handler):
         """Test disabling batched event handling."""
-        await event_handler.enable_batching()
+        event_handler.enable_batching()
         assert event_handler._use_batching is True
 
-        await event_handler.disable_batching()
+        event_handler.disable_batching()
         assert event_handler._use_batching is False
 
     @pytest.mark.asyncio
     async def test_process_event_with_batching(self, event_handler):
         """Test event processing with batching enabled."""
-        await event_handler.enable_batching(batch_size=2, batch_timeout=0.05)
+        event_handler.enable_batching(batch_size=2, batch_timeout=0.05)
 
         callback = AsyncMock()
-        await event_handler.register_callback('test_event', callback)
+        await event_handler.add_callback('test_event', callback)
 
         # Process multiple events
-        await event_handler._process_event('test_event', {"value": 1})
-        await event_handler._process_event('test_event', {"value": 2})
+        await event_handler._trigger_callbacks('test_event', {"value": 1})
+        await event_handler._trigger_callbacks('test_event', {"value": 2})
 
         # Give time for batch processing
         await asyncio.sleep(0.1)
@@ -297,10 +299,10 @@ class TestBatchedEventHandling:
     @pytest.mark.asyncio
     async def test_batched_handler_cleanup(self, event_handler):
         """Test that batched handler is properly cleaned up."""
-        await event_handler.enable_batching()
+        event_handler.enable_batching()
         handler = event_handler._batched_handler
 
-        await event_handler.disable_batching()
+        event_handler.disable_batching()
 
         # Handler should be stopped and cleaned up
         assert event_handler._batched_handler is None
@@ -308,7 +310,7 @@ class TestBatchedEventHandling:
         # If handler has a stop method, it should be called
         if hasattr(handler, 'stop'):
             with patch.object(handler, 'stop', new_callable=AsyncMock) as mock_stop:
-                await event_handler.disable_batching()
+                event_handler.disable_batching()
                 mock_stop.assert_called()
 
 
@@ -324,12 +326,12 @@ class TestCrossThreadEventScheduling:
         event_data = {"test": "data"}
         event_received = threading.Event()
 
-        await event_handler.register_callback('test_event', callback)
+        await event_handler.add_callback('test_event', callback)
 
         def thread_func():
             # This would normally be called from SignalR thread
             asyncio.run_coroutine_threadsafe(
-                event_handler._process_event('test_event', event_data),
+                event_handler._trigger_callbacks('test_event', event_data),
                 asyncio.get_event_loop()
             )
             event_received.set()
@@ -362,10 +364,10 @@ class TestEventStatistics:
     async def test_event_count_tracking(self, event_handler):
         """Test that event counts are properly tracked."""
         callback = AsyncMock()
-        await event_handler.register_callback('test_event', callback)
+        await event_handler.add_callback('test_event', callback)
 
         for i in range(5):
-            await event_handler._process_event('test_event', {"value": i})
+            await event_handler._trigger_callbacks('test_event', {"value": i})
 
         assert event_handler.stats["events_received"] == 5
 
@@ -373,10 +375,10 @@ class TestEventStatistics:
     async def test_last_event_time_tracking(self, event_handler):
         """Test that last event time is properly tracked."""
         callback = AsyncMock()
-        await event_handler.register_callback('test_event', callback)
+        await event_handler.add_callback('test_event', callback)
 
         before_time = datetime.now()
-        await event_handler._process_event('test_event', {"test": "data"})
+        await event_handler._trigger_callbacks('test_event', {"test": "data"})
         after_time = datetime.now()
 
         last_event_time = event_handler.stats["last_event_time"]
@@ -384,21 +386,18 @@ class TestEventStatistics:
         assert before_time <= last_event_time <= after_time
 
     @pytest.mark.asyncio
-    async def test_get_event_stats(self, event_handler):
-        """Test getting event statistics."""
-        # Process some events
-        callback = AsyncMock()
-        await event_handler.register_callback('test_event', callback)
+    async def test_get_batching_stats(self, event_handler):
+        """Test getting batching statistics."""
+        # Enable batching
+        event_handler.enable_batching()
 
-        for i in range(3):
-            await event_handler._process_event('test_event', {"value": i})
+        # Get stats
+        stats = event_handler.get_batching_stats()
 
-        stats = event_handler.get_event_stats()
-
-        assert stats["events_received"] == 3
-        assert stats["last_event_time"] is not None
-        assert "callback_count" in stats
-        assert stats["callback_count"] == 1  # One event type with callbacks
+        # Check stats structure
+        assert isinstance(stats, dict)
+        assert "enabled" in stats
+        assert stats["enabled"] is True
 
 
 class TestErrorHandling:
@@ -410,10 +409,10 @@ class TestErrorHandling:
         callback = AsyncMock(side_effect=ValueError("Test error"))
         event_data = {"test": "data"}
 
-        await event_handler.register_callback('test_event', callback)
+        await event_handler.add_callback('test_event', callback)
 
         # Should not raise
-        await event_handler._process_event('test_event', event_data)
+        await event_handler._trigger_callbacks('test_event', event_data)
 
         # Error should be logged
         event_handler.logger.error.assert_called()
@@ -424,12 +423,12 @@ class TestErrorHandling:
         async def slow_callback(data):
             await asyncio.sleep(10)  # Very slow callback
 
-        await event_handler.register_callback('test_event', slow_callback)
+        await event_handler.add_callback('test_event', slow_callback)
 
         # Should handle timeout gracefully
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(
-                event_handler._process_event('test_event', {}),
+                event_handler._trigger_callbacks('test_event', {}),
                 timeout=0.1
             )
 
@@ -437,13 +436,13 @@ class TestErrorHandling:
     async def test_invalid_event_data(self, event_handler):
         """Test handling of invalid event data."""
         callback = AsyncMock()
-        await event_handler.register_callback('test_event', callback)
+        await event_handler.add_callback('test_event', callback)
 
         # Should handle various invalid data types
-        await event_handler._process_event('test_event', None)
-        await event_handler._process_event('test_event', "string_data")
-        await event_handler._process_event('test_event', 123)
-        await event_handler._process_event('test_event', [1, 2, 3])
+        await event_handler._trigger_callbacks('test_event', None)
+        await event_handler._trigger_callbacks('test_event', "string_data")
+        await event_handler._trigger_callbacks('test_event', 123)
+        await event_handler._trigger_callbacks('test_event', [1, 2, 3])
 
         # Callbacks should still be called
         assert callback.call_count == 4
@@ -464,12 +463,12 @@ class TestEventHandlingIntegration:
             results.append(f"sync: {data['value']}")
 
         # Register callbacks
-        await event_handler.register_callback('test_event', async_callback)
-        await event_handler.register_callback('test_event', sync_callback)
+        await event_handler.add_callback('test_event', async_callback)
+        await event_handler.add_callback('test_event', sync_callback)
 
         # Process events
         for i in range(3):
-            await event_handler._process_event('test_event', {"value": i})
+            await event_handler._trigger_callbacks('test_event', {"value": i})
 
         # Check results
         assert len(results) == 6  # 3 events * 2 callbacks
@@ -490,13 +489,13 @@ class TestEventHandlingIntegration:
         async def quote_callback(data):
             quote_results.append(data)
 
-        await event_handler.register_callback('position_update', position_callback)
-        await event_handler.register_callback('quote_update', quote_callback)
+        await event_handler.add_callback('position_update', position_callback)
+        await event_handler.add_callback('quote_update', quote_callback)
 
         # Process different event types
-        await event_handler._process_event('position_update', {"position": "long"})
-        await event_handler._process_event('quote_update', {"bid": 100, "ask": 101})
-        await event_handler._process_event('position_update', {"position": "short"})
+        await event_handler._trigger_callbacks('position_update', {"position": "long"})
+        await event_handler._trigger_callbacks('quote_update', {"bid": 100, "ask": 101})
+        await event_handler._trigger_callbacks('position_update', {"position": "short"})
 
         assert len(position_results) == 2
         assert len(quote_results) == 1
@@ -507,10 +506,10 @@ class TestEventHandlingIntegration:
     async def test_cleanup_on_disconnect(self, event_handler):
         """Test that event handling is properly cleaned up on disconnect."""
         callback = AsyncMock()
-        await event_handler.register_callback('test_event', callback)
+        await event_handler.add_callback('test_event', callback)
 
         # Enable batching
-        await event_handler.enable_batching()
+        event_handler.enable_batching()
 
         # Disconnect should clean up
         await event_handler.disconnect()
