@@ -223,9 +223,14 @@ class EventHandlingMixin(TaskManagerMixin):
             - Callbacks are executed in registration order
             - Exceptions in callbacks are caught and logged
             - Does not block on individual callback failures
+            - Updates event statistics
         """
         if event_type not in self.callbacks:
             return
+
+        # Update statistics when processing events
+        self.stats["events_received"] += 1
+        self.stats["last_event_time"] = datetime.now()
 
         # Get callbacks under lock but execute outside
         async with self._callback_lock:
@@ -465,9 +470,7 @@ class EventHandlingMixin(TaskManagerMixin):
                 - Output format: Same data dict
 
         Side Effects:
-            - Increments event counter
-            - Updates last event timestamp
-            - Triggers all registered callbacks
+            - Triggers all registered callbacks (statistics updated there)
 
         Example Data Flow:
             >>> # SignalR sends: ["MNQ", {"bid": 18500, "ask": 18501}]
@@ -477,10 +480,8 @@ class EventHandlingMixin(TaskManagerMixin):
             This method runs in the asyncio event loop, ensuring thread safety
             for callback execution.
         """
-        self.stats["events_received"] += 1
-        self.stats["last_event_time"] = datetime.now()
-
         # Log event (debug level)
+        # Note: Statistics are updated in _trigger_callbacks to avoid double-counting
         self.logger.debug(
             f"📨 Received {event_type} event: {len(args) if hasattr(args, '__len__') else 'N/A'} items"
         )
