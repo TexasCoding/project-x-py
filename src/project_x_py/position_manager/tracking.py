@@ -137,6 +137,16 @@ class PositionTrackingMixin:
         # Start the queue processor
         await self._start_position_processor()
 
+        # Subscribe to user updates (positions, orders, trades, account)
+        if hasattr(self.realtime_client, "subscribe_user_updates"):
+            await self.realtime_client.subscribe_user_updates()
+
+        # For backward compatibility, also try the old subscription methods
+        if hasattr(self.realtime_client, "subscribe_to_user_sync"):
+            await self.realtime_client.subscribe_to_user_sync()
+        if hasattr(self.realtime_client, "subscribe_to_user_hub"):
+            await self.realtime_client.subscribe_to_user_hub()
+
         # Register for position events (closures are detected from position updates)
         await self.realtime_client.add_callback(
             "position_update", self._on_position_update
