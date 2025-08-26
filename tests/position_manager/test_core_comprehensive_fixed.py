@@ -48,8 +48,8 @@ async def mock_client():
 async def mock_realtime_client():
     """Mock realtime client."""
     client = AsyncMock()
-    client.subscribe_to_user_sync = AsyncMock()
-    client.subscribe_to_user_hub = AsyncMock()
+    client.subscribe_user_updates = AsyncMock()
+    client.add_callback = AsyncMock()
     return client
 
 
@@ -57,7 +57,7 @@ async def mock_realtime_client():
 async def mock_order_manager():
     """Mock order manager."""
     manager = AsyncMock()
-    manager.sync_with_open_orders = AsyncMock()
+    manager.sync_orders_with_position = AsyncMock()
     return manager
 
 
@@ -130,8 +130,8 @@ class TestPositionInitialization:
         assert result is True
         assert manager._realtime_enabled is True
         assert manager.realtime_client == mock_realtime_client
-        mock_realtime_client.subscribe_to_user_sync.assert_called()
-        mock_realtime_client.subscribe_to_user_hub.assert_called()
+        mock_realtime_client.subscribe_user_updates.assert_called()
+        mock_realtime_client.add_callback.assert_called()
 
     @pytest.mark.asyncio
     async def test_initialize_with_order_manager(self, mock_client, mock_order_manager):
@@ -472,10 +472,13 @@ class TestRiskCalculations:
             metrics = await manager.get_risk_metrics()
 
         assert isinstance(metrics, dict)  # RiskAnalysisResponse is a TypedDict
-        assert metrics["total_positions"] == 2
+        assert metrics["position_count"] == 2  # Use correct field name
+        # Check that position_risks contains the P&L data
+        assert len(metrics["position_risks"]) == 2
         # MNQ: 2 * (18100 - 18000) = 200 profit
         # ES: -1 * (4480 - 4500) = 20 profit (short position)
-        assert metrics["total_pnl"] == 220.0
+        total_pnl = sum(p["pnl"] for p in metrics["position_risks"])
+        assert total_pnl == 220.0
 
     @pytest.mark.asyncio
     async def test_position_size_with_zero_stop_distance(self, basic_position_manager):
@@ -584,7 +587,7 @@ class TestIntegrationScenarios:
 
         # Should trigger order sync if enabled
         if manager._order_sync_enabled:
-            mock_order_manager.sync_with_open_orders.assert_called()
+            mock_order_manager.sync_orders_with_position.assert_called()
 
     @pytest.mark.asyncio
     async def test_realtime_callback_registration(self, mock_client, mock_realtime_client):
@@ -594,11 +597,11 @@ class TestIntegrationScenarios:
         await manager.initialize(realtime_client=mock_realtime_client)
 
         # Should register callbacks
-        assert mock_realtime_client.subscribe_to_user_sync.called
-        assert mock_realtime_client.subscribe_to_user_hub.called
+        assert mock_realtime_client.subscribe_user_updates.called
+        assert mock_realtime_client.add_callback.called
 
         # Verify callback functions are set
-        calls = mock_realtime_client.subscribe_to_user_sync.call_args_list
+        calls = mock_realtime_client.add_callback.call_args_list
         assert len(calls) > 0
 
     @pytest.mark.asyncio
