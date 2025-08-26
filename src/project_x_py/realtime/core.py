@@ -338,14 +338,15 @@ class ProjectXRealtimeClient(
         self.market_hub_url = final_market_url
 
         # Set up base URLs for token refresh
-        if config:
-            # Use config URLs if provided
+        # Priority: direct parameters > config > defaults
+        if user_hub_url or market_hub_url:
+            # Use provided URLs (with fallback to final URLs which include config/defaults)
+            self.base_user_url = user_hub_url or final_user_url
+            self.base_market_url = market_hub_url or final_market_url
+        elif config:
+            # Use config URLs if no direct parameters provided
             self.base_user_url = config.user_hub_url
             self.base_market_url = config.market_hub_url
-        elif user_hub_url and market_hub_url:
-            # Use provided URLs
-            self.base_user_url = user_hub_url
-            self.base_market_url = market_hub_url
         else:
             # Default to TopStepX endpoints
             self.base_user_url = "https://rtc.topstepx.com/hubs/user"
