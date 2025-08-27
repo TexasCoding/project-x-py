@@ -15,6 +15,7 @@ WARNING: This script will open REAL positions. Use with care!
 
 import asyncio
 import logging
+from decimal import Decimal
 from typing import Any, cast
 
 from project_x_py import EventType, TradingSuite
@@ -62,13 +63,13 @@ class RiskManagerDemo:
             self.suite.risk_manager.config = RiskConfig(
                 max_position_size=5,  # Max 5 contracts per position
                 max_positions=3,  # Max 3 concurrent positions
-                max_risk_per_trade=0.02,  # 2% per trade
-                max_daily_loss=0.05,  # 5% daily loss limit
+                max_risk_per_trade=Decimal(0.02),  # 2% per trade
+                max_daily_loss=Decimal(0.05),  # 5% daily loss limit
                 max_correlated_positions=3,  # Max 3 correlated positions
                 use_kelly_criterion=True,  # Use Kelly for sizing
                 use_trailing_stops=True,  # Auto-adjust stops
-                trailing_stop_trigger=50.0,  # Activate after $50 profit
-                trailing_stop_distance=25.0,  # Trail by $25
+                trailing_stop_trigger=Decimal(50.0),  # Activate after $50 profit
+                trailing_stop_distance=Decimal(25.0),  # Trail by $25
             )
             print("✅ Risk management configured")
 
@@ -512,7 +513,7 @@ class RiskManagerDemo:
                 self.suite.risk_manager.config.max_daily_loss_amount
             )
         else:
-            daily_loss_limit_amount = account_balance * daily_loss_limit
+            daily_loss_limit_amount = Decimal(account_balance) * daily_loss_limit
         print(
             f"   Daily Loss Limit: ${abs(daily_loss):.2f}/${daily_loss_limit_amount:.2f}"
         )

@@ -497,7 +497,7 @@ async def main() -> bool:
         print("=" * 60, flush=True)
 
         # Memory stats
-        memory_stats = orderbook.get_memory_stats()
+        memory_stats = await orderbook.get_memory_stats()
         print("\n💾 Memory Usage:", flush=True)
         print(f"   Bid Depth: {memory_stats.get('avg_bid_depth', 0):,}", flush=True)
         print(f"   Ask Depth: {memory_stats.get('avg_ask_depth', 0):,}", flush=True)
