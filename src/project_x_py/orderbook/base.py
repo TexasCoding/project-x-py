@@ -368,10 +368,12 @@ class OrderBookBase(BaseStatisticsTracker):
                 if ask_with_volume.height > 0:
                     best_ask = float(ask_with_volume["price"][0])
 
-            # Calculate spread
+            # Calculate spread and mid price
             spread = None
+            mid_price = None
             if best_bid is not None and best_ask is not None:
                 spread = best_ask - best_bid
+                mid_price = (best_bid + best_ask) / 2
 
             # Update history
             current_time = datetime.now(self.timezone)
@@ -396,6 +398,8 @@ class OrderBookBase(BaseStatisticsTracker):
                     {
                         "spread": spread,
                         "timestamp": current_time,
+                        "bid": best_bid,
+                        "ask": best_ask,
                     }
                 )
 
@@ -403,6 +407,7 @@ class OrderBookBase(BaseStatisticsTracker):
                 "bid": best_bid,
                 "ask": best_ask,
                 "spread": spread,
+                "mid_price": mid_price,
                 "timestamp": current_time,
             }
 
@@ -411,12 +416,24 @@ class OrderBookBase(BaseStatisticsTracker):
                 LogMessages.DATA_ERROR,
                 extra={"operation": "get_best_bid_ask", "error": str(e)},
             )
-            return {"bid": None, "ask": None, "spread": None, "timestamp": None}
+            return {
+                "bid": None,
+                "ask": None,
+                "spread": None,
+                "mid_price": None,
+                "timestamp": None,
+            }
 
     @handle_errors(
         "get best bid/ask",
         reraise=False,
-        default_return={"bid": None, "ask": None, "spread": None, "timestamp": None},
+        default_return={
+            "bid": None,
+            "ask": None,
+            "spread": None,
+            "mid_price": None,
+            "timestamp": None,
+        },
     )
     async def get_best_bid_ask(self) -> dict[str, Any]:
         """
@@ -435,6 +452,7 @@ class OrderBookBase(BaseStatisticsTracker):
                 bid: The highest bid price (float or None if no bids)
                 ask: The lowest ask price (float or None if no asks)
                 spread: The difference between ask and bid (float or None if either missing)
+                mid_price: The midpoint between bid and ask ((bid + ask) / 2, or None if either missing)
                 timestamp: The time of calculation (datetime)
 
         Example:
@@ -647,11 +665,9 @@ class OrderBookBase(BaseStatisticsTracker):
                     "best_bid": best_prices["bid"],
                     "best_ask": best_prices["ask"],
                     "spread": best_prices["spread"],
-                    "mid_price": (
-                        (best_prices["bid"] + best_prices["ask"]) / 2
-                        if best_prices["bid"] and best_prices["ask"]
-                        else None
-                    ),
+                    "mid_price": best_prices[
+                        "mid_price"
+                    ],  # Now available from get_best_bid_ask
                     "bids": bid_levels,
                     "asks": ask_levels,
                     "total_bid_volume": int(total_bid_volume),

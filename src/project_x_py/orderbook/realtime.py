@@ -296,7 +296,7 @@ class RealtimeHandler:
             "."
         )[0]
 
-        is_match = clean_contract.startswith(clean_instrument)
+        is_match = clean_contract == clean_instrument
         if not is_match:
             self.logger.debug(
                 f"Contract mismatch: received '{contract_id}' (clean: '{clean_contract}'), "
