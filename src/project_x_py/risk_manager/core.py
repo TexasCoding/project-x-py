@@ -172,13 +172,30 @@ class RiskManager(BaseStatisticsTracker):
 
             # Determine risk amount
             if risk_amount is None:
-                risk_percent = risk_percent or float(self.config.max_risk_per_trade)
+                # Use provided risk_percent, or default to config if None
+                if risk_percent is None:
+                    risk_percent = float(self.config.max_risk_per_trade)
                 risk_amount = account_balance * risk_percent
 
             # Apply maximum risk limits
             if self.config.max_risk_per_trade_amount:
                 risk_amount = min(
                     risk_amount, float(self.config.max_risk_per_trade_amount)
+                )
+
+            # If risk is zero, return zero position size
+            if risk_amount == 0:
+                return PositionSizingResponse(
+                    position_size=0,
+                    risk_amount=0.0,
+                    risk_percent=0.0,
+                    entry_price=entry_price,
+                    stop_loss=stop_loss,
+                    tick_size=float(instrument.tickSize) if instrument else 0.25,
+                    account_balance=account_balance,
+                    kelly_fraction=None,
+                    max_position_size=self.config.max_position_size,
+                    sizing_method="zero_risk",
                 )
 
             # Calculate price difference and position size
@@ -367,7 +384,10 @@ class RiskManager(BaseStatisticsTracker):
             return result
 
         except Exception as e:
+            import traceback
+
             logger.error(f"Error validating trade: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             # Track failed operation
             duration_ms = (time.time() - start_time) * 1000
             await self.record_timing("validate_trade_failed", duration_ms)
@@ -1114,6 +1134,219 @@ class RiskManager(BaseStatisticsTracker):
         except Exception as e:
             logger.error(f"Error stopping trailing stops: {e}")
 
+    async def check_daily_reset(self) -> None:
+        """Check and perform daily reset if needed."""
+        async with self._daily_reset_lock:
+            today = datetime.now().date()
+            if today > self._last_reset_date:
+                self._daily_loss = Decimal("0")
+                self._daily_trades = 0
+                self._last_reset_date = today
+                await self.increment("daily_reset")
+
+    async def calculate_stop_loss(
+        self, entry_price: float, side: OrderSide, atr_value: float | None = None
+    ) -> float:
+        """Calculate stop loss price."""
+        if self.config.stop_loss_type == "fixed":
+            distance = float(self.config.default_stop_distance)
+            return (
+                entry_price - distance
+                if side == OrderSide.BUY
+                else entry_price + distance
+            )
+
+        elif self.config.stop_loss_type == "percentage":
+            pct = float(self.config.default_stop_distance)
+            return (
+                entry_price * (1 - pct)
+                if side == OrderSide.BUY
+                else entry_price * (1 + pct)
+            )
+
+        elif self.config.stop_loss_type == "atr" and atr_value:
+            distance = atr_value * float(self.config.default_stop_atr_multiplier)
+            return (
+                entry_price - distance
+                if side == OrderSide.BUY
+                else entry_price + distance
+            )
+
+        # Default fallback
+        return entry_price - 50 if side == OrderSide.BUY else entry_price + 50
+
+    async def calculate_take_profit(
+        self,
+        entry_price: float,
+        stop_loss: float,
+        side: OrderSide,
+        risk_reward_ratio: float | None = None,
+    ) -> float:
+        """Calculate take profit price."""
+        if risk_reward_ratio is None:
+            risk_reward_ratio = float(self.config.default_risk_reward_ratio)
+
+        risk = abs(entry_price - stop_loss)
+        reward = risk * risk_reward_ratio
+
+        return entry_price + reward if side == OrderSide.BUY else entry_price - reward
+
+    async def should_activate_trailing_stop(
+        self, entry_price: float, current_price: float, side: OrderSide
+    ) -> bool:
+        """Check if trailing stop should be activated."""
+        if not self.config.use_trailing_stops:
+            return False
+
+        profit = (
+            current_price - entry_price
+            if side == OrderSide.BUY
+            else entry_price - current_price
+        )
+        trigger = float(self.config.trailing_stop_trigger)
+
+        return profit >= trigger
+
+    def calculate_trailing_stop(self, current_price: float, side: OrderSide) -> float:
+        """Calculate trailing stop price."""
+        distance = float(self.config.trailing_stop_distance)
+        return (
+            current_price - distance
+            if side == OrderSide.BUY
+            else current_price + distance
+        )
+
+    async def analyze_portfolio_risk(self) -> dict[str, Any]:
+        """Analyze portfolio risk."""
+        try:
+            positions = []
+            if self.positions:
+                positions = await self.positions.get_all_positions()
+
+            total_risk = 0.0
+            position_risks = []
+
+            for pos in positions:
+                risk = await self._calculate_position_risk(pos)
+                total_risk += float(risk["amount"])  # Convert Decimal to float
+                position_risks.append(
+                    {
+                        "instrument": pos.contractId,
+                        "risk": risk,
+                        "size": getattr(pos, "netQuantity", getattr(pos, "size", 0)),
+                    }
+                )
+
+            return {
+                "total_risk": total_risk,
+                "position_risks": position_risks,
+                "risk_metrics": await self.get_risk_metrics(),
+                "recommendations": [],
+            }
+        except Exception as e:
+            logger.error(f"Error analyzing portfolio risk: {e}")
+            return {
+                "total_risk": 0,
+                "position_risks": [],
+                "risk_metrics": {},
+                "recommendations": [],
+                "error": str(e),
+            }
+
+    async def analyze_trade_risk(
+        self,
+        instrument: str,
+        entry_price: float,
+        stop_loss: float,
+        take_profit: float,
+        position_size: int,
+    ) -> dict[str, Any]:
+        """Analyze individual trade risk."""
+        risk_amount = abs(entry_price - stop_loss) * position_size
+        reward_amount = abs(take_profit - entry_price) * position_size
+
+        account = await self._get_account_info()
+        risk_percent = (risk_amount / account.balance) if account.balance > 0 else 0
+
+        return {
+            "risk_amount": risk_amount,
+            "reward_amount": reward_amount,
+            "risk_reward_ratio": reward_amount / risk_amount if risk_amount > 0 else 0,
+            "risk_percent": risk_percent,
+        }
+
+    async def add_trade_result(
+        self,
+        instrument: str,
+        pnl: float,
+        entry_price: float | None = None,
+        exit_price: float | None = None,
+        size: int | None = None,
+        side: OrderSide | None = None,
+    ) -> None:
+        """Add trade result to history."""
+        trade = {
+            "instrument": instrument,
+            "pnl": pnl,
+            "entry_price": entry_price,
+            "exit_price": exit_price,
+            "size": size,
+            "side": side,
+            "timestamp": datetime.now(),
+        }
+
+        self._trade_history.append(trade)
+
+        # Update daily loss
+        if pnl < 0:
+            self._daily_loss += Decimal(str(abs(pnl)))
+
+        # Update statistics
+        await self.update_trade_statistics()
+
+    async def update_trade_statistics(self) -> None:
+        """Update trade statistics from history."""
+        if len(self._trade_history) < 2:
+            return
+
+        wins = [t for t in self._trade_history if t["pnl"] > 0]
+        losses = [t for t in self._trade_history if t["pnl"] < 0]
+
+        total_trades = len(self._trade_history)
+        self._win_rate = len(wins) / total_trades if total_trades > 0 else 0
+
+        if wins:
+            self._avg_win = Decimal(str(sum(t["pnl"] for t in wins) / len(wins)))
+
+        if losses:
+            self._avg_loss = Decimal(
+                str(abs(sum(t["pnl"] for t in losses) / len(losses)))
+            )
+
+    async def calculate_kelly_position_size(
+        self, base_size: int, win_rate: float, avg_win: float, avg_loss: float
+    ) -> int:
+        """Calculate Kelly position size."""
+        if avg_loss == 0 or win_rate == 0:
+            return base_size
+
+        # Kelly formula: f = (p * b - q) / b
+        # where p = win rate, q = loss rate, b = win/loss ratio
+        b = avg_win / avg_loss
+        p = win_rate
+        q = 1 - win_rate
+
+        kelly = (p * b - q) / b
+
+        # Apply Kelly fraction
+        kelly *= float(self.config.kelly_fraction)
+
+        # Ensure reasonable bounds
+        kelly = max(0, min(kelly, 0.25))  # Cap at 25%
+
+        # Round to nearest integer instead of truncating
+        return round(base_size * (1 + kelly))
+
     async def cleanup(self) -> None:
         """Clean up all resources and cancel active tasks."""
         try:
@@ -1125,9 +1358,18 @@ class RiskManager(BaseStatisticsTracker):
                 if not task.done():
                     task.cancel()
 
+            # Cancel all trailing stop tasks
+            trailing_tasks: list[asyncio.Task[Any]] = list(
+                self._trailing_stop_tasks.values()
+            )
+            for task in trailing_tasks:
+                if not task.done():
+                    task.cancel()
+
             # Wait for all tasks to complete cancellation
-            if active_tasks:
-                await asyncio.gather(*active_tasks, return_exceptions=True)
+            all_tasks = active_tasks + trailing_tasks
+            if all_tasks:
+                await asyncio.gather(*all_tasks, return_exceptions=True)
 
             # Clear tracking
             self._active_tasks.clear()
