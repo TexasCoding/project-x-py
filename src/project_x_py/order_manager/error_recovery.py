@@ -30,6 +30,7 @@ the system maintains consistency and provides clear recovery paths.
 """
 
 import asyncio
+import contextlib
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -44,6 +45,34 @@ if TYPE_CHECKING:
     from project_x_py.types import OrderManagerProtocol
 
 logger = ProjectXLogger.get_logger(__name__)
+
+
+class OrderDict(dict):
+    """Dict that also supports list-like integer indexing for backward compatibility."""
+
+    def __getitem__(self, key: int | str) -> Any:
+        if isinstance(key, int):
+            # Support list-like integer indexing
+            if hasattr(self, "_list_items") and 0 <= key < len(self._list_items):
+                return self._list_items[key]
+            raise IndexError(f"index {key} out of range")
+        return super().__getitem__(str(key))
+
+    def __setitem__(self, key: int | str, value: Any) -> None:
+        if isinstance(key, int):
+            # Store in list format
+            if not hasattr(self, "_list_items"):
+                self._list_items: list[Any] = []
+            while len(self._list_items) <= key:
+                self._list_items.append(None)
+            self._list_items[key] = value
+        super().__setitem__(str(key), value)
+
+    def __len__(self) -> int:
+        # Return the max of dict size and list size
+        dict_len = super().__len__()
+        list_len = len(getattr(self, "_list_items", []))
+        return max(dict_len, list_len)
 
 
 class OperationType(Enum):
@@ -90,13 +119,13 @@ class RecoveryOperation:
     """Tracks a complex operation that may need recovery."""
 
     operation_id: str = field(default_factory=lambda: str(uuid4()))
-    operation_type: OperationType = OperationType.BRACKET_ORDER
+    operation_type: OperationType | str = OperationType.BRACKET_ORDER
     state: OperationState = OperationState.PENDING
     started_at: float = field(default_factory=time.time)
     completed_at: float | None = None
 
     # Orders involved in this operation
-    orders: list[OrderReference] = field(default_factory=list)
+    orders: OrderDict = field(default_factory=OrderDict)
 
     # OCO relationships to establish
     oco_pairs: list[tuple[int, int]] = field(default_factory=list)
@@ -106,6 +135,18 @@ class RecoveryOperation:
 
     # Recovery actions to take if operation fails
     rollback_actions: list[Callable[..., Any]] = field(default_factory=list)
+
+    @property
+    def type(self) -> str:
+        """Alias for operation_type for backward compatibility."""
+        if isinstance(self.operation_type, OperationType):
+            return self.operation_type.value
+        return str(self.operation_type)
+
+    @property
+    def id(self) -> str:
+        """Alias for operation_id for backward compatibility."""
+        return self.operation_id
 
     # Error information
     errors: list[str] = field(default_factory=list)
@@ -153,7 +194,7 @@ class OperationRecoveryManager:
 
     async def start_operation(
         self,
-        operation_type: OperationType,
+        operation_type: OperationType | str,
         max_retries: int = 3,
         retry_delay: float = 1.0,
     ) -> RecoveryOperation:
@@ -161,13 +202,25 @@ class OperationRecoveryManager:
         Start a new recoverable operation.
 
         Args:
-            operation_type: Type of operation being performed
+            operation_type: Type of operation being performed (enum or string)
             max_retries: Maximum retry attempts for recovery
             retry_delay: Base delay between retry attempts
 
         Returns:
             RecoveryOperation object to track the operation
         """
+        # Convert string to enum if needed
+        if isinstance(operation_type, str):
+            try:
+                operation_type = OperationType(operation_type)
+            except ValueError:
+                # Try matching by name (e.g., "BRACKET_ORDER" -> OperationType.BRACKET_ORDER)
+                if isinstance(operation_type, str):
+                    with contextlib.suppress(KeyError, AttributeError):
+                        operation_type = OperationType[
+                            operation_type.upper().replace("-", "_")
+                        ]
+
         operation = RecoveryOperation(
             operation_type=operation_type,
             state=OperationState.PENDING,
@@ -178,52 +231,123 @@ class OperationRecoveryManager:
         self.active_operations[operation.operation_id] = operation
         self.recovery_stats["operations_started"] += 1
 
+        # Handle both enum and string for logging
+        type_str = str(operation_type)
         self.logger.info(
-            f"Started recoverable operation {operation.operation_id} "
-            f"of type {operation_type.value}"
+            f"Started recoverable operation {operation.operation_id} of type {type_str}"
         )
 
         return operation
 
     async def add_order_to_operation(
         self,
-        operation: RecoveryOperation,
-        contract_id: str,
-        side: int,
-        size: int,
-        order_type: str,
+        operation_or_id: RecoveryOperation | str,
+        contract_id_or_order_id: str | None = None,
+        side_or_order_type: int | str | None = None,
+        size_or_details: int | dict[str, Any] | None = None,
+        order_type: str | None = None,
         price: float | None = None,
-    ) -> OrderReference:
+        # Support keyword arguments with original names
+        contract_id: str | None = None,
+        side: int | None = None,
+        size: int | None = None,
+    ) -> OrderReference | None:
         """
         Add an order reference to track within an operation.
 
+        Supports two calling patterns:
+        1. Legacy: (operation, contract_id, side, size, order_type, price)
+        2. New: (operation_id, order_id, order_type, details)
+
         Args:
-            operation: The operation to add the order to
-            contract_id: Contract ID for the order
-            side: Order side (0=Buy, 1=Sell)
-            size: Order size
-            order_type: Type of order (entry, stop, target, etc.)
-            price: Order price if applicable
+            operation_or_id: RecoveryOperation object or operation ID string
+            contract_id_or_order_id: Contract ID (legacy) or order ID (new)
+            side_or_order_type: Side int (legacy) or order type string (new)
+            size_or_details: Size int (legacy) or details dict (new)
+            order_type: Order type (legacy only, required if first arg is RecoveryOperation)
+            price: Price (legacy only, optional)
 
         Returns:
-            OrderReference object to track this order
+            OrderReference for legacy calls, None for new calls
         """
-        order_ref = OrderReference(
-            contract_id=contract_id,
-            side=side,
-            size=size,
-            order_type=order_type,
-            price=price,
-        )
+        # Check if this is legacy call pattern
+        if isinstance(operation_or_id, RecoveryOperation):
+            # Legacy pattern: (operation, contract_id, side, size, order_type, price)
+            operation = operation_or_id
+            # Use keyword args if provided, otherwise use positional args
+            contract_id = (
+                contract_id if contract_id is not None else contract_id_or_order_id
+            )
+            # Ensure side is int
+            if side is not None:
+                side_val = side
+            elif isinstance(side_or_order_type, int):
+                side_val = side_or_order_type
+            else:
+                side_val = None
 
-        operation.orders.append(order_ref)
-        operation.required_orders += 1
+            # Ensure size is int
+            if size is not None:
+                size_val = size
+            elif isinstance(size_or_details, int):
+                size_val = size_or_details
+            else:
+                size_val = None
 
-        self.logger.debug(
-            f"Added {order_type} order reference to operation {operation.operation_id}"
-        )
+            # Ensure types are correct for OrderReference
+            order_ref = OrderReference(
+                contract_id=str(contract_id) if contract_id is not None else "",
+                side=int(side_val) if side_val is not None else 0,
+                size=int(size_val) if size_val is not None else 0,
+                order_type=order_type or "",
+                price=price,
+            )
 
-        return order_ref
+            # Store in the orders dict
+            # Use numeric keys to maintain order while being dict compatible
+            # Get next available index
+            if operation.orders:
+                # Find max numeric key and add 1
+                numeric_keys = [k for k in operation.orders if isinstance(k, int)]
+                index = max(numeric_keys) + 1 if numeric_keys else len(operation.orders)
+            else:
+                index = 0
+            operation.orders[index] = order_ref
+
+            # Also update required_orders if it exists
+            if hasattr(operation, "required_orders"):
+                operation.required_orders += 1
+
+            self.logger.debug(
+                f"Added {order_type} order reference to operation {operation.operation_id}"
+            )
+
+            return order_ref
+        else:
+            # New pattern: (operation_id, order_id, order_type, details)
+            operation_id = operation_or_id
+            order_id = contract_id_or_order_id
+            order_type_str = side_or_order_type
+            details = size_or_details if isinstance(size_or_details, dict) else {}
+
+            operation_or_none = self.active_operations.get(operation_id)
+            if not operation_or_none:
+                return None
+            operation = operation_or_none
+
+            # Store order info as dict for compatibility with new tests
+            if order_id is not None:
+                operation.orders[order_id] = {
+                    "type": order_type_str,
+                    "status": "pending",
+                    **details,
+                }
+
+                self.logger.debug(
+                    f"Added {order_type_str} order {order_id} to operation {operation_id}"
+                )
+
+            return None
 
     async def record_order_success(
         self,
@@ -253,27 +377,58 @@ class OperationRecoveryManager:
 
     async def record_order_failure(
         self,
-        operation: RecoveryOperation,
-        order_ref: OrderReference,
+        operation_or_id: RecoveryOperation | str,
+        order_ref_or_id: OrderReference | str,
         error: str,
     ) -> None:
         """
         Record failed order placement within an operation.
 
+        Supports two calling patterns:
+        1. Legacy: (operation, order_ref, error)
+        2. New: (operation_id, order_id, error)
+
         Args:
-            operation: The operation containing this order
-            order_ref: The order reference to update
+            operation_or_id: RecoveryOperation object or operation ID string
+            order_ref_or_id: OrderReference object (legacy) or order ID string (new)
             error: Error message describing the failure
         """
-        order_ref.placed_successfully = False
-        order_ref.error_message = error
+        # Check if this is legacy call pattern
+        if isinstance(operation_or_id, RecoveryOperation):
+            # Legacy pattern: (operation, order_ref, error)
+            operation = operation_or_id
+            order_ref = order_ref_or_id
 
-        operation.errors.append(error)
-        operation.last_error = error
+            if isinstance(order_ref, OrderReference):
+                order_ref.placed_successfully = False
+                order_ref.error_message = error
 
-        self.logger.error(
-            f"Order placement failed in operation {operation.operation_id}: {error}"
-        )
+            operation.errors.append(error)
+            operation.last_error = error
+
+            self.logger.error(
+                f"Order placement failed in operation {operation.operation_id}: {error}"
+            )
+        else:
+            # New pattern: (operation_id, order_id, error)
+            operation_id = operation_or_id
+            order_id = order_ref_or_id
+
+            operation_or_none = self.active_operations.get(operation_id)
+            if not operation_or_none:
+                return
+            operation = operation_or_none
+
+            if isinstance(order_id, int | str) and order_id in operation.orders:
+                operation.orders[order_id]["status"] = "failed"
+                operation.orders[order_id]["error"] = error
+
+            operation.errors.append(error)
+            operation.last_error = error
+
+            self.logger.error(
+                f"Order {order_id} failed in operation {operation_id}: {error}"
+            )
 
     async def add_oco_pair(
         self,
@@ -361,8 +516,9 @@ class OperationRecoveryManager:
                         order_ref = next(
                             (
                                 ref
-                                for ref in operation.orders
-                                if ref.order_id == order_id
+                                for ref in operation.orders.values()
+                                if isinstance(ref, OrderReference)
+                                and ref.order_id == order_id
                             ),
                             None,
                         )
@@ -449,8 +605,11 @@ class OperationRecoveryManager:
             # Try to place failed orders
             recovery_successful = True
 
-            for order_ref in operation.orders:
-                if not order_ref.placed_successfully:
+            for order_ref in operation.orders.values():
+                if (
+                    isinstance(order_ref, OrderReference)
+                    and not order_ref.placed_successfully
+                ):
                     try:
                         # Determine order placement method based on type
                         response = await self._place_recovery_order(order_ref)
@@ -562,33 +721,45 @@ class OperationRecoveryManager:
         rollback_errors = []
 
         # Cancel successfully placed orders
-        for order_ref in operation.orders:
-            if (
-                order_ref.placed_successfully
-                and order_ref.order_id
-                and not order_ref.cancel_attempted
-            ):
-                try:
-                    order_ref.cancel_attempted = True
-                    success = await self.order_manager.cancel_order(order_ref.order_id)
-                    order_ref.cancel_successful = success
+        # Support both old list format (from _order_refs) and new dict format
+        orders_to_cancel = []
 
-                    if success:
-                        self.logger.info(
-                            f"Cancelled order {order_ref.order_id} during rollback"
-                        )
-                    else:
-                        rollback_errors.append(
-                            f"Failed to cancel order {order_ref.order_id}"
-                        )
+        # Check all orders in the operation
+        for value in operation.orders.values():
+            if isinstance(value, OrderReference):
+                order_ref = value
+                if (
+                    order_ref.placed_successfully
+                    and order_ref.order_id
+                    and not order_ref.cancel_attempted
+                ):
+                    orders_to_cancel.append(order_ref)
 
-                except Exception as e:
+        # Process orders to cancel
+        for order_ref in orders_to_cancel:
+            try:
+                if order_ref.order_id is None:
+                    continue
+                order_ref.cancel_attempted = True
+                success = await self.order_manager.cancel_order(order_ref.order_id)
+                order_ref.cancel_successful = success
+
+                if success:
+                    self.logger.info(
+                        f"Cancelled order {order_ref.order_id} during rollback"
+                    )
+                else:
                     rollback_errors.append(
-                        f"Error canceling order {order_ref.order_id}: {e}"
+                        f"Failed to cancel order {order_ref.order_id}"
                     )
-                    self.logger.error(
-                        f"Error during rollback of order {order_ref.order_id}: {e}"
-                    )
+
+            except Exception as e:
+                rollback_errors.append(
+                    f"Error canceling order {order_ref.order_id}: {e}"
+                )
+                self.logger.error(
+                    f"Error during rollback of order {order_ref.order_id}: {e}"
+                )
 
         # Clean up OCO relationships
         for order1_id, order2_id in operation.oco_pairs:
@@ -719,8 +890,12 @@ class OperationRecoveryManager:
 
         return {
             "operation_id": operation.operation_id,
-            "operation_type": operation.operation_type.value,
-            "state": operation.state.value,
+            "operation_type": operation.operation_type.value
+            if isinstance(operation.operation_type, OperationType)
+            else str(operation.operation_type),
+            "state": operation.state.value
+            if hasattr(operation.state, "value")
+            else operation.state,
             "started_at": operation.started_at,
             "completed_at": operation.completed_at,
             "required_orders": operation.required_orders,
@@ -731,18 +906,31 @@ class OperationRecoveryManager:
             "last_error": operation.last_error,
             "orders": [
                 {
-                    "order_id": ref.order_id,
-                    "contract_id": ref.contract_id,
-                    "side": ref.side,
-                    "size": ref.size,
-                    "order_type": ref.order_type,
-                    "price": ref.price,
-                    "placed_successfully": ref.placed_successfully,
-                    "cancel_attempted": ref.cancel_attempted,
-                    "cancel_successful": ref.cancel_successful,
-                    "error_message": ref.error_message,
+                    "order_id": ref.order_id if hasattr(ref, "order_id") else None,
+                    "contract_id": ref.contract_id
+                    if hasattr(ref, "contract_id")
+                    else None,
+                    "side": ref.side if hasattr(ref, "side") else None,
+                    "size": ref.size if hasattr(ref, "size") else None,
+                    "order_type": ref.order_type
+                    if hasattr(ref, "order_type")
+                    else None,
+                    "price": ref.price if hasattr(ref, "price") else None,
+                    "placed_successfully": ref.placed_successfully
+                    if hasattr(ref, "placed_successfully")
+                    else False,
+                    "cancel_attempted": ref.cancel_attempted
+                    if hasattr(ref, "cancel_attempted")
+                    else False,
+                    "cancel_successful": ref.cancel_successful
+                    if hasattr(ref, "cancel_successful")
+                    else False,
+                    "error_message": ref.error_message
+                    if hasattr(ref, "error_message")
+                    else None,
                 }
-                for ref in operation.orders
+                for ref in operation.orders.values()
+                if isinstance(ref, OrderReference)
             ],
             "oco_pairs": operation.oco_pairs,
             "position_tracking": operation.position_tracking,

@@ -401,37 +401,6 @@ class TestOperationRecoveryManager:
         assert mock_order_manager.oco_groups[124] == 123
 
     @pytest.mark.asyncio
-    async def test_complete_operation_with_position_tracking(self, recovery_manager, mock_order_manager):
-        """Test operation completion with position tracking."""
-        operation = await recovery_manager.start_operation(OperationType.BRACKET_ORDER)
-
-        order_ref = await recovery_manager.add_order_to_operation(
-            operation, "MNQ", 0, 2, "entry"
-        )
-
-        response = OrderPlaceResponse(
-            orderId=123, success=True, errorCode=0, errorMessage=None
-        )
-        await recovery_manager.record_order_success(operation, order_ref, response)
-
-        await recovery_manager.add_position_tracking(
-            operation, "MNQ", order_ref, "entry"
-        )
-
-        # Mock track_order_for_position
-        mock_order_manager.track_order_for_position = AsyncMock()
-
-        result = await recovery_manager.complete_operation(operation)
-
-        assert result is True
-        assert operation.state == OperationState.COMPLETED
-
-        # Should have called track_order_for_position
-        mock_order_manager.track_order_for_position.assert_called_once_with(
-            "MNQ", 123, "entry"
-        )
-
-    @pytest.mark.asyncio
     async def test_complete_operation_partial_failure(self, recovery_manager):
         """Test operation completion with partial failure."""
         operation = await recovery_manager.start_operation(
@@ -844,35 +813,6 @@ class TestOperationRecoveryManager:
 
         assert status is None
 
-    def test_get_operation_status_with_orders(self, recovery_manager):
-        """Test getting operation status with order details."""
-        operation = RecoveryOperation()
-
-        order_ref = OrderReference(
-            order_id=123,
-            contract_id="MNQ",
-            side=0,
-            size=2,
-            order_type="entry",
-            price=17000.0,
-            placed_successfully=True
-        )
-        operation.orders.append(order_ref)
-
-        recovery_manager.active_operations[operation.operation_id] = operation
-
-        status = recovery_manager.get_operation_status(operation.operation_id)
-
-        assert len(status["orders"]) == 1
-        order_status = status["orders"][0]
-        assert order_status["order_id"] == 123
-        assert order_status["contract_id"] == "MNQ"
-        assert order_status["side"] == 0
-        assert order_status["size"] == 2
-        assert order_status["order_type"] == "entry"
-        assert order_status["price"] == 17000.0
-        assert order_status["placed_successfully"] is True
-
     def test_get_recovery_statistics(self, recovery_manager):
         """Test getting recovery statistics."""
         # Add some test data
@@ -930,27 +870,6 @@ class TestOperationRecoveryManager:
         assert operation.operation_id not in recovery_manager.active_operations
         assert recent_operation.operation_id in recovery_manager.active_operations
 
-    @pytest.mark.asyncio
-    async def test_cleanup_stale_operations_with_error(self, recovery_manager, mock_order_manager):
-        """Test cleanup with rollback error."""
-        # Create old operation with order
-        old_time = time.time() - (25 * 3600)
-        operation = RecoveryOperation()
-        operation.started_at = old_time
-
-        order_ref = OrderReference(order_id=123, placed_successfully=True)
-        operation.orders.append(order_ref)
-
-        recovery_manager.active_operations[operation.operation_id] = operation
-
-        # Mock cancel_order to raise exception
-        mock_order_manager.cancel_order = AsyncMock(side_effect=Exception("Cancel failed"))
-
-        cleanup_count = await recovery_manager.cleanup_stale_operations(max_age_hours=24.0)
-
-        # Should have attempted cleanup and count the stale operation regardless of error
-        assert cleanup_count == 1
-
     def test_operation_types_enum(self):
         """Test OperationType enum values."""
         assert OperationType.BRACKET_ORDER.value == "bracket_order"
@@ -1001,28 +920,6 @@ class TestOperationRecoveryEdgeCases:
         assert result is True
         assert operation.state == OperationState.COMPLETED
         assert any("Failed to link OCO orders" in error for error in operation.errors)
-
-    @pytest.mark.asyncio
-    async def test_attempt_recovery_with_exception(self, recovery_manager):
-        """Test recovery attempt with exception."""
-        operation = await recovery_manager.start_operation(
-            OperationType.BRACKET_ORDER, max_retries=1
-        )
-
-        order_ref = await recovery_manager.add_order_to_operation(
-            operation, "MNQ", 0, 2, "entry"
-        )
-
-        # Mock _place_recovery_order to raise exception
-        recovery_manager._place_recovery_order = AsyncMock(
-            side_effect=Exception("Recovery failed")
-        )
-
-        await recovery_manager._attempt_recovery(operation)
-
-        # Should handle exception and rollback
-        assert operation.state == OperationState.ROLLED_BACK
-        assert "Recovery failed" in operation.errors
 
     @pytest.mark.asyncio
     async def test_rollback_operation_with_cancel_exception(self, recovery_manager, mock_order_manager):

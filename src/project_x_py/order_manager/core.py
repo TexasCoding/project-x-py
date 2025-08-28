@@ -183,6 +183,9 @@ class OrderManager(
         self.event_bus = event_bus  # Store the event bus for emitting events
         self.logger = ProjectXLogger.get_logger(__name__)
 
+        # Initialize position order tracking
+        self.position_orders: dict[str, dict[str, Any]] = {}
+
         # Store configuration with defaults
         self.config = config or {}
         self._apply_config_defaults()
@@ -303,11 +306,15 @@ class OrderManager(
                         self.logger.warning("⚠️ Real-time client connection failed")
                         return False
 
-                # Subscribe to user updates to receive order events
-                if await realtime_client.subscribe_user_updates():
-                    self.logger.info("📡 Subscribed to user order updates")
+                    # Subscribe to user updates to receive order events (only if we just connected)
+                    if await realtime_client.subscribe_user_updates():
+                        self.logger.info("📡 Subscribed to user order updates")
+                    else:
+                        self.logger.warning("⚠️ Failed to subscribe to user updates")
                 else:
-                    self.logger.warning("⚠️ Failed to subscribe to user updates")
+                    self.logger.info(
+                        "📡 Real-time client already connected and subscribed"
+                    )
 
                 self._realtime_enabled = True
                 self.logger.info(
@@ -443,6 +450,18 @@ class OrderManager(
                 },
             )
 
+            # Validate size
+            if size <= 0:
+                raise ProjectXOrderError(f"Invalid order size: {size}")
+
+            # Validate prices are positive
+            if limit_price is not None and limit_price < 0:
+                raise ProjectXOrderError(f"Invalid negative price: {limit_price}")
+            if stop_price is not None and stop_price < 0:
+                raise ProjectXOrderError(f"Invalid negative price: {stop_price}")
+            if trail_price is not None and trail_price < 0:
+                raise ProjectXOrderError(f"Invalid negative price: {trail_price}")
+
             # CRITICAL: Validate tick size BEFORE any price operations
             await validate_price_tick_size(
                 limit_price, contract_id, self.project_x, "limit_price"
@@ -487,6 +506,15 @@ class OrderManager(
                 if not self.project_x.account_info:
                     raise ProjectXOrderError(ErrorMessages.ORDER_NO_ACCOUNT)
                 account_id = self.project_x.account_info.id
+            else:
+                # Validate that the provided account_id matches the authenticated account
+                if (
+                    self.project_x.account_info
+                    and account_id != self.project_x.account_info.id
+                ):
+                    raise ProjectXOrderError(
+                        f"Invalid account ID {account_id}. Expected {self.project_x.account_info.id}"
+                    )
 
             # Build order request payload
             payload = {
@@ -554,6 +582,16 @@ class OrderManager(
                 if size > self.stats["largest_order"]:
                     self.stats["largest_order"] = size
 
+                # Update order type specific statistics
+                from project_x_py.types.trading import OrderType
+
+                if order_type == OrderType.LIMIT:
+                    self.stats["limit_orders"] += 1
+                elif order_type == OrderType.MARKET:
+                    self.stats["market_orders"] += 1
+                elif order_type == OrderType.STOP or order_type == OrderType.STOP_LIMIT:
+                    self.stats["stop_orders"] += 1
+
                 # Update new statistics system
                 await self.increment("orders_placed")
                 await self.increment("total_volume", size)
@@ -602,7 +640,10 @@ class OrderManager(
 
     @handle_errors("search open orders")
     async def search_open_orders(
-        self, contract_id: str | None = None, side: int | None = None
+        self,
+        contract_id: str | None = None,
+        side: int | None = None,
+        account_id: int | None = None,
     ) -> list[Order]:
         """
         Search for open orders with optional filters.
@@ -617,7 +658,11 @@ class OrderManager(
         if not self.project_x.account_info:
             raise ProjectXOrderError(ErrorMessages.ORDER_NO_ACCOUNT)
 
-        params = {"accountId": self.project_x.account_info.id}
+        # Use provided account_id or default to current account
+        if account_id is not None:
+            params = {"accountId": account_id}
+        else:
+            params = {"accountId": self.project_x.account_info.id}
 
         if contract_id:
             # Resolve contract
@@ -628,9 +673,25 @@ class OrderManager(
         if side is not None:
             params["side"] = side
 
-        response = await self.project_x._make_request(
-            "POST", "/Order/searchOpen", data=params
-        )
+        # Retry logic for network failures
+        max_retries = 3
+        retry_delay = 0.1
+
+        for attempt in range(max_retries):
+            try:
+                response = await self.project_x._make_request(
+                    "POST", "/Order/searchOpen", data=params
+                )
+                break  # Success, exit retry loop
+            except Exception:
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(
+                        retry_delay * (2**attempt)
+                    )  # Exponential backoff
+                    continue
+                else:
+                    # Final attempt failed, re-raise
+                    raise
 
         # Response should be a dict for order search
         if not isinstance(response, dict):
@@ -872,6 +933,26 @@ class OrderManager(
         self.logger.info(LogMessages.ORDER_CANCEL, extra={"order_id": order_id})
 
         async with self.order_lock:
+            # Check if order is already filled
+            order_id_str = str(order_id)
+            if order_id_str in self.order_status_cache:
+                status = self.order_status_cache[order_id_str]
+                if status == OrderStatus.FILLED or status == 2:  # 2 is FILLED
+                    raise ProjectXOrderError(
+                        f"Cannot cancel order {order_id}: already filled"
+                    )
+
+            # Also check tracked orders
+            if order_id_str in self.tracked_orders:
+                tracked = self.tracked_orders[order_id_str]
+                if (
+                    tracked.get("status") == OrderStatus.FILLED
+                    or tracked.get("status") == 2
+                ):
+                    raise ProjectXOrderError(
+                        f"Cannot cancel order {order_id}: already filled"
+                    )
+
             # Get account ID if not provided
             if account_id is None:
                 if not self.project_x.account_info:
@@ -1005,7 +1086,8 @@ class OrderManager(
                 payload["size"] = size
 
             if len(payload) <= 2:  # Only accountId and orderId
-                return True  # Nothing to modify
+                self.logger.info("No changes specified for order modification")
+                return True  # No-op, consider it successful
 
             # Modify order
             response = await self.project_x._make_request(
@@ -1449,3 +1531,92 @@ class OrderManager(
                 self.logger.error(f"Error disconnecting realtime client: {e}")
 
         self.logger.info("AsyncOrderManager cleanup complete")
+
+    async def _should_attempt_circuit_breaker_recovery(self) -> bool:
+        """Check if enough time has passed to attempt circuit breaker recovery."""
+        if self._circuit_breaker_state != "open":
+            return False
+
+        time_since_failure = time.time() - self._circuit_breaker_last_failure_time
+        return time_since_failure >= self.status_check_circuit_breaker_reset_time
+
+    async def get_health_status(self) -> dict[str, Any]:
+        """Get comprehensive health status of the order manager."""
+        total_orders = self.stats.get("orders_placed", 0)
+        filled_orders = self.stats.get("orders_filled", 0)
+        rejected_orders = self.stats.get("orders_rejected", 0)
+
+        fill_rate = filled_orders / total_orders if total_orders > 0 else 0.0
+        rejection_rate = rejected_orders / total_orders if total_orders > 0 else 0.0
+
+        health: dict[str, Any] = {
+            "status": "healthy",
+            "metrics": {
+                "fill_rate": fill_rate,
+                "rejection_rate": rejection_rate,
+                "total_orders": total_orders,
+                "orders_filled": filled_orders,
+                "orders_rejected": rejected_orders,
+            },
+            "circuit_breaker_state": self._circuit_breaker_state,
+            "issues": [],
+        }
+
+        # Determine health status
+        if self._circuit_breaker_state == "open":
+            health["status"] = "unhealthy"
+            health["issues"].append("circuit_breaker_open")
+
+        if rejection_rate > 0.2:  # More than 20% rejection rate
+            health["status"] = "unhealthy"
+            health["issues"].append("high_rejection_rate")
+        elif rejection_rate > 0.1:  # More than 10% rejection rate
+            health["status"] = (
+                "degraded" if health["status"] == "healthy" else health["status"]
+            )
+            health["issues"].append("elevated_rejection_rate")
+
+        if fill_rate < 0.5 and total_orders > 10:  # Less than 50% fill rate
+            health["status"] = (
+                "degraded" if health["status"] == "healthy" else health["status"]
+            )
+            health["issues"].append("low_fill_rate")
+
+        return health
+
+    async def _update_order_statistics_on_fill(
+        self, order_data: dict[str, Any]
+    ) -> None:
+        """Update statistics when an order fills."""
+        self.stats["orders_filled"] += 1
+
+        if "size" in order_data:
+            self.stats["total_volume"] += order_data["size"]
+
+        if "limitPrice" in order_data or "limit_price" in order_data:
+            price = order_data.get("limitPrice", order_data.get("limit_price", 0))
+            if price and "size" in order_data:
+                value = Decimal(str(price)) * order_data["size"]
+                self.stats["total_value"] += value
+
+    async def _cleanup_old_orders(self) -> None:
+        """Clean up old completed orders from tracking."""
+        current_time = time.time()
+        cutoff_time = current_time - 3600  # Keep orders for 1 hour
+
+        orders_to_remove = []
+        for order_id, order_data in self.tracked_orders.items():
+            # Keep open orders regardless of age
+            if order_data.get("status") in [OrderStatus.OPEN, OrderStatus.PENDING]:
+                continue
+
+            # Remove old completed orders
+            if order_data.get("timestamp", current_time) < cutoff_time:
+                orders_to_remove.append(order_id)
+
+        for order_id in orders_to_remove:
+            self.tracked_orders.pop(order_id, None)
+            self.order_status_cache.pop(order_id, None)
+
+        if orders_to_remove:
+            self.logger.debug(f"Cleaned up {len(orders_to_remove)} old orders")

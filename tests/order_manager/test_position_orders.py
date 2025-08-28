@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from project_x_py.exceptions import ProjectXOrderError
 from project_x_py.models import OrderPlaceResponse
 from project_x_py.order_manager.position_orders import PositionOrderMixin
 
@@ -48,13 +49,14 @@ class TestPositionOrderMixin:
         )
 
     async def test_add_stop_loss_no_position(self):
-        """add_stop_loss returns None if no position found."""
+        """add_stop_loss raises error if no position found."""
         mixin = PositionOrderMixin()
         mixin.project_x = MagicMock()
         mixin.project_x.search_open_positions = AsyncMock(return_value=[])
         mixin.place_stop_order = AsyncMock()
-        resp = await mixin.add_stop_loss("AAA", 100.0)
-        assert resp is None
+        with pytest.raises(ProjectXOrderError) as exc_info:
+            await mixin.add_stop_loss("AAA", 100.0)
+        assert "no position" in str(exc_info.value).lower()
 
     async def test_add_take_profit_success(self):
         """add_take_profit places limit order and tracks it."""
@@ -75,13 +77,14 @@ class TestPositionOrderMixin:
         )
 
     async def test_add_take_profit_no_position(self):
-        """add_take_profit returns None if no position found."""
+        """add_take_profit raises error if no position found."""
         mixin = PositionOrderMixin()
         mixin.project_x = MagicMock()
         mixin.project_x.search_open_positions = AsyncMock(return_value=[])
         mixin.place_limit_order = AsyncMock()
-        resp = await mixin.add_take_profit("TUV", 55.0)
-        assert resp is None
+        with pytest.raises(ProjectXOrderError) as exc_info:
+            await mixin.add_take_profit("TUV", 55.0)
+        assert "no position" in str(exc_info.value).lower()
 
     async def test_track_order_for_position_multiple_types(self):
         """Test tracking multiple order types for same position."""
