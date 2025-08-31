@@ -450,7 +450,7 @@ class HealthMonitor:
         avg_response_time = 0.0
         if "suite" in stats:
             avg_response_time = stats["suite"].get("avg_response_time_ms", 0.0)
-        elif "performance" in stats and stats["performance"] is not None:  # type: ignore[unreachable]
+        elif "performance" in stats and stats["performance"] is not None:
             avg_response_time = (
                 stats["performance"].get("avg_response_time", 0.0) or 0.0
             )
