@@ -17,7 +17,7 @@ class MockAuthClient(AuthenticationMixin):
     def __init__(self):
         super().__init__()
         self.username = "test_user"
-        self.api_key = "test_api_key"
+        self.api_key = "test_api_key" # pragma: allowlist secret
         self.account_name = None
         self.base_url = "https://api.test.com"
         self.headers = {}

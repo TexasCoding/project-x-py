@@ -82,7 +82,7 @@ class TestEnhancedStatsTracking:
             context="trading",
             details={
                 "account_id": "ACC123456789",
-                "api_key": "secret_key_123",
+                "api_key": "secret_key_123", # pragma: allowlist secret
                 "order_size": 100,
                 "pnl": 5000.50,
                 "balance": 100000,

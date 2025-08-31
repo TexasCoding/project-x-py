@@ -34,7 +34,7 @@ class TestProjectXBase:
         """Create a ProjectXBase client for testing."""
         return ProjectXBase(
             username="testuser",
-            api_key="test-api-key",
+            api_key="test-api-key", # pragma: allowlist secret
             config=mock_config,
             account_name="TEST_ACCOUNT",
         )
@@ -42,7 +42,7 @@ class TestProjectXBase:
     def test_initialization(self, base_client):
         """Test client initialization."""
         assert base_client.username == "testuser"
-        assert base_client.api_key == "test-api-key"
+        assert base_client.api_key == "test-api-key" # pragma: allowlist secret
         assert base_client.account_name == "TEST_ACCOUNT"
         assert base_client.base_url == "https://api.test.com"
         assert base_client._client is None
@@ -56,10 +56,10 @@ class TestProjectXBase:
         """Test client initialization with default config."""
         client = ProjectXBase(
             username="user",
-            api_key="key",
+            api_key="key", # pragma: allowlist secret
         )
         assert client.username == "user"
-        assert client.api_key == "key"
+        assert client.api_key == "key" # pragma: allowlist secret
         assert client.account_name is None
         assert client.base_url == "https://api.topstepx.com/api"  # Default URL
 
@@ -146,7 +146,7 @@ class TestProjectXBase:
             os.environ,
             {
                 "PROJECT_X_USERNAME": "env_user",
-                "PROJECT_X_API_KEY": "env_key",
+                "PROJECT_X_API_KEY": "env_key", # pragma: allowlist secret
                 "PROJECT_X_ACCOUNT_NAME": "env_account",
             },
         ):
@@ -154,7 +154,7 @@ class TestProjectXBase:
                 mock_manager = Mock()
                 mock_manager.get_auth_config.return_value = {
                     "username": "env_user",
-                    "api_key": "env_key",
+                    "api_key": "env_key", # pragma: allowlist secret
                 }
                 mock_config_manager.return_value = mock_manager
 
@@ -165,7 +165,7 @@ class TestProjectXBase:
                 ):
                     async with ProjectXBase.from_env() as client:
                         assert client.username == "env_user"
-                        assert client.api_key == "env_key"
+                        assert client.api_key == "env_key" # pragma: allowlist secret
                         assert (
                             client.account_name == "ENV_ACCOUNT"
                         )  # Should be uppercase
@@ -177,14 +177,14 @@ class TestProjectXBase:
             os.environ,
             {
                 "PROJECT_X_USERNAME": "env_user",
-                "PROJECT_X_API_KEY": "env_key",
+                "PROJECT_X_API_KEY": "env_key", # pragma: allowlist secret
             },
         ):
             with patch("project_x_py.client.base.ConfigManager") as mock_config_manager:
                 mock_manager = Mock()
                 mock_manager.get_auth_config.return_value = {
                     "username": "env_user",
-                    "api_key": "env_key",
+                    "api_key": "env_key", # pragma: allowlist secret
                 }
                 mock_config_manager.return_value = mock_manager
 
@@ -218,14 +218,14 @@ class TestProjectXBase:
             os.environ,
             {
                 "PROJECT_X_USERNAME": "env_user",
-                "PROJECT_X_API_KEY": "env_key",
+                "PROJECT_X_API_KEY": "env_key", # pragma: allowlist secret
             },
         ):
             with patch("project_x_py.client.base.ConfigManager") as mock_config_manager:
                 mock_manager = Mock()
                 mock_manager.get_auth_config.return_value = {
                     "username": "env_user",
-                    "api_key": "env_key",
+                    "api_key": "env_key", # pragma: allowlist secret
                 }
                 mock_config_manager.return_value = mock_manager
 
@@ -258,7 +258,7 @@ class TestProjectXBase:
             mock_manager.load_config.return_value = mock_config
             mock_manager.get_auth_config.return_value = {
                 "username": "file_user",
-                "api_key": "file_key",
+                "api_key": "file_key", # pragma: allowlist secret
             }
             mock_config_manager.return_value = mock_manager
 
@@ -269,7 +269,7 @@ class TestProjectXBase:
             ):
                 async with ProjectXBase.from_config_file("test_config.json") as client:
                     assert client.username == "file_user"
-                    assert client.api_key == "file_key"
+                    assert client.api_key == "file_key" # pragma: allowlist secret
                     assert client.base_url == "https://file.api.com"
 
                     # Verify ConfigManager was called with the config file
@@ -295,7 +295,7 @@ class TestProjectXBase:
             mock_manager.load_config.return_value = mock_config
             mock_manager.get_auth_config.return_value = {
                 "username": "file_user",
-                "api_key": "file_key",
+                "api_key": "file_key", # pragma: allowlist secret
             }
             mock_config_manager.return_value = mock_manager
 
@@ -317,7 +317,7 @@ class TestProjectXBase:
         """Test config property."""
         client = ProjectXBase(
             username="user",
-            api_key="key",
+            api_key="key", # pragma: allowlist secret
             config=mock_config,
         )
         assert client.config == mock_config

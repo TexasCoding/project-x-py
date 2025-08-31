@@ -20,7 +20,7 @@ async def test_client_instantiation():
     client = ProjectX(username="test", api_key="test-key")
     assert client is not None
     assert client.username == "test"
-    assert client.api_key == "test-key"
+    assert client.api_key == "test-key" # pragma: allowlist secret
     assert client.account_name is None
 
 
