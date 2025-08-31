@@ -82,11 +82,11 @@ suite = await TradingSuite.create(\"MNQ\")
 - **Risk Management**: Portfolio analytics and risk metrics
 
 ### Advanced Features
-- **58+ Technical Indicators**: Full TA-Lib compatibility with Polars optimization including new pattern indicators
+- **59+ Technical Indicators**: Full TA-Lib compatibility with Polars optimization including new pattern indicators
 - **Level 2 OrderBook**: Depth analysis, iceberg detection, spoofing detection with 6 pattern types
 - **Real-time WebSockets**: Async streaming for quotes, trades, and account updates
 - **Performance Optimized**: Connection pooling, intelligent caching, memory management
-- **Pattern Recognition**: Fair Value Gaps, Order Blocks, and Waddah Attar Explosion indicators
+- **Pattern Recognition**: Fair Value Gaps, Order Blocks, Waddah Attar Explosion, and Lorenz Formula indicators
 - **Market Manipulation Detection**: Advanced spoofing detection with confidence scoring
 - **Financial Precision**: All calculations use Decimal type for exact precision
 - **Enterprise Error Handling**: Production-ready error handling with decorators and structured logging
@@ -588,7 +588,7 @@ if health_score < 70:
 
 ### Technical Indicators
 
-All 58+ indicators work with async data pipelines:
+All 59+ indicators work with async data pipelines:
 ```python
 import polars as pl
 from project_x_py.indicators import RSI, SMA, MACD, FVG, ORDERBLOCK, WAE

@@ -68,6 +68,7 @@ from project_x_py.indicators import (
     FVG,        # Fair Value Gap
     ORDERBLOCK, # Order Block Detection
     WAE,        # Waddah Attar Explosion
+    LORENZ,     # Lorenz Formula (Chaos Theory)
 )
 ```
 
@@ -866,6 +867,106 @@ async def wae_analysis():
         max_down = max(recent_explosions_down)
         print(f"Recent bearish explosions - Avg: {avg_down:.1f}, Max: {max_down:.1f}")
 ```
+
+### Lorenz Formula (Chaos Theory)
+
+The Lorenz Formula indicator applies chaos theory to market analysis, creating a dynamic attractor that responds to volatility, trend, and volume.
+
+```python
+async def lorenz_analysis():
+    suite = await TradingSuite.create("MNQ")
+    data = await suite.data.get_data("15min", bars=200)
+
+    # Lorenz Formula with default parameters
+    lorenz_data = data.pipe(LORENZ,
+        window=14,              # Rolling window for parameters
+        dt=0.1,                 # Time step (smaller = more stable)
+        volatility_scale=0.02   # Expected volatility
+    )
+
+    # Lorenz provides three components:
+    # - lorenz_x: Rate of change in the system
+    # - lorenz_y: Momentum accumulation
+    # - lorenz_z: Primary trading signal (height)
+
+    latest = lorenz_data.tail(1)
+    z_value = latest['lorenz_z'][0]
+
+    # Basic signal interpretation
+    if z_value > 0:
+        print(f"Bullish bias (Z = {z_value:.2f})")
+    elif z_value < 0:
+        print(f"Bearish bias (Z = {z_value:.2f})")
+    else:
+        print("Neutral/Transitional")
+
+    # Calculate chaos magnitude for regime detection
+    lorenz_data = lorenz_data.with_columns([
+        (pl.col("lorenz_x")**2 +
+         pl.col("lorenz_y")**2 +
+         pl.col("lorenz_z")**2).sqrt().alias("chaos_magnitude")
+    ])
+
+    # Classify market regime
+    lorenz_data = lorenz_data.with_columns([
+        pl.when(pl.col("chaos_magnitude") < 10)
+        .then(pl.lit("STABLE"))
+        .when(pl.col("chaos_magnitude") < 50)
+        .then(pl.lit("TRANSITIONAL"))
+        .otherwise(pl.lit("CHAOTIC"))
+        .alias("market_regime")
+    ])
+
+    latest_regime = lorenz_data.tail(1)
+    regime = latest_regime['market_regime'][0]
+    magnitude = latest_regime['chaos_magnitude'][0]
+
+    print(f"Market Regime: {regime} (Magnitude: {magnitude:.2f})")
+
+    # Z-value crossover strategy
+    lorenz_data = lorenz_data.with_columns([
+        pl.col("lorenz_z").rolling_mean(window_size=10).alias("z_ma")
+    ])
+
+    # Detect crossovers
+    current = lorenz_data.tail(1)
+    previous = lorenz_data.tail(2).head(1)
+
+    z_current = current['lorenz_z'][0]
+    z_ma_current = current['z_ma'][0]
+    z_previous = previous['lorenz_z'][0] if len(previous) > 0 else z_current
+    z_ma_previous = previous['z_ma'][0] if len(previous) > 0 else z_ma_current
+
+    # Check for crossover signals
+    if z_previous <= z_ma_previous and z_current > z_ma_current:
+        print("🔺 Bullish Z crossover detected!")
+    elif z_previous >= z_ma_previous and z_current < z_ma_current:
+        print("🔻 Bearish Z crossover detected!")
+
+    # Advanced: Combine with other indicators
+    from project_x_py.indicators import RSI
+
+    combined = lorenz_data.pipe(RSI, period=14)
+    latest = combined.tail(1)
+
+    z = latest['lorenz_z'][0]
+    rsi = latest['rsi_14'][0]
+
+    # Strong signals when both align
+    if z > 0 and rsi < 35:
+        print("💪 STRONG BUY: Bullish Lorenz + Oversold RSI")
+    elif z < 0 and rsi > 65:
+        print("💪 STRONG SELL: Bearish Lorenz + Overbought RSI")
+```
+
+Key features of the Lorenz indicator:
+- **Chaos Theory Application**: Adapts atmospheric modeling to markets
+- **Three Components**: X (rate of change), Y (momentum), Z (signal)
+- **Dynamic Parameters**: Automatically adjusts to market conditions
+- **Regime Detection**: Identifies stable, transitional, and chaotic markets
+- **Early Warning System**: Detects instability before major moves
+
+For detailed documentation and advanced strategies, see [Lorenz Indicator Documentation](../indicators/lorenz.md).
 
 ## Real-time Indicator Updates
 

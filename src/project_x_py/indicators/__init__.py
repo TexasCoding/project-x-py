@@ -72,6 +72,11 @@ import polars as pl
 # Base classes and utilities
 # Pattern Indicators
 from project_x_py.indicators.fvg import FVG as FVGIndicator, calculate_fvg
+from project_x_py.indicators.lorenz import (
+    LORENZ,
+    LORENZIndicator,
+    calculate_lorenz,
+)
 
 # Momentum Indicators
 from project_x_py.indicators.momentum import (
@@ -202,7 +207,7 @@ from .candlestick import (
 )
 
 # Version info
-__version__ = "3.5.3"
+__version__ = "3.5.4"
 __author__ = "TexasCoding"
 
 
@@ -1195,6 +1200,7 @@ __all__ = [
     "HAMMER",
     "HT_TRENDLINE",
     "KAMA",
+    "LORENZ",
     "MA",
     "MACD",
     "MAMA",
@@ -1227,6 +1233,7 @@ __all__ = [
     # Base classes
     "BaseIndicator",
     "IndicatorError",
+    "LORENZIndicator",
     "MomentumIndicator",
     "OverlapIndicator",
     "VolatilityIndicator",
@@ -1244,6 +1251,7 @@ __all__ = [
     "calculate_hammer",
     "calculate_ht_trendline",
     "calculate_kama",
+    "calculate_lorenz",
     "calculate_ma",
     "calculate_macd",
     "calculate_mama",

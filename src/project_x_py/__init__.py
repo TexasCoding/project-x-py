@@ -109,7 +109,7 @@ See Also:
     - `utils`: Utility functions and calculations
 """
 
-__version__ = "3.5.3"
+__version__ = "3.5.4"
 __author__ = "TexasCoding"
 
 # Core client classes - renamed from Async* to standard names

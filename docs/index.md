@@ -93,7 +93,7 @@ asyncio.run(main())
 - Async historical OHLCV data with multiple timeframes
 - Real-time market data feeds via async WebSocket
 - **Level 2 orderbook analysis** with institutional-grade features
-- **58+ Technical Indicators** with TA-Lib compatibility (RSI, MACD, Bollinger Bands, Pattern Recognition, etc.)
+- **59+ Technical Indicators** with TA-Lib compatibility (RSI, MACD, Bollinger Bands, Pattern Recognition, Lorenz Formula, etc.)
 - **Advanced market microstructure** analysis (iceberg detection, order flow, volume profile)
 - **Market Manipulation Detection**: 6 spoofing pattern types with regulatory compliance features
 - **100% Async Statistics System**: Health monitoring, multi-format export, component tracking
@@ -161,8 +161,8 @@ mnq_context = suite["MNQ"]  # Access specific instrument
 - **Event System**: Unified EventBus for cross-component communication
 
 **Technical Analysis**
-- **58+ Indicators**: TA-Lib compatible with Polars DataFrames
-- **Pattern Recognition**: Fair Value Gaps, Order Blocks, Waddah Attar
+- **59+ Indicators**: TA-Lib compatible with Polars DataFrames
+- **Pattern Recognition**: Fair Value Gaps, Order Blocks, Waddah Attar, Lorenz Formula
 - **Advanced Patterns**: Iceberg detection, market manipulation
 
 **Statistics & Monitoring (v3.3.0)**
@@ -184,7 +184,7 @@ mnq_context = suite["MNQ"]  # Access specific instrument
 - [Order Management](guide/orders.md) - Placing and managing orders
 - [Position Tracking](guide/positions.md) - Portfolio management
 - [Real-time Data](guide/realtime.md) - WebSocket streaming
-- [Technical Indicators](guide/indicators.md) - 58+ analysis tools
+- [Technical Indicators](guide/indicators.md) - 59+ analysis tools
 - [Risk Management](guide/risk.md) - Position sizing and limits
 - [Order Book](guide/orderbook.md) - Level 2 market depth
 

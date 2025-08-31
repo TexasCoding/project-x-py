@@ -14,6 +14,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Migration guides will be provided for all breaking changes
 - Semantic versioning (MAJOR.MINOR.PATCH) is strictly followed
 
+## [3.5.4] - 2025-01-31
+
+### 🚀 Added
+
+**New Lorenz Formula Indicator**:
+- **Chaos Theory Trading**: Added Lorenz Formula indicator applying chaos theory to market analysis
+- **Dynamic Parameter Calculation**: Automatically adjusts sigma (volatility), rho (trend), and beta (volume) based on market conditions
+- **Three-Component Output**: Provides X (rate of change), Y (momentum), and Z (primary signal) components
+- **Market Regime Detection**: Identifies stable, transitional, and chaotic market conditions
+- **Full Integration**: TA-Lib style interface with both class-based and function-based APIs
+
+### 📝 Documentation
+
+**Lorenz Indicator Documentation**:
+- **Comprehensive Guide**: Created detailed documentation at `docs/indicators/lorenz.md` with mathematical foundation
+- **Trading Strategies**: Multiple signal generation strategies including Z-value momentum, crossovers, and divergence
+- **Parameter Tuning**: Complete guidelines for adjusting dt, window, and volatility_scale parameters
+- **Integration Examples**: Added to main indicators guide with practical usage examples
+- **Complete Trading System**: Full example with position sizing, stops, and multi-indicator confluence
+
+### ✅ Testing
+
+**Lorenz Indicator Tests**:
+- **15 Comprehensive Tests**: Full test coverage following TDD principles
+- **Parameter Validation**: Tests for custom parameters, window sizes, and time steps
+- **Chaos Properties**: Verification of chaotic behavior and sensitivity to initial conditions
+- **Edge Cases**: Handling of empty data, missing columns, and single-row inputs
+- **Integration**: Example script (`examples/33_lorenz_indicator.py`) demonstrating all features
+
+### 🔧 Changed
+
+- **Indicator Count**: Updated from 58+ to 59+ indicators across all documentation
+- **Pattern Recognition**: Enhanced with chaos theory-based market analysis
+
 ## [3.5.3] - 2025-01-31
 
 ### 🐛 Fixed

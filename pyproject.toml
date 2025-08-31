@@ -1,6 +1,6 @@
 [project]
 name = "project-x-py"
-version = "3.5.3"
+version = "3.5.4"
 description = "High-performance Python SDK for futures trading with real-time WebSocket data, technical indicators, order management, and market depth analysis"
 readme = "README.md"
 license = { text = "MIT" }
@@ -183,6 +183,8 @@ ignore = [
     "N811", # Variable in class scope should not be mixedCase (API compatibility)
     "RUF022", # Use a list comprehension to create a new list (optional)
     "RUF006", # Use a list comprehension to create a new list (optional)
+    "N802", # Function name should be lowercase
+    "RUF002", # Use an explicit list comprehension (optional)
 ]
 
 fixable = ["ALL"]
