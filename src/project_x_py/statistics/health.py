@@ -1,3 +1,4 @@
+# mypy: disable-error-code="unreachable"
 """
 Health monitoring and scoring system for ProjectX SDK components.
 
@@ -66,6 +67,8 @@ See Also:
 """
 
 import asyncio
+import hashlib
+import json
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -107,6 +110,7 @@ class HealthBreakdown(TypedDict):
 
     # Weighted scores
     weighted_total: float  # Final weighted health score
+    overall_score: float  # Alias for weighted_total (backward compatibility)
 
     # Additional metadata
     missing_categories: NotRequired[list[str]]  # Categories with no data
@@ -177,7 +181,7 @@ class HealthMonitor:
             thresholds: Custom health thresholds (uses defaults if None)
             weights: Custom category weights (uses defaults if None)
         """
-        self.thresholds = thresholds or HealthThresholds()
+        self.thresholds: HealthThresholds = thresholds or HealthThresholds()
 
         # Default category weights (must sum to 1.0)
         self.weights = weights or {
@@ -211,11 +215,24 @@ class HealthMonitor:
         Returns:
             Health score between 0-100 (100 = perfect health)
         """
-        # Check cache first
-        cache_key = "overall_health"
-        cached_score = await self._get_cached_value(cache_key)
-        if cached_score is not None:
-            return float(cached_score)
+        # Create cache key based on stats content
+        # Use a simple hash of the stats dict for caching
+        try:
+            # Convert stats to JSON string and hash it
+            stats_str = json.dumps(stats, sort_keys=True, default=str)
+            stats_hash = hashlib.md5(
+                stats_str.encode(), usedforsecurity=False
+            ).hexdigest()[:8]
+            cache_key = f"overall_health_{stats_hash}"
+        except (TypeError, ValueError):
+            # If we can't serialize stats, don't use cache
+            cache_key = None
+
+        # Check cache first if we have a valid key
+        if cache_key:
+            cached_score = await self._get_cached_value(cache_key)
+            if cached_score is not None:
+                return float(cached_score)
 
         # Calculate scores for each category
         error_score = await self._score_errors(stats)
@@ -238,8 +255,9 @@ class HealthMonitor:
         # Ensure score is within bounds
         final_score = max(0.0, min(100.0, weighted_score))
 
-        # Cache the result
-        await self._set_cached_value(cache_key, final_score)
+        # Cache the result if we have a valid cache key
+        if cache_key:
+            await self._set_cached_value(cache_key, final_score)
 
         return round(final_score, 1)
 
@@ -296,6 +314,9 @@ class HealthMonitor:
             "data_quality": round(data_quality_score, 1),
             "component_status": round(component_status_score, 1),
             "weighted_total": round(weighted_total, 1),
+            "overall_score": round(
+                weighted_total, 1
+            ),  # Alias for backward compatibility
         }
 
         if missing_categories:
@@ -356,17 +377,22 @@ class HealthMonitor:
         total_errors = 0
         total_operations = 0
 
-        # Aggregate error counts from all components
-        for _, component_stats in stats["suite"]["components"].items():
-            error_count = component_stats.get("error_count", 0)
-            total_errors += error_count
+        # Aggregate error counts from all components if available
+        if "suite" in stats and "components" in stats["suite"]:
+            for _, component_stats in stats["suite"]["components"].items():
+                error_count = component_stats.get("error_count", 0)
+                total_errors += error_count
 
-            # Estimate total operations based on component type
-            if "performance_metrics" in component_stats:
-                perf_metrics = component_stats["performance_metrics"]
-                for _, metrics in perf_metrics.items():
-                    if isinstance(metrics, dict) and "count" in metrics:
-                        total_operations += metrics["count"]
+                # Estimate total operations based on component type
+                if "performance_metrics" in component_stats:
+                    perf_metrics = component_stats["performance_metrics"]
+                    for _, metrics in perf_metrics.items():
+                        if isinstance(metrics, dict) and "count" in metrics:
+                            total_operations += metrics["count"]
+
+        # Also check direct errors dict
+        if "errors" in stats and stats["errors"] is not None:
+            total_errors += stats["errors"].get("total_errors", 0)
 
         # Add API call statistics if available
         if "http_client" in stats:
@@ -377,6 +403,13 @@ class HealthMonitor:
         # Calculate error rate per 1000 operations
         if total_operations > 0:
             error_rate = (total_errors / total_operations) * 1000
+        elif (
+            "errors" in stats
+            and stats["errors"] is not None
+            and "error_rate" in stats["errors"]
+        ):
+            # Use provided error rate if no operations to calculate from
+            error_rate = stats["errors"]["error_rate"] * 1000  # Convert to per 1000
         else:
             error_rate = 0.0
 
@@ -414,19 +447,28 @@ class HealthMonitor:
         if not self._has_performance_data(stats):
             return 100.0  # Assume healthy if no performance data
 
-        avg_response_time = stats["suite"].get("avg_response_time_ms", 0.0)
+        avg_response_time = 0.0
+        if "suite" in stats:
+            avg_response_time = stats["suite"].get("avg_response_time_ms", 0.0)
+        elif "performance" in stats and stats["performance"] is not None:  # type: ignore[unreachable]
+            avg_response_time = (
+                stats["performance"].get("avg_response_time", 0.0) or 0.0
+            )
 
         # Also check component-level performance metrics
-        total_response_time = avg_response_time
-        metric_count = 1 if avg_response_time > 0 else 0
+        total_response_time = (
+            avg_response_time if avg_response_time is not None else 0.0
+        )
+        metric_count = 1 if avg_response_time and avg_response_time > 0 else 0
 
-        for component_stats in stats["suite"]["components"].values():
-            if "performance_metrics" in component_stats:
-                perf_metrics = component_stats["performance_metrics"]
-                for _, metrics in perf_metrics.items():
-                    if isinstance(metrics, dict) and "avg_ms" in metrics:
-                        total_response_time += metrics["avg_ms"]
-                        metric_count += 1
+        if "suite" in stats and "components" in stats["suite"]:
+            for component_stats in stats["suite"]["components"].values():
+                if "performance_metrics" in component_stats:
+                    perf_metrics = component_stats["performance_metrics"]
+                    for _, metrics in perf_metrics.items():
+                        if isinstance(metrics, dict) and "avg_ms" in metrics:
+                            total_response_time += metrics["avg_ms"]
+                            metric_count += 1
 
         if metric_count == 0:
             return 100.0
@@ -471,9 +513,28 @@ class HealthMonitor:
             return 100.0  # Assume healthy if no connection data
 
         # Check real-time connection status
-        realtime_connected = stats["suite"].get("realtime_connected", False)
-        user_hub_connected = stats["suite"].get("user_hub_connected", False)
-        market_hub_connected = stats["suite"].get("market_hub_connected", False)
+        realtime_connected = False
+        user_hub_connected = False
+        market_hub_connected = False
+
+        if "suite" in stats:
+            realtime_connected = stats["suite"].get("realtime_connected", False)
+            user_hub_connected = stats["suite"].get("user_hub_connected", False)
+            market_hub_connected = stats["suite"].get("market_hub_connected", False)
+        elif "connections" in stats and stats["connections"] is not None:
+            # Use connections dict if available
+            conn_status = stats["connections"].get("connection_status", {})
+            active_conns = stats["connections"].get("active_connections", 0)
+            connected_count = sum(
+                1 for status in conn_status.values() if status == "connected"
+            )
+            if connected_count > 0:
+                connection_score = (
+                    (connected_count / len(conn_status)) * 100 if conn_status else 100.0
+                )
+            else:
+                connection_score = 50.0 if active_conns > 0 else 0.0
+            return connection_score
 
         # Base score from connection status
         connections_up = sum(
@@ -531,27 +592,30 @@ class HealthMonitor:
         memory_score = 100.0
         if "memory" in stats:
             memory_stats = stats["memory"]
-            memory_usage_percent = memory_stats.get("memory_usage_percent", 0.0)
+            # Support both 'memory_usage_percent' and 'usage_percent' for backward compatibility
+            memory_usage_percent = memory_stats.get(
+                "memory_usage_percent", memory_stats.get("usage_percent", 0.0)
+            )
 
-            if memory_usage_percent <= self.thresholds.memory_usage_excellent:
+            if memory_usage_percent <= self.thresholds.memory_usage_excellent:  # type: ignore[operator]
                 memory_score = 100.0
-            elif memory_usage_percent <= self.thresholds.memory_usage_good:
+            elif memory_usage_percent <= self.thresholds.memory_usage_good:  # type: ignore[operator]
                 ratio = (
-                    memory_usage_percent - self.thresholds.memory_usage_excellent
+                    memory_usage_percent - self.thresholds.memory_usage_excellent  # type: ignore[operator]
                 ) / (
                     self.thresholds.memory_usage_good
                     - self.thresholds.memory_usage_excellent
                 )
                 memory_score = 100.0 - (ratio * 20.0)
-            elif memory_usage_percent <= self.thresholds.memory_usage_warning:
-                ratio = (memory_usage_percent - self.thresholds.memory_usage_good) / (
+            elif memory_usage_percent <= self.thresholds.memory_usage_warning:  # type: ignore[operator]
+                ratio = (memory_usage_percent - self.thresholds.memory_usage_good) / (  # type: ignore[operator]
                     self.thresholds.memory_usage_warning
                     - self.thresholds.memory_usage_good
                 )
                 memory_score = 80.0 - (ratio * 40.0)
-            elif memory_usage_percent <= self.thresholds.memory_usage_critical:
+            elif memory_usage_percent <= self.thresholds.memory_usage_critical:  # type: ignore[operator]
                 ratio = (
-                    memory_usage_percent - self.thresholds.memory_usage_warning
+                    memory_usage_percent - self.thresholds.memory_usage_warning  # type: ignore[operator]
                 ) / (
                     self.thresholds.memory_usage_critical
                     - self.thresholds.memory_usage_warning
@@ -562,7 +626,11 @@ class HealthMonitor:
 
         # API call efficiency (secondary metric)
         api_efficiency_score = 100.0
-        cache_hit_rate = stats["suite"].get("cache_hit_rate", 1.0)
+        cache_hit_rate = 1.0
+        if "suite" in stats:
+            cache_hit_rate = stats["suite"].get("cache_hit_rate", 1.0)
+        elif "performance" in stats and stats["performance"] is not None:
+            cache_hit_rate = stats["performance"].get("cache_hit_rate", 1.0)
         if cache_hit_rate < 0.5:  # Less than 50% cache hit rate
             api_efficiency_score = cache_hit_rate * 100.0
 
@@ -643,17 +711,21 @@ class HealthMonitor:
         Returns:
             Component status health score (0-100, higher is better)
         """
-        total_components = len(stats["suite"]["components"])
+        total_components = 0
+        if "suite" in stats and "components" in stats["suite"]:
+            total_components = len(stats["suite"]["components"])
+
         if total_components == 0:
             return 100.0
 
         healthy_components = 0.0
-        for component_stats in stats["suite"]["components"].values():
-            status = component_stats.get("status", "unknown")
-            if status in ["connected", "active"]:
-                healthy_components += 1
-            elif status in ["initializing"]:
-                healthy_components += 0.7  # Partial credit for initializing
+        if "suite" in stats and "components" in stats["suite"]:
+            for component_stats in stats["suite"]["components"].values():
+                status = component_stats.get("status", "unknown")
+                if status in ["connected", "active"]:
+                    healthy_components += 1
+                elif status in ["initializing"]:
+                    healthy_components += 0.7  # Partial credit for initializing
 
         return (healthy_components / total_components) * 100.0
 
@@ -667,18 +739,23 @@ class HealthMonitor:
             return alerts
 
         # Calculate total error rate
-        total_errors = sum(
-            comp_stats.get("error_count", 0)
-            for comp_stats in stats["suite"]["components"].values()
-        )
+        total_errors = 0
+        if "suite" in stats and "components" in stats["suite"]:
+            total_errors = sum(
+                comp_stats.get("error_count", 0)
+                for comp_stats in stats["suite"]["components"].values()
+            )
+        elif "errors" in stats:
+            total_errors = stats["errors"].get("total_errors", 0)
 
         total_operations = 0
-        for component_stats in stats["suite"]["components"].values():
-            if "performance_metrics" in component_stats:
-                perf_metrics = component_stats["performance_metrics"]
-                for _, metrics in perf_metrics.items():
-                    if isinstance(metrics, dict) and "count" in metrics:
-                        total_operations += metrics["count"]
+        if "suite" in stats and "components" in stats["suite"]:
+            for component_stats in stats["suite"]["components"].values():
+                if "performance_metrics" in component_stats:
+                    perf_metrics = component_stats["performance_metrics"]
+                    for _, metrics in perf_metrics.items():
+                        if isinstance(metrics, dict) and "count" in metrics:
+                            total_operations += metrics["count"]
 
         if total_operations > 0:
             error_rate = (total_errors / total_operations) * 1000
@@ -731,7 +808,12 @@ class HealthMonitor:
         if not self._has_performance_data(stats):
             return alerts
 
-        avg_response_time = stats["suite"].get("avg_response_time_ms", 0.0)
+        # Get average response time from suite or performance dict
+        avg_response_time = 0.0
+        if "suite" in stats:
+            avg_response_time = stats["suite"].get("avg_response_time_ms", 0.0)
+        elif "performance" in stats and stats["performance"] is not None:
+            avg_response_time = stats["performance"].get("avg_response_time", 0.0)
 
         if avg_response_time >= self.thresholds.response_time_critical:
             alerts.append(
@@ -779,9 +861,47 @@ class HealthMonitor:
         alerts: list[HealthAlert] = []
 
         # Check basic connectivity
-        realtime_connected = stats["suite"].get("realtime_connected", False)
-        user_hub_connected = stats["suite"].get("user_hub_connected", False)
-        market_hub_connected = stats["suite"].get("market_hub_connected", False)
+        realtime_connected = False
+        user_hub_connected = False
+        market_hub_connected = False
+
+        if "suite" in stats:
+            realtime_connected = stats["suite"].get("realtime_connected", False)
+            user_hub_connected = stats["suite"].get("user_hub_connected", False)
+            market_hub_connected = stats["suite"].get("market_hub_connected", False)
+        elif "connections" in stats and stats["connections"] is not None:
+            # Use connections dict if available
+            conn_status = stats["connections"].get("connection_status", {})
+            active_conns = stats["connections"].get("active_connections", 0)
+            connected_count = sum(
+                1 for status in conn_status.values() if status == "connected"
+            )
+            # Generate alerts based on connection count
+            if connected_count == 0 and active_conns == 0:
+                alerts.append(
+                    {
+                        "level": AlertLevel.CRITICAL.value,
+                        "category": "connection",
+                        "message": "No active connections",
+                        "metric": "active_connections",
+                        "current_value": 0,
+                        "threshold": 1,
+                        "recommendation": "Check network connectivity and service status",
+                    }
+                )
+            elif connected_count < len(conn_status) // 2:  # Less than half connected
+                alerts.append(
+                    {
+                        "level": AlertLevel.DEGRADED.value,
+                        "category": "connection",
+                        "message": f"Only {connected_count}/{len(conn_status)} connections active",
+                        "metric": "connected_count",
+                        "current_value": connected_count,
+                        "threshold": len(conn_status) // 2,
+                        "recommendation": "Check connectivity for disconnected services",
+                    }
+                )
+            return alerts
 
         if not realtime_connected or not user_hub_connected or not market_hub_connected:
             disconnected_hubs = []
@@ -848,40 +968,43 @@ class HealthMonitor:
 
         if "memory" in stats:
             memory_stats = stats["memory"]
-            memory_usage_percent = memory_stats.get("memory_usage_percent", 0.0)
+            # Support both field names for backward compatibility
+            memory_usage_percent = memory_stats.get(
+                "memory_usage_percent", memory_stats.get("usage_percent", 0.0)
+            )
 
-            if memory_usage_percent >= self.thresholds.memory_usage_critical:
+            if memory_usage_percent >= self.thresholds.memory_usage_critical:  # type: ignore[operator]
                 alerts.append(
                     {
                         "level": AlertLevel.CRITICAL.value,
                         "category": "resources",
                         "message": f"Critical memory usage: {memory_usage_percent:.1f}%",
                         "metric": "memory_usage_percent",
-                        "current_value": memory_usage_percent,
+                        "current_value": memory_usage_percent,  # type: ignore[typeddict-item]
                         "threshold": self.thresholds.memory_usage_critical,
                         "recommendation": "Immediately review memory leaks and restart if necessary",
                     }
                 )
-            elif memory_usage_percent >= self.thresholds.memory_usage_warning:
+            elif memory_usage_percent >= self.thresholds.memory_usage_warning:  # type: ignore[operator]
                 alerts.append(
                     {
                         "level": AlertLevel.DEGRADED.value,
                         "category": "resources",
                         "message": f"High memory usage: {memory_usage_percent:.1f}%",
                         "metric": "memory_usage_percent",
-                        "current_value": memory_usage_percent,
+                        "current_value": memory_usage_percent,  # type: ignore[typeddict-item]
                         "threshold": self.thresholds.memory_usage_warning,
                         "recommendation": "Monitor memory trends and consider implementing cleanup routines",
                     }
                 )
-            elif memory_usage_percent >= self.thresholds.memory_usage_good:
+            elif memory_usage_percent >= self.thresholds.memory_usage_good:  # type: ignore[operator]
                 alerts.append(
                     {
                         "level": AlertLevel.WARNING.value,
                         "category": "resources",
                         "message": f"Elevated memory usage: {memory_usage_percent:.1f}%",
                         "metric": "memory_usage_percent",
-                        "current_value": memory_usage_percent,
+                        "current_value": memory_usage_percent,  # type: ignore[typeddict-item]
                         "threshold": self.thresholds.memory_usage_good,
                         "recommendation": "Review memory usage patterns and optimize data structures",
                     }
@@ -937,6 +1060,10 @@ class HealthMonitor:
 
     def _has_error_data(self, stats: ComprehensiveStats) -> bool:
         """Check if error data is available."""
+        # Check if suite and components exist
+        if "suite" not in stats or "components" not in stats.get("suite", {}):
+            # Fall back to checking for errors dict (and that it's not None)
+            return "errors" in stats and stats["errors"] is not None
         return any(
             comp_stats.get("error_count", 0) > 0 or "performance_metrics" in comp_stats
             for comp_stats in stats["suite"]["components"].values()
@@ -944,28 +1071,41 @@ class HealthMonitor:
 
     def _has_performance_data(self, stats: ComprehensiveStats) -> bool:
         """Check if performance data is available."""
-        return stats["suite"].get("avg_response_time_ms", 0.0) > 0 or any(
-            "performance_metrics" in comp_stats
-            for comp_stats in stats["suite"]["components"].values()
-        )
+        if "suite" in stats:
+            return stats["suite"].get("avg_response_time_ms", 0.0) > 0 or any(
+                "performance_metrics" in comp_stats
+                for comp_stats in stats.get("suite", {}).get("components", {}).values()
+            )
+        # Fall back to checking for performance dict (and that it has valid data)
+        if "performance" in stats and stats["performance"] is not None:
+            # Check if there's actual numeric data
+            avg_response_time = stats["performance"].get("avg_response_time")
+            return avg_response_time is not None and avg_response_time != 0
+        return False
 
     def _has_connection_data(self, stats: ComprehensiveStats) -> bool:
         """Check if connection data is available."""
-        suite_data = stats["suite"]
-        return (
-            "realtime_connected" in suite_data
-            or "user_hub_connected" in suite_data  # type: ignore[unreachable]
-            or "market_hub_connected" in suite_data
-            or "realtime" in stats
-        )
+        if "suite" in stats:
+            suite_data = stats["suite"]
+            return (
+                "realtime_connected" in suite_data
+                or "user_hub_connected" in suite_data
+                or "market_hub_connected" in suite_data
+                or "realtime" in stats
+            )
+        # Fall back to checking for connections dict
+        return "connections" in stats
 
     def _has_resource_data(self, stats: ComprehensiveStats) -> bool:
         """Check if resource data is available."""
-        return (
-            "memory" in stats
-            or stats["suite"].get("memory_usage_mb", 0.0) > 0
-            or "cache_hit_rate" in stats["suite"]
-        )
+        if "suite" in stats:
+            return (
+                "memory" in stats
+                or stats["suite"].get("memory_usage_mb", 0.0) > 0
+                or "cache_hit_rate" in stats["suite"]
+            )
+        # Fall back to checking for memory dict
+        return "memory" in stats
 
     def _has_data_quality_data(self, stats: ComprehensiveStats) -> bool:
         """Check if data quality data is available."""

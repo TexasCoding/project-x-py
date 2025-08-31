@@ -725,17 +725,21 @@ async def reconnection_handling():
 async def health_monitoring():
     suite = await TradingSuite.create("MNQ", features=["orderbook"])
 
-    # Get overall health score
-    health_score = await suite.get_health_score()
+    # Get overall health score using HealthMonitor
+    from project_x_py.statistics.health import HealthMonitor
+
+    stats = await suite.get_stats()
+    monitor = HealthMonitor()
+    health_score = await monitor.calculate_health(stats)
     print(f"System Health: {health_score:.1f}/100")
 
     if health_score < 70:
-        # Get detailed component health
-        component_health = await suite.get_component_health()
+        # Get detailed health breakdown
+        breakdown = await monitor.get_health_breakdown(stats)
 
-        for component, health in component_health.items():
-            if health['error_count'] > 0:
-                print(f"{component}: {health['error_count']} errors")
+        for category, score in breakdown.items():
+            if category not in ['overall_score', 'weighted_total'] and score < 70:
+                print(f"  {category}: {score:.1f}/100")
 
     await suite.disconnect()
 ```
@@ -750,21 +754,23 @@ async def performance_statistics():
     stats = await suite.get_stats()
 
     print(f"TradingSuite Statistics:")
-    print(f"  Health Score: {stats['health_score']:.1f}/100")
-    print(f"  API Success Rate: {stats['api_success_rate']:.1%}")
-    print(f"  Memory Usage: {stats['memory_usage_mb']:.1f} MB")
-    print(f"  Total API Calls: {stats['total_api_calls']:,}")
+    print(f"  Total Operations: {stats.get('total_operations', 0):,}")
+    print(f"  Total Errors: {stats.get('total_errors', 0)}")
+    print(f"  Memory Usage: {stats.get('memory_usage_mb', 0):.1f} MB")
+    print(f"  Component Count: {stats.get('components', 0)}")
 
-    # Component-specific statistics
-    order_stats = await suite.orders.get_stats()
+    # Component-specific statistics from MNQ context
+    mnq = suite["MNQ"]
+    order_stats = await mnq.orders.get_stats()
     print(f"\nOrder Manager:")
-    print(f"  Fill Rate: {order_stats['fill_rate']:.1%}")
-    print(f"  Average Fill Time: {order_stats['avg_fill_time_ms']:.0f}ms")
+    print(f"  Orders Placed: {order_stats.get('orders_placed', 0)}")
+    print(f"  Orders Filled: {order_stats.get('orders_filled', 0)}")
+    print(f"  Error Count: {order_stats.get('error_count', 0)}")
 
-    position_stats = await suite.positions.get_stats()
+    position_stats = await mnq.positions.get_stats()
     print(f"\nPosition Manager:")
-    print(f"  Active Positions: {position_stats['active_positions']}")
-    print(f"  Win Rate: {position_stats.get('win_rate', 0):.1%}")
+    print(f"  Positions Opened: {position_stats.get('positions_opened', 0)}")
+    print(f"  Positions Closed: {position_stats.get('positions_closed', 0)}")
 
     await suite.disconnect()
 ```
@@ -773,22 +779,27 @@ async def performance_statistics():
 
 ```python
 async def statistics_export():
+    from project_x_py.statistics.export import StatsExporter
+    import json
+
     suite = await TradingSuite.create("MNQ", features=["orderbook"])
 
-    # Export statistics in different formats
+    # Get statistics and export in different formats
+    stats = await suite.get_stats()
+    exporter = StatsExporter()
 
     # Prometheus format (for monitoring systems)
-    prometheus_metrics = await suite.export_stats("prometheus")
+    prometheus_metrics = await exporter.to_prometheus(stats)
     with open("metrics.prom", "w") as f:
         f.write(prometheus_metrics)
 
     # CSV format (for analysis)
-    csv_data = await suite.export_stats("csv")
+    csv_data = await exporter.to_csv(stats, include_timestamp=True)
     with open("trading_stats.csv", "w") as f:
         f.write(csv_data)
 
     # JSON format (for applications)
-    json_data = await suite.export_stats("json")
+    json_data = json.dumps(stats, indent=2)
     with open("trading_stats.json", "w") as f:
         f.write(json_data)
 
@@ -887,8 +898,12 @@ async def complete_trading_example():
             await asyncio.sleep(30)  # Check every 30 seconds
 
             # Print status update
+            from project_x_py.statistics.health import HealthMonitor
+
             current_price = await suite.data.get_current_price()
-            health_score = await suite.get_health_score()
+            stats = await suite.get_stats()
+            monitor = HealthMonitor()
+            health_score = await monitor.calculate_health(stats)
 
             print(f"= MNQ: ${current_price:.2f} | Health: {health_score:.0f}/100")
 
@@ -905,8 +920,8 @@ async def complete_trading_example():
 
         # Get final statistics
         stats = await suite.get_stats()
-        print(f"  API Calls: {stats['total_api_calls']:,}")
-        print(f"  Success Rate: {stats['api_success_rate']:.1%}")
+        print(f"  Total Operations: {stats.get('total_operations', 0):,}")
+        print(f"  Total Errors: {stats.get('total_errors', 0)}")
 
         # Get final position
         position = await suite.positions.get_position("MNQ")
@@ -947,7 +962,7 @@ async with TradingSuite.create("MNQ") as suite:
 ```python
 #  Good: Monitor resource usage
 stats = await suite.get_stats()
-if stats['memory_usage_mb'] > 100:  # 100MB threshold
+if stats.get('memory_usage_mb', 0) > 100:  # 100MB threshold
     print("High memory usage - consider cleanup")
 
 # Good: Use appropriate features

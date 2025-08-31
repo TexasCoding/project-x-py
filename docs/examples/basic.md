@@ -298,25 +298,30 @@ async def main():
     suite = await TradingSuite.create("MNQ", timeframes=["1min", "5min"])
 
     # Get suite statistics
-    stats = await suite.get_statistics()
+    stats = await suite.get_stats()
     print("TradingSuite Statistics:")
-    for component, data in stats.items():
-        print(f"  {component}:")
-        for key, value in data.items():
-            if isinstance(value, dict):
-                print(f"    {key}: {len(value)} items")
-            else:
-                print(f"    {key}: {value}")
+    print(f"  Total Operations: {stats.get('total_operations', 0)}")
+    print(f"  Total Errors: {stats.get('total_errors', 0)}")
+    print(f"  Memory Usage: {stats.get('memory_usage_mb', 0):.1f} MB")
+    print(f"  Component Count: {stats.get('components', 0)}")
 
-    # Get health scores
-    health = await suite.get_health_scores()
-    print(f"\nHealth Scores (0-100):")
-    for component, score in health.items():
-        status = "EXCELLENT" if score >= 90 else "GOOD" if score >= 70 else "WARNING" if score >= 50 else "CRITICAL"
-        print(f"  {component}: {score}/100 ({status})")
+    # Calculate health score using HealthMonitor
+    from project_x_py.statistics.health import HealthMonitor
+    monitor = HealthMonitor()
+    health_score = await monitor.calculate_health(stats)
+    print(f"\nOverall Health Score: {health_score:.1f}/100")
+    status = "EXCELLENT" if health_score >= 90 else "GOOD" if health_score >= 70 else "WARNING" if health_score >= 50 else "CRITICAL"
+    print(f"Status: {status}")
 
-    # Get memory usage
-    memory_stats = await suite.get_memory_stats()
+    # Get detailed health breakdown
+    breakdown = await monitor.get_health_breakdown(stats)
+    print("\nHealth Breakdown:")
+    for category, score in breakdown.items():
+        if category not in ['overall_score', 'weighted_total']:
+            print(f"  {category}: {score:.1f}/100")
+
+    # Memory usage is already in stats
+    memory_mb = stats.get('memory_usage_mb', 0)
     print(f"\nMemory Usage:")
     for component, memory_info in memory_stats.items():
         print(f"  {component}: {memory_info}")

@@ -673,18 +673,18 @@ async def resource_management_example():
     ], features=["orderbook", "risk_manager"]) as suite:
 
         # Monitor resource usage
-        stats = await suite.get_statistics()
-        print(f"Initial memory usage: {stats['memory_usage_mb']:.1f} MB")
+        stats = await suite.get_stats()
+        print(f"Initial memory usage: {stats.get('memory_usage_mb', 0):.1f} MB")
 
         # Your trading logic here
         for symbol, context in suite.items():
-            # Check individual component health
-            component_health = await context.get_health_score()
-            print(f"{symbol} health: {component_health:.1f}/100")
+            # Check component statistics
+            order_stats = await context.orders.get_stats()
+            print(f"{symbol} - Orders placed: {order_stats.get('orders_placed', 0)}, Errors: {order_stats.get('error_count', 0)}")
 
         # Periodic resource monitoring
-        stats = await suite.get_statistics()
-        if stats['memory_usage_mb'] > 100:  # 100MB threshold
+        stats = await suite.get_stats()
+        if stats.get('memory_usage_mb', 0) > 100:  # 100MB threshold
             print("⚠️ High memory usage detected")
 
         # Suite automatically disconnects and cleans up on exit
