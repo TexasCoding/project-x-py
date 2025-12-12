@@ -3,6 +3,9 @@ Batched WebSocket message handler for improved throughput.
 
 This module provides high-performance message batching for WebSocket data,
 reducing overhead and improving throughput by processing messages in batches.
+
+FIXED: Configurable poll interval to reduce CPU usage.
+See: https://github.com/TexasCoding/project-x-py/issues/82
 """
 
 import asyncio
@@ -26,16 +29,23 @@ class BatchedWebSocketHandler:
 
     Features:
         - Configurable batch size and timeout
+        - Configurable poll interval for CPU efficiency
         - Automatic batch processing when size or time threshold is reached
         - Non-blocking message queueing
         - Graceful error handling per batch
         - Performance metrics tracking
     """
 
+    # Default poll interval when waiting for messages (in seconds)
+    # Higher values = lower CPU usage but slightly higher latency
+    # 0.05s (50ms) provides good balance between responsiveness and CPU efficiency
+    DEFAULT_POLL_INTERVAL = 0.05  # Changed from 0.01 (10ms) to reduce CPU usage
+
     def __init__(
         self,
         batch_size: int = 100,
         batch_timeout: float = 0.1,
+        poll_interval: float | None = None,  # NEW: Configurable poll interval
         process_callback: Callable[[list[dict[str, Any]]], Coroutine[Any, Any, None]]
         | None = None,
     ):
@@ -45,10 +55,14 @@ class BatchedWebSocketHandler:
         Args:
             batch_size: Maximum number of messages per batch (default: 100)
             batch_timeout: Maximum time to wait for batch to fill in seconds (default: 0.1)
+            poll_interval: Interval for polling when queue is empty (default: 0.05s)
+                          Lower values = more responsive but higher CPU usage
+                          Higher values = lower CPU usage but slightly higher latency
             process_callback: Async callback to process message batches
         """
         self.batch_size = batch_size
         self.batch_timeout = batch_timeout
+        self.poll_interval = poll_interval or self.DEFAULT_POLL_INTERVAL  # NEW
         self.process_callback = process_callback
 
         # Message queue using deque for O(1) append/popleft
@@ -128,11 +142,10 @@ class BatchedWebSocketHandler:
                     if remaining > 0:
                         try:
                             # Wait for either timeout or flush event
+                            # FIXED: Use configurable poll_interval instead of hardcoded 0.01
                             await asyncio.wait_for(
                                 self._flush_event.wait(),
-                                timeout=min(
-                                    0.01, remaining
-                                ),  # Increased from 0.001 to 0.01
+                                timeout=min(self.poll_interval, remaining),
                             )
                             # Flush was triggered, break the loop
                             break
@@ -249,6 +262,7 @@ class BatchedWebSocketHandler:
             "last_batch_timestamp": self.last_batch_time,
             "batch_size_limit": self.batch_size,
             "batch_timeout_ms": self.batch_timeout * 1000,
+            "poll_interval_ms": self.poll_interval * 1000,  # NEW
         }
 
     async def stop(self) -> None:
@@ -282,31 +296,40 @@ class OptimizedRealtimeHandler:
     for improved performance with high-frequency data streams.
     """
 
-    def __init__(self, realtime_client: Any):
+    # Default poll interval for all handlers (can be overridden)
+    DEFAULT_POLL_INTERVAL = 0.05  # 50ms - balances responsiveness and CPU usage
+
+    def __init__(self, realtime_client: Any, poll_interval: float | None = None):
         """
         Initialize optimized handler.
 
         Args:
             realtime_client: The ProjectX realtime client instance
+            poll_interval: Optional poll interval override for all handlers
         """
         self.client = realtime_client
+        poll_interval = poll_interval or self.DEFAULT_POLL_INTERVAL
 
         # Create separate batch handlers for different message types
+        # FIXED: Use configurable poll_interval for all handlers
         self.quote_handler = BatchedWebSocketHandler(
             batch_size=200,  # Larger batches for quotes
             batch_timeout=0.05,  # 50ms timeout
+            poll_interval=poll_interval,  # NEW
             process_callback=self._process_quote_batch,
         )
 
         self.trade_handler = BatchedWebSocketHandler(
             batch_size=100,
             batch_timeout=0.1,
+            poll_interval=poll_interval,  # NEW
             process_callback=self._process_trade_batch,
         )
 
         self.depth_handler = BatchedWebSocketHandler(
             batch_size=50,  # Smaller batches for depth updates
             batch_timeout=0.1,
+            poll_interval=poll_interval,  # NEW
             process_callback=self._process_depth_batch,
         )
 
