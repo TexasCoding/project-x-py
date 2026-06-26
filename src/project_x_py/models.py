@@ -455,7 +455,7 @@ class Position:
             return 0.0
 
 
-@dataclass
+@dataclass(slots=True)
 class Trade:
     """
     Represents an executed trade with P&L information.
@@ -468,6 +468,7 @@ class Trade:
         price (float): Execution price
         profitAndLoss (Optional[float]): Realized P&L (None for half-turn trades)
         fees (float): Trading fees/commissions
+        commissions (Optional[float]): Gateway commission amount, if provided
         side (int): Trade side: 0=Buy, 1=Sell
         size (int): Number of contracts traded
         voided (bool): Whether the trade was voided/cancelled
@@ -483,20 +484,6 @@ class Trade:
         >>> print(f"{side_str} {trade.size} @ ${trade.price} - P&L: {pnl_str}")
     """
 
-    __slots__ = (
-        "accountId",
-        "contractId",
-        "creationTimestamp",
-        "fees",
-        "id",
-        "orderId",
-        "price",
-        "profitAndLoss",
-        "side",
-        "size",
-        "voided",
-    )
-
     id: int
     accountId: int
     contractId: str
@@ -508,6 +495,7 @@ class Trade:
     size: int
     voided: bool
     orderId: int
+    commissions: float | None = None
 
 
 @dataclass

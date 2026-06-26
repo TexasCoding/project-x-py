@@ -77,6 +77,15 @@ from project_x_py.utils.deprecation import deprecated
 
 logger = logging.getLogger(__name__)
 
+_TRADE_FIELDS = frozenset(Trade.__slots__)
+
+
+def _trade_from_response(data: dict[str, Any]) -> Trade:
+    values = dict(data)
+    if "fees" not in values and "commissions" in values:
+        values["fees"] = values["commissions"]
+    return Trade(**{field: values[field] for field in _TRADE_FIELDS if field in values})
+
 
 class TradingMixin:
     """Mixin class providing trading functionality."""
@@ -273,4 +282,4 @@ class TradingMixin:
         if not response or not isinstance(response, list):
             return []
 
-        return [Trade(**trade) for trade in response]
+        return [_trade_from_response(trade) for trade in response]

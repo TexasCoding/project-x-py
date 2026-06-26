@@ -144,7 +144,8 @@ class TradeResponse(TypedDict):
     creationTimestamp: str
     price: float
     profitAndLoss: NotRequired[float]  # None for half-turn trades
-    fees: float
+    fees: NotRequired[float]
+    commissions: NotRequired[float]
     side: int  # 0=Buy, 1=Sell
     size: int
     voided: bool

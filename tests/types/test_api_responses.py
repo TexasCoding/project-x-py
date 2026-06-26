@@ -129,7 +129,7 @@ class TestAPIResponseTypes:
         assert "side" in hints
         assert hints["side"] is int
         assert "fees" in hints
-        assert hints["fees"] is float
+        assert "commissions" in hints
 
         # Optional P&L (None for half-turn trades)
         assert "profitAndLoss" in hints

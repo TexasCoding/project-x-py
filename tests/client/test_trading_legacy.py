@@ -394,6 +394,43 @@ class TestTradingMixin:
         assert call_args[1]["params"]["limit"] == 50
 
     @pytest.mark.asyncio
+    async def test_search_trades_preserves_gateway_commissions_field(
+        self, trading_client
+    ):
+        """Test trade search keeps Gateway commissions while setting fees."""
+        trading_client.account_info = Account(
+            id=12345,
+            name="Test Account",
+            balance=10000.0,
+            canTrade=True,
+            isVisible=True,
+            simulated=False,
+        )
+
+        trading_client._make_request.return_value = [
+            {
+                "id": 1,
+                "accountId": 12345,
+                "contractId": "MNQ",
+                "creationTimestamp": datetime.datetime.now(pytz.UTC).isoformat(),
+                "price": 15000.0,
+                "profitAndLoss": 75.0,
+                "commissions": 2.25,
+                "side": 0,
+                "size": 3,
+                "voided": False,
+                "orderId": 102,
+                "extraField": "ignored",
+            }
+        ]
+
+        trades = await trading_client.search_trades(contract_id="MNQ")
+
+        assert len(trades) == 1
+        assert trades[0].fees == 2.25
+        assert trades[0].commissions == 2.25
+
+    @pytest.mark.asyncio
     async def test_search_trades_custom_account_id(self, trading_client):
         """Test trade search with custom account ID."""
         # No account_info, use explicit account_id

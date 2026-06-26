@@ -183,6 +183,23 @@ class TestTradeModel:
         # Access attributes
         assert t.price == pytest.approx(5000.0)
         assert t.profitAndLoss is None  # half-turn trade allowed
+        assert t.commissions is None
+
+        t_with_commissions = Trade(
+            id=8,
+            accountId=10,
+            contractId="CON.F.US.MNQ.H25",
+            creationTimestamp="2024-01-01T00:01:00Z",
+            price=5001.0,
+            profitAndLoss=10.0,
+            fees=2.5,
+            side=1,
+            size=1,
+            voided=False,
+            orderId=124,
+            commissions=2.5,
+        )
+        assert t_with_commissions.commissions == pytest.approx(2.5)
 
         # __slots__ should prevent setting unknown attributes
         with pytest.raises(AttributeError):
