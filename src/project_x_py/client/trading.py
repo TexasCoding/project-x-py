@@ -257,20 +257,28 @@ class TradingMixin:
         if start_date is None:
             start_date = end_date - timedelta(days=30)
 
-        # Prepare parameters
-        params = {
+        # Prepare request payload for Gateway API
+        payload = {
             "accountId": account_id,
-            "startDate": start_date.isoformat(),
-            "endDate": end_date.isoformat(),
-            "limit": limit,
+            "startTimestamp": start_date.isoformat(),
+            "endTimestamp": end_date.isoformat(),
         }
 
         if contract_id:
-            params["contractId"] = contract_id
+            payload["contractId"] = contract_id
 
-        response = await self._make_request("GET", "/trades/search", params=params)
+        response = await self._make_request("POST", "/Trade/search", data=payload)
 
-        if not response or not isinstance(response, list):
+        if response is None:
             return []
 
-        return [Trade(**trade) for trade in response]
+        if isinstance(response, list):
+            trades_data = response
+        elif isinstance(response, dict):
+            if not response.get("success", False):
+                return []
+            trades_data = response.get("trades", [])
+        else:
+            return []
+
+        return [Trade(**trade) for trade in trades_data[:limit]]
