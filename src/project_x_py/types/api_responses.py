@@ -133,6 +133,7 @@ class PositionResponse(TypedDict):
     type: int  # 0=UNDEFINED, 1=LONG, 2=SHORT
     size: int
     averagePrice: float
+    contractDisplayName: NotRequired[str]
 
 
 class TradeResponse(TypedDict):

@@ -115,6 +115,7 @@ class TestAPIResponseTypes:
         assert hints["size"] is int
         assert "averagePrice" in hints
         assert hints["averagePrice"] is float
+        assert "contractDisplayName" in hints
 
     def test_trade_response_structure(self):
         """Test TradeResponse has correct fields."""
@@ -267,6 +268,7 @@ class TestAPIResponseTypes:
             "id": 67890,
             "accountId": 12345,
             "contractId": "CON.F.US.MNQ.U25",
+            "contractDisplayName": "MNQU25",
             "creationTimestamp": "2024-01-01T10:00:00Z",
             "type": 1,  # LONG
             "size": 5,
@@ -275,6 +277,7 @@ class TestAPIResponseTypes:
 
         assert position["type"] == 1
         assert position["size"] == 5
+        assert position["contractDisplayName"] == "MNQU25"
 
     def test_market_data_responses(self):
         """Test market data response structures."""

@@ -115,6 +115,45 @@ class TestTradingMixin:
         trading_client._ensure_authenticated.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_search_open_positions_preserves_display_name_and_ignores_unknown_fields(
+        self, trading_client
+    ):
+        """Test position search keeps known display fields and ignores unknown ones."""
+        trading_client.account_info = Account(
+            id=12345,
+            name="Test Account",
+            balance=10000.0,
+            canTrade=True,
+            isVisible=True,
+            simulated=False,
+        )
+
+        mock_response = {
+            "success": True,
+            "positions": [
+                {
+                    "id": "pos1",
+                    "accountId": 12345,
+                    "contractId": "CON.F.US.MNQ.Z25",
+                    "contractDisplayName": "MNQZ25",
+                    "unknownGatewayField": "ignored",
+                    "creationTimestamp": datetime.datetime.now(pytz.UTC).isoformat(),
+                    "size": 2,
+                    "averagePrice": 21342.25,
+                    "type": 1,
+                },
+            ],
+        }
+        trading_client._make_request.return_value = mock_response
+
+        positions = await trading_client.search_open_positions()
+
+        assert len(positions) == 1
+        assert positions[0].contractId == "CON.F.US.MNQ.Z25"
+        assert positions[0].contractDisplayName == "MNQZ25"
+        assert positions[0].size == 2
+
+    @pytest.mark.asyncio
     async def test_search_open_positions_with_account_id(self, trading_client):
         """Test position search with specific account ID."""
         # No account_info set, but provide explicit account_id

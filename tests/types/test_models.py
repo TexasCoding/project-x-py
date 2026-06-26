@@ -130,6 +130,12 @@ class TestPositionModel:
         assert p.direction == "LONG"
         assert p["averagePrice"] == pytest.approx(2050.0)
         assert p.symbol == "MGC"
+        assert p.contractDisplayName is None
+
+    def test_contract_display_name(self):
+        p = self.make_position(contractDisplayName="MGCM25")
+        assert p.contractDisplayName == "MGCM25"
+        assert p["contractDisplayName"] == "MGCM25"
 
     def test_short_position_helpers(self):
         p = self.make_position(type=2, size=3)

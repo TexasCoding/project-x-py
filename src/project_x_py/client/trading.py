@@ -66,6 +66,7 @@ See Also:
 
 import datetime
 import logging
+from dataclasses import fields
 from datetime import timedelta
 from typing import Any
 
@@ -76,6 +77,14 @@ from project_x_py.models import Position, Trade
 from project_x_py.utils.deprecation import deprecated
 
 logger = logging.getLogger(__name__)
+
+_POSITION_FIELDS = frozenset(field.name for field in fields(Position))
+
+
+def _position_from_response(data: dict[str, Any]) -> Position:
+    return Position(
+        **{field: data[field] for field in _POSITION_FIELDS if field in data}
+    )
 
 
 class TradingMixin:
@@ -182,7 +191,7 @@ class TradingMixin:
         else:
             return []
 
-        return [Position(**pos) for pos in positions_data]
+        return [_position_from_response(pos) for pos in positions_data]
 
     async def search_trades(
         self,

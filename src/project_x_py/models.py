@@ -366,6 +366,7 @@ class Position:
             0=UNDEFINED, 1=LONG, 2=SHORT
         size (int): Position size (number of contracts, always positive)
         averagePrice (float): Average entry price of the position
+        contractDisplayName (Optional[str]): Human-readable contract display name
 
     Note:
         This model contains only the fields returned by ProjectX API.
@@ -385,11 +386,12 @@ class Position:
     type: int
     size: int
     averagePrice: float
+    contractDisplayName: str | None = None
 
     # Allow dict-like access for compatibility in tests/utilities
-    def __getitem__(self, key: str) -> Union[int, str, float]:
+    def __getitem__(self, key: str) -> Union[int, str, float, None]:
         value = getattr(self, key)
-        if isinstance(value, int | str | float):
+        if value is None or isinstance(value, int | str | float):
             return value
         else:
             raise TypeError(
