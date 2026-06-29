@@ -69,6 +69,7 @@ See Also:
 
 import asyncio
 from collections.abc import Callable, Coroutine
+from concurrent.futures import CancelledError as FutureCancelledError
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -437,8 +438,12 @@ class EventHandlingMixin(TaskManagerMixin):
             return False
 
         def _log_task_error(task_future: Any) -> None:
+            if task_future.cancelled():
+                return
             try:
                 task_future.result()
+            except (asyncio.CancelledError, FutureCancelledError):
+                return
             except Exception as exc:
                 self.logger.error(f"Async task {name} failed: {exc}", exc_info=True)
 

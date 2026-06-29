@@ -421,6 +421,38 @@ class TestCrossThreadEventScheduling:
         )
 
     @pytest.mark.asyncio
+    async def test_cancelled_threadsafe_task_does_not_log_error(self, event_handler):
+        """Test cancelled SignalR callback tasks are treated as normal shutdown."""
+
+        class CancelledFuture:
+            def cancelled(self):
+                return True
+
+            def add_done_callback(self, callback):
+                callback(self)
+
+        async def noop():
+            pass
+
+        def run_threadsafe(coro, loop):
+            del loop
+            coro.close()
+            return CancelledFuture()
+
+        event_handler._loop = asyncio.get_running_loop()
+
+        with patch(
+            "asyncio.run_coroutine_threadsafe",
+            side_effect=run_threadsafe,
+        ):
+            assert event_handler._schedule_coroutine_threadsafe(
+                noop(),
+                name="cancelled_task",
+            )
+
+        event_handler.logger.error.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_event_loop_detection(self, event_handler):
         """Test that event handler detects and uses correct event loop."""
         # Set event loop

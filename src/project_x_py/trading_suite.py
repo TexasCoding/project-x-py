@@ -51,6 +51,7 @@ import yaml
 from project_x_py.client import ProjectX
 from project_x_py.client.base import ProjectXBase
 from project_x_py.event_bus import EventBus, EventType
+from project_x_py.exceptions import ProjectXConnectionError
 from project_x_py.models import Instrument
 from project_x_py.order_manager import OrderManager
 from project_x_py.order_tracker import OrderChainBuilder, OrderTracker
@@ -838,7 +839,11 @@ class TradingSuite:
         try:
             # Connect to realtime feeds
             logger.info("Connecting to real-time feeds...")
-            await self.realtime.connect()
+            connected = await self.realtime.connect()
+            if not connected:
+                raise ProjectXConnectionError(
+                    "Failed to establish ProjectX realtime connections"
+                )
             await self.realtime.subscribe_user_updates()
 
             if self._instruments:

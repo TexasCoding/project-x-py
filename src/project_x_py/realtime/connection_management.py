@@ -218,11 +218,13 @@ class ConnectionManagementMixin:
                 self.user_connection.on(
                     "GatewayUserTrade", self._forward_trade_execution
                 )
+                self.user_connection.on("GatewayLogout", self._on_gateway_logout)
 
                 # Market Hub Events
                 self.market_connection.on("GatewayQuote", self._forward_quote_update)
                 self.market_connection.on("GatewayTrade", self._forward_market_trade)
                 self.market_connection.on("GatewayDepth", self._forward_market_depth)
+                self.market_connection.on("GatewayLogout", self._on_gateway_logout)
 
                 logger.debug(
                     LogMessages.WS_CONNECTED, extra={"phase": "setup_complete"}
@@ -304,15 +306,27 @@ class ConnectionManagementMixin:
                     )
                     return False
 
-                # Wait for connections to establish
+                # Wait for connections to establish. Keep explicit task handles so
+                # timeout and shutdown paths can drain cancellations cleanly.
+                wait_tasks = [
+                    asyncio.create_task(self.user_hub_ready.wait()),
+                    asyncio.create_task(self.market_hub_ready.wait()),
+                ]
                 try:
-                    await asyncio.wait_for(
-                        asyncio.gather(
-                            self.user_hub_ready.wait(), self.market_hub_ready.wait()
-                        ),
+                    _, pending = await asyncio.wait(
+                        wait_tasks,
                         timeout=10.0,
                     )
-                except TimeoutError:
+                except asyncio.CancelledError:
+                    for task in wait_tasks:
+                        task.cancel()
+                    await asyncio.gather(*wait_tasks, return_exceptions=True)
+                    raise
+
+                if pending:
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.gather(*wait_tasks, return_exceptions=True)
                     logger.error(
                         LogMessages.WS_ERROR,
                         extra={
@@ -467,6 +481,10 @@ class ConnectionManagementMixin:
         self.market_connected = False
         self.market_hub_ready.clear()
         self.logger.warning("❌ Market hub disconnected")
+
+    def _on_gateway_logout(self: "ProjectXRealtimeClientProtocol", *args: Any) -> None:
+        """Handle GatewayLogout events so SignalRCore does not log them as unhandled."""
+        self.logger.debug("Gateway logout event received", extra={"payload": args})
 
     def _on_connection_error(
         self: "ProjectXRealtimeClientProtocol", hub: str, error: Any

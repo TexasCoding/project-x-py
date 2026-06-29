@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from project_x_py import Features, TradingSuite, TradingSuiteConfig
+from project_x_py.exceptions import ProjectXConnectionError
 from project_x_py.models import Account
 
 
@@ -123,6 +124,62 @@ async def test_trading_suite_create():
                     # Verify cleanup
                     assert suite._connected is False
                     assert suite._initialized is False
+
+
+@pytest.mark.asyncio
+async def test_trading_suite_create_fails_when_realtime_connect_returns_false():
+    """Test creation fails when realtime connections do not establish."""
+
+    mock_client = MagicMock()
+    mock_client.account_info = Account(
+        id=12345,
+        name="TEST_ACCOUNT",
+        balance=100000.0,
+        canTrade=True,
+        isVisible=True,
+        simulated=True,
+    )
+    mock_client.session_token = "mock_jwt_token"
+    mock_client.config = MagicMock()
+    mock_client.authenticate = AsyncMock()
+    mock_client.get_instrument = AsyncMock(return_value=MagicMock(id="MNQ_CONTRACT_ID"))
+    mock_client.search_all_orders = AsyncMock(return_value=[])
+    mock_client.search_open_positions = AsyncMock(return_value=[])
+
+    mock_context = AsyncMock()
+    mock_context.__aenter__.return_value = mock_client
+    mock_context.__aexit__.return_value = None
+
+    mock_realtime = MagicMock()
+    mock_realtime.connect = AsyncMock(return_value=False)
+    mock_realtime.disconnect = AsyncMock(return_value=None)
+
+    mock_data_manager = MagicMock()
+    mock_data_manager.stop_realtime_feed = AsyncMock(return_value=None)
+    mock_data_manager.cleanup = AsyncMock(return_value=None)
+
+    mock_position_manager = MagicMock()
+
+    with patch(
+        "project_x_py.trading_suite.ProjectX.from_env", return_value=mock_context
+    ):
+        with patch(
+            "project_x_py.trading_suite.ProjectXRealtimeClient",
+            return_value=mock_realtime,
+        ):
+            with patch(
+                "project_x_py.trading_suite.RealtimeDataManager",
+                return_value=mock_data_manager,
+            ):
+                with patch(
+                    "project_x_py.trading_suite.PositionManager",
+                    return_value=mock_position_manager,
+                ):
+                    with pytest.raises(ProjectXConnectionError):
+                        await TradingSuite.create("MNQ")
+
+    mock_realtime.disconnect.assert_awaited_once()
+    assert mock_context.__aexit__.await_count >= 1
 
 
 @pytest.mark.asyncio

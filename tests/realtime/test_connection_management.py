@@ -226,13 +226,15 @@ class TestConnectionManagementMixin:
             "GatewayUserAccount",
             "GatewayUserPosition",
             "GatewayUserOrder",
-            "GatewayUserTrade"
+            "GatewayUserTrade",
+            "GatewayLogout",
         ]
 
         expected_market_events = [
             "GatewayQuote",
             "GatewayTrade",
-            "GatewayDepth"
+            "GatewayDepth",
+            "GatewayLogout",
         ]
 
         # Check that all event handlers were registered
@@ -385,8 +387,16 @@ class TestConnectionManagementMixin:
                 mock_client.user_connected = False
                 mock_client.market_connected = False
 
-                # Use a very short timeout for testing
-                with patch('asyncio.wait_for', side_effect=TimeoutError()):
+                async def timeout_wait(tasks, timeout):
+                    del timeout
+                    return set(), set(tasks)
+
+                # Simulate a timeout without waiting for the real 10 second timeout.
+                with patch(
+                    'asyncio.wait',
+                    new_callable=AsyncMock,
+                    side_effect=timeout_wait,
+                ):
                     result = await mock_client.connect()
 
                 assert result is False
