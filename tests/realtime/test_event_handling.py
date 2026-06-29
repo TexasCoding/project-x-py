@@ -322,6 +322,25 @@ class TestCrossThreadEventScheduling:
     """Test cross-thread event scheduling for asyncio compatibility."""
 
     @pytest.mark.asyncio
+    async def test_schedule_async_task_captures_running_loop(self, event_handler):
+        """Test scheduling captures the active event loop when none was stored."""
+        event_data = {"test": "data"}
+        received = asyncio.Event()
+
+        async def callback(data):
+            assert data == event_data
+            received.set()
+
+        await event_handler.add_callback('test_event', callback)
+
+        assert event_handler._loop is None
+
+        event_handler._schedule_async_task('test_event', (event_data,))
+
+        await asyncio.wait_for(received.wait(), timeout=1.0)
+        assert event_handler._loop == asyncio.get_running_loop()
+
+    @pytest.mark.asyncio
     async def test_schedule_event_from_different_thread(self, event_handler):
         """Test scheduling event from a different thread."""
         import threading
@@ -357,6 +376,49 @@ class TestCrossThreadEventScheduling:
         await asyncio.sleep(0.1)
 
         callback.assert_called_once_with(event_data)
+
+    @pytest.mark.asyncio
+    async def test_schedule_async_task_from_signalr_thread(self, event_handler):
+        """Test SignalR thread events use the captured asyncio loop."""
+        import threading
+
+        event_data = {"test": "data"}
+        received = asyncio.Event()
+
+        async def callback(data):
+            assert data == event_data
+            received.set()
+
+        await event_handler.add_callback('test_event', callback)
+
+        event_handler._loop = asyncio.get_running_loop()
+
+        thread = threading.Thread(
+            target=lambda: event_handler._schedule_async_task(
+                'test_event', (event_data,)
+            )
+        )
+        thread.start()
+        thread.join(timeout=1.0)
+
+        await asyncio.wait_for(received.wait(), timeout=1.0)
+
+    def test_schedule_async_task_without_loop_drops_event(self, event_handler):
+        """Test late SignalR events are dropped quietly when no loop exists."""
+        import threading
+
+        thread = threading.Thread(
+            target=lambda: event_handler._schedule_async_task(
+                'test_event', ({"test": "data"},)
+            )
+        )
+        thread.start()
+        thread.join(timeout=1.0)
+
+        event_handler.logger.error.assert_not_called()
+        event_handler.logger.debug.assert_called_with(
+            "Dropping forward_test_event; no active asyncio event loop"
+        )
 
     @pytest.mark.asyncio
     async def test_event_loop_detection(self, event_handler):
@@ -410,7 +472,7 @@ class TestEventStatistics:
         # Stats contain handler stats, not just an "enabled" flag
         assert len(stats) > 0
         # Each handler should have stats with expected keys
-        for handler_name, handler_stats in stats.items():
+        for _handler_name, handler_stats in stats.items():
             assert isinstance(handler_stats, dict)
             assert "batches_processed" in handler_stats
 

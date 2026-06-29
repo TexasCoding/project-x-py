@@ -272,15 +272,15 @@ class ConnectionManagementMixin:
             operation="connect",
             account_id=self.account_id,
         ):
-            if not self.setup_complete:
-                await self.setup_connections()
-
             # Store the event loop for cross-thread task scheduling
             try:
                 self._loop = asyncio.get_running_loop()
             except RuntimeError:
                 logger.error("No running event loop found.")
                 return False
+
+            if not self.setup_complete:
+                await self.setup_connections()
 
             logger.debug(LogMessages.WS_CONNECT)
 

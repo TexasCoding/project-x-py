@@ -349,10 +349,9 @@ class EventHandlingMixin(TaskManagerMixin):
         """
         if self._use_batching and self._batched_handler and args:
             # Use batched processing for high-frequency quotes
-            self._create_task(
+            self._schedule_coroutine_threadsafe(
                 self._batched_handler.handle_quote(args[0]),
                 name="handle_quote",
-                persistent=False,
             )
         else:
             self._schedule_async_task("quote_update", args)
@@ -372,10 +371,9 @@ class EventHandlingMixin(TaskManagerMixin):
         """
         if self._use_batching and self._batched_handler and args:
             # Use batched processing for trades
-            self._create_task(
+            self._schedule_coroutine_threadsafe(
                 self._batched_handler.handle_trade(args[0]),
                 name="handle_trade",
-                persistent=False,
             )
         else:
             self._schedule_async_task("market_trade", args)
@@ -395,13 +393,57 @@ class EventHandlingMixin(TaskManagerMixin):
         """
         if self._use_batching and self._batched_handler and args:
             # Use batched processing for depth updates
-            self._create_task(
+            self._schedule_coroutine_threadsafe(
                 self._batched_handler.handle_depth(args[0]),
                 name="handle_depth",
-                persistent=False,
             )
         else:
             self._schedule_async_task("market_depth", args)
+
+    def _active_event_loop(self) -> asyncio.AbstractEventLoop | None:
+        """Return the captured asyncio loop, or capture the current running loop."""
+        if self._loop and not self._loop.is_closed():
+            return self._loop
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return None
+
+        if loop.is_closed():
+            return None
+
+        self._loop = loop
+        return loop
+
+    def _schedule_coroutine_threadsafe(
+        self,
+        coro: Coroutine[Any, Any, Any],
+        *,
+        name: str,
+    ) -> bool:
+        """Schedule a coroutine on the captured loop from the SignalR thread."""
+        loop = self._active_event_loop()
+        if loop is None:
+            coro.close()
+            self.logger.debug(f"Dropping {name}; no active asyncio event loop")
+            return False
+
+        try:
+            future = asyncio.run_coroutine_threadsafe(coro, loop)
+        except Exception as e:
+            coro.close()
+            self.logger.error(f"Error scheduling async task {name}: {e}")
+            return False
+
+        def _log_task_error(task_future: Any) -> None:
+            try:
+                task_future.result()
+            except Exception as exc:
+                self.logger.error(f"Async task {name} failed: {exc}", exc_info=True)
+
+        future.add_done_callback(_log_task_error)
+        return True
 
     def _schedule_async_task(self, event_type: str, data: Any) -> None:
         """
@@ -428,25 +470,10 @@ class EventHandlingMixin(TaskManagerMixin):
         Note:
             Critical for thread safety - ensures callbacks run in proper context.
         """
-        if self._loop and not self._loop.is_closed():
-            try:
-                asyncio.run_coroutine_threadsafe(
-                    self._forward_event_async(event_type, data), self._loop
-                )
-            except Exception as e:
-                # Fallback for logging - avoid recursion
-                self.logger.error(f"Error scheduling async task: {e}")
-        else:
-            # Fallback - try to create task in current loop context
-            try:
-                self._create_task(
-                    self._forward_event_async(event_type, data),
-                    name=f"forward_{event_type}",
-                    persistent=False,
-                )
-            except RuntimeError:
-                # No event loop available, log and continue
-                self.logger.error(f"No event loop available for {event_type} event")
+        self._schedule_coroutine_threadsafe(
+            self._forward_event_async(event_type, data),
+            name=f"forward_{event_type}",
+        )
 
     async def _forward_event_async(self, event_type: str, args: Any) -> None:
         """
