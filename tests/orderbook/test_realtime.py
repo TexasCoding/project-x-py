@@ -246,10 +246,7 @@ class TestContractFiltering:
         # Empty contract IDs
         assert realtime_handler._is_relevant_contract("") is False
 
-        # BUG DISCOVERED: None contract ID causes AttributeError
-        # Should handle None gracefully but currently crashes
-        with pytest.raises(AttributeError):
-            realtime_handler._is_relevant_contract(None)
+        assert realtime_handler._is_relevant_contract(None) is False
 
         # Fixed: Partial matches should not qualify - using exact match instead of startswith
         assert realtime_handler._is_relevant_contract("MNQH25") is False
@@ -522,21 +519,32 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_handle_none_data(self, realtime_handler, mock_orderbook_base):
         """Test handling of None data."""
-        # BUG DISCOVERED: The code doesn't handle None data properly
-        # _process_market_depth crashes with AttributeError: 'NoneType' object has no attribute 'get'
-        # _is_relevant_contract crashes with AttributeError: 'NoneType' object has no attribute 'replace'
-        # These should be fixed to handle None gracefully
+        await realtime_handler._process_market_depth(None)
+        await realtime_handler._on_market_depth_update(None)
+        await realtime_handler._on_quote_update(None)
+        assert realtime_handler._is_relevant_contract(None) is False
 
-        # For now, we expect these to raise exceptions (documenting the bugs)
-        with pytest.raises(AttributeError):
-            await realtime_handler._process_market_depth(None)
+    @pytest.mark.asyncio
+    async def test_handle_none_depth_entries(self, realtime_handler, mock_orderbook_base):
+        """Test handling of None entries inside market depth data."""
+        depth_data = {
+            "contract_id": "CON.F.US.MNQ.U25",
+            "data": [
+                None,
+                {
+                    "contractId": "CON.F.US.MNQ.U25",
+                    "type": DomType.BID.value,
+                    "price": 21000.0,
+                    "size": 10,
+                    "side": "Bid",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                },
+            ],
+        }
 
-        # Quote update might handle None better - let's test
-        try:
-            await realtime_handler._on_quote_update(None)
-        except (AttributeError, TypeError):
-            # Expected due to None handling bug
-            pass
+        await realtime_handler._on_market_depth_update(depth_data)
+
+        assert mock_orderbook_base._trigger_callbacks.called
 
 
 class TestThreadSafety:

@@ -190,6 +190,10 @@ class RealtimeHandler:
             depth entry contains DomType information for proper processing.
         """
         try:
+            if not isinstance(data, dict):
+                self.logger.debug("Ignoring malformed market depth update")
+                return
+
             self.logger.debug(f"Market depth callback received: {list(data.keys())}")
             # The data comes structured as {"contract_id": ..., "data": ...}
             contract_id = data.get("contract_id", "")
@@ -234,6 +238,10 @@ class RealtimeHandler:
             trigger quote-specific callbacks for client applications.
         """
         try:
+            if not isinstance(data, dict):
+                self.logger.debug("Ignoring malformed quote update")
+                return
+
             # The data comes structured as {"contract_id": ..., "data": ...}
             contract_id = data.get("contract_id", "")
             if not self._is_relevant_contract(contract_id):
@@ -287,6 +295,9 @@ class RealtimeHandler:
             >>> handler._is_relevant_contract("CON.F.US.NQ.H25")  # ES orderbook
             False
         """
+        if not isinstance(contract_id, str) or not contract_id:
+            return False
+
         if contract_id == self.orderbook.instrument:
             return True
 
@@ -328,7 +339,14 @@ class RealtimeHandler:
             This method acquires the orderbook lock and processes all updates
             atomically to ensure data consistency.
         """
+        if not isinstance(data, dict):
+            self.logger.debug("Ignoring malformed market depth payload")
+            return
+
         market_data = data.get("data", [])
+        if not isinstance(market_data, list):
+            self.logger.debug("Ignoring market depth payload with non-list data")
+            return
         if not market_data:
             return
 
@@ -396,6 +414,10 @@ class RealtimeHandler:
             This method should only be called from within _process_market_depth
             while the orderbook lock is already held.
         """
+        if not isinstance(entry, dict):
+            self.logger.debug("Ignoring malformed market depth entry")
+            return
+
         try:
             trade_type = entry.get("type", 0)
             price = float(entry.get("price", 0))
