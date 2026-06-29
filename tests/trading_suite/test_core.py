@@ -12,6 +12,25 @@ from project_x_py import Features, TradingSuite, TradingSuiteConfig
 from project_x_py.models import Account
 
 
+def _mock_authenticated_client() -> MagicMock:
+    mock_client = MagicMock()
+    mock_client.account_info = Account(
+        id=12345,
+        name="TEST_ACCOUNT",
+        balance=100000.0,
+        canTrade=True,
+        isVisible=True,
+        simulated=True,
+    )
+    mock_client.session_token = "mock_jwt_token"
+    mock_client.config = MagicMock()
+    mock_client.authenticate = AsyncMock()
+    mock_client.get_instrument = AsyncMock(return_value=MagicMock(id="MNQ_CONTRACT_ID"))
+    mock_client.search_all_orders = AsyncMock(return_value=[])
+    mock_client.search_open_positions = AsyncMock(return_value=[])
+    return mock_client
+
+
 @pytest.mark.asyncio
 async def test_trading_suite_create():
     """Test basic TradingSuite creation with mocked client."""
@@ -123,6 +142,68 @@ async def test_trading_suite_create():
                     # Verify cleanup
                     assert suite._connected is False
                     assert suite._initialized is False
+
+
+@pytest.mark.asyncio
+async def test_trading_suite_create_with_direct_credentials():
+    """Test TradingSuite creation with directly supplied ProjectX credentials."""
+
+    mock_client = _mock_authenticated_client()
+
+    mock_context = AsyncMock()
+    mock_context.__aenter__.return_value = mock_client
+    mock_context.__aexit__.return_value = None
+
+    mock_realtime = MagicMock()
+    mock_realtime.disconnect = AsyncMock(return_value=None)
+
+    mock_data_manager = MagicMock()
+    mock_data_manager.stop_realtime_feed = AsyncMock(return_value=None)
+    mock_data_manager.cleanup = AsyncMock(return_value=None)
+
+    mock_position_manager = MagicMock()
+
+    with patch(
+        "project_x_py.trading_suite.ProjectX", return_value=mock_context
+    ) as mock_project_x:
+        with patch(
+            "project_x_py.trading_suite.ProjectXRealtimeClient",
+            return_value=mock_realtime,
+        ):
+            with patch(
+                "project_x_py.trading_suite.RealtimeDataManager",
+                return_value=mock_data_manager,
+            ):
+                with patch(
+                    "project_x_py.trading_suite.PositionManager",
+                    return_value=mock_position_manager,
+                ):
+                    suite = await TradingSuite.create(
+                        "MNQ",
+                        username="direct_user",
+                        api_key="direct_key",
+                        account_name="test_account",
+                        auto_connect=False,
+                    )
+
+                    mock_project_x.assert_called_once_with(
+                        username="direct_user",
+                        api_key="direct_key",
+                        account_name="TEST_ACCOUNT",
+                    )
+                    assert suite.client == mock_client
+                    assert suite.config.auto_connect is False
+
+                    await suite.disconnect()
+                    mock_context.__aexit__.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_trading_suite_create_requires_direct_credentials_together():
+    """Test direct credentials fail early when partially supplied."""
+
+    with pytest.raises(ValueError, match="Both 'username' and 'api_key'"):
+        await TradingSuite.create("MNQ", username="direct_user")
 
 
 @pytest.mark.asyncio

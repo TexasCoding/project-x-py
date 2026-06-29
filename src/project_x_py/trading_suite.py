@@ -471,6 +471,9 @@ class TradingSuite:
             timeframes: Data timeframes (default: ["5min"])
             features: Optional features to enable
             session_config: Optional session configuration
+            username: Optional ProjectX username. Must be used with api_key.
+            api_key: Optional ProjectX API key. Must be used with username.
+            account_name: Optional account name to select during authentication
             **kwargs: Additional configuration options
 
         Returns:
@@ -507,6 +510,16 @@ class TradingSuite:
                 "Must provide either 'instruments' or 'instrument' parameter"
             )
 
+        username = cast(str | None, kwargs.pop("username", None))
+        api_key = cast(str | None, kwargs.pop("api_key", None))
+        account_name = cast(str | None, kwargs.pop("account_name", None))
+
+        if (username is None) != (api_key is None):
+            raise ValueError(
+                "Both 'username' and 'api_key' must be provided for direct "
+                "TradingSuite authentication"
+            )
+
         # Build configuration using primary instrument
         config = TradingSuiteConfig(
             instrument=primary_instrument,
@@ -517,7 +530,15 @@ class TradingSuite:
         )
 
         # Create and authenticate client
-        client_context = ProjectX.from_env()
+        client_context: AbstractAsyncContextManager[ProjectXBase]
+        if username is not None and api_key is not None:
+            client_context = ProjectX(
+                username=username,
+                api_key=api_key,
+                account_name=account_name.upper() if account_name else None,
+            )
+        else:
+            client_context = ProjectX.from_env(account_name=account_name)
         client = await client_context.__aenter__()
 
         try:
