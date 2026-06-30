@@ -717,7 +717,7 @@ class OrderTrackingMixin:
                     from project_x_py.models import Order
 
                     try:
-                        order_obj = Order(**actual_order_data)
+                        order_obj = Order.from_api(actual_order_data)
                         event_payload = {
                             "order": order_obj,
                             "order_id": order_id,  # Add order_id for compatibility

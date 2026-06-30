@@ -66,6 +66,67 @@ class TestOrderManagerCore:
         assert order_manager.order_status_cache[str(resp_order["id"])] == 1
 
     @pytest.mark.asyncio
+    async def test_search_open_orders_ignores_unknown_api_fields(self, order_manager):
+        """search_open_orders tolerates additive API fields like fills."""
+        resp_order = {
+            "id": 101,
+            "accountId": 12345,
+            "contractId": "MGC",
+            "creationTimestamp": "2024-01-01T01:00:00Z",
+            "updateTimestamp": None,
+            "status": 1,
+            "type": 1,
+            "side": 0,
+            "size": 2,
+            "fills": [{"price": 2100.5, "size": 1}],
+        }
+        order_manager.project_x.account_info.id = 12345
+        order_manager.project_x._make_request = AsyncMock(
+            return_value={"success": True, "orders": [resp_order]}
+        )
+
+        orders = await order_manager.search_open_orders()
+
+        assert orders == [
+            Order(
+                id=101,
+                accountId=12345,
+                contractId="MGC",
+                creationTimestamp="2024-01-01T01:00:00Z",
+                updateTimestamp=None,
+                status=1,
+                type=1,
+                side=0,
+                size=2,
+            )
+        ]
+        assert not hasattr(orders[0], "fills")
+        assert order_manager.tracked_orders["101"] == resp_order
+
+    @pytest.mark.asyncio
+    async def test_get_order_by_id_ignores_unknown_cached_fields(self, order_manager):
+        """get_order_by_id tolerates additive fields in tracked order data."""
+        order_manager._realtime_enabled = True
+        order_manager.tracked_orders["101"] = {
+            "id": 101,
+            "accountId": 12345,
+            "contractId": "MGC",
+            "creationTimestamp": "2024-01-01T01:00:00Z",
+            "updateTimestamp": None,
+            "status": 1,
+            "type": 1,
+            "side": 0,
+            "size": 2,
+            "fills": [{"price": 2100.5, "size": 1}],
+        }
+
+        order = await order_manager.get_order_by_id(101)
+
+        assert isinstance(order, Order)
+        assert order.id == 101
+        assert not hasattr(order, "fills")
+
+    @pytest.mark.asyncio
     async def test_is_order_filled_cache_hit(self, order_manager):
         """is_order_filled returns True from cache and does not call _make_request if cached."""
         order_manager._realtime_enabled = True

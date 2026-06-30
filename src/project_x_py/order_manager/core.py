@@ -715,7 +715,7 @@ class OrderManager(
         open_orders = []
         for order_data in orders:
             try:
-                order = Order(**order_data)
+                order = Order.from_api(order_data)
                 open_orders.append(order)
 
                 # Update our cache
@@ -912,7 +912,7 @@ class OrderManager(
             order_data = await self.get_tracked_order_status(order_id_str)
             if order_data:
                 try:
-                    return Order(**order_data)
+                    return Order.from_api(order_data)
                 except Exception as e:
                     self.logger.debug(f"Failed to parse cached order data: {e}")
 

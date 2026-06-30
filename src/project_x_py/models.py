@@ -112,8 +112,9 @@ See Also:
     - `types`: Type definitions and protocols
 """
 
-from dataclasses import dataclass
-from typing import Union
+from collections.abc import Mapping
+from dataclasses import dataclass, fields
+from typing import Any, Union
 
 __all__ = [
     "Account",
@@ -245,6 +246,12 @@ class Order:
     def is_cancelled(self) -> bool:
         """Check if order was cancelled."""
         return self.status == 3  # OrderStatus.CANCELLED
+
+    @classmethod
+    def from_api(cls, data: Mapping[str, Any]) -> "Order":
+        """Create an Order from API data, ignoring additive unknown fields."""
+        field_names = {field.name for field in fields(cls)}
+        return cls(**{name: data[name] for name in field_names if name in data})
 
     @property
     def is_rejected(self) -> bool:
