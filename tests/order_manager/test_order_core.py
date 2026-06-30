@@ -109,12 +109,68 @@ class TestOrderManagerCore:
         assert order_manager.order_status_cache["888"] == 3
         assert order_manager.stats["orders_cancelled"] == start + 1
 
+        order_manager.tracked_orders.pop("888", None)
+        order_manager.order_status_cache.pop("888", None)
         order_manager.project_x._make_request = AsyncMock(
             return_value={"success": False, "errorMessage": "fail"}
         )
         with pytest.raises(ProjectXOrderError) as exc_info:
             await order_manager.cancel_order(888)
         assert "Failed to cancel order 888: fail" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_cancel_order_reconciles_filled_race(self, order_manager):
+        """cancel_order returns False when a failed cancel reconciles to filled."""
+        order_data = {
+            "id": 888,
+            "accountId": 12345,
+            "contractId": "MNQ",
+            "creationTimestamp": "2024-01-01T01:00:00Z",
+            "updateTimestamp": "2024-01-01T01:01:00Z",
+            "status": 2,
+            "type": 1,
+            "side": 1,
+            "size": 1,
+            "fillVolume": 1,
+            "filledPrice": 30120.0,
+        }
+        order_manager.project_x.account_info.id = 12345
+        order_manager.project_x._make_request = AsyncMock(
+            side_effect=[
+                {"success": False, "errorMessage": None},
+                {"success": True, "orders": []},
+                {"success": True, "orders": [order_data]},
+            ]
+        )
+
+        assert await order_manager.cancel_order(888) is False
+        assert order_manager.order_status_cache["888"] == 2
+
+    @pytest.mark.asyncio
+    async def test_cancel_order_reconciles_cancelled_race(self, order_manager):
+        """cancel_order returns True when a failed cancel reconciles to cancelled."""
+        order_data = {
+            "id": 777,
+            "accountId": 12345,
+            "contractId": "MNQ",
+            "creationTimestamp": "2024-01-01T01:00:00Z",
+            "updateTimestamp": "2024-01-01T01:01:00Z",
+            "status": 3,
+            "type": 1,
+            "side": 1,
+            "size": 1,
+        }
+        order_manager.project_x.account_info.id = 12345
+        order_manager.project_x._make_request = AsyncMock(
+            side_effect=[
+                {"success": False, "errorMessage": None},
+                {"success": True, "orders": []},
+                {"success": True, "orders": [order_data]},
+            ]
+        )
+
+        assert await order_manager.cancel_order(777) is True
+        assert order_manager.order_status_cache["777"] == 3
 
     @pytest.mark.asyncio
     async def test_modify_order_success_and_aligns(self, order_manager):
@@ -219,7 +275,7 @@ class TestOrderManagerCore:
             "size": 1,
         }
 
-        # Mock search_open_orders which get_order_by_id uses internally
+        # Mock search_open_orders which get_order_by_id uses first.
         order_manager.project_x._make_request = AsyncMock(
             return_value={"success": True, "orders": [order_data]}
         )
@@ -233,6 +289,40 @@ class TestOrderManagerCore:
         # Should update cache through search_open_orders
         assert order_manager.tracked_orders["123"] == order_data
         assert order_manager.order_status_cache["123"] == 1
+
+    @pytest.mark.asyncio
+    async def test_get_order_by_id_searches_order_history(self, order_manager):
+        """get_order_by_id falls back to historical search for terminal orders."""
+        order_data = {
+            "id": 123,
+            "accountId": 12345,
+            "contractId": "MNQ",
+            "creationTimestamp": "2024-01-01T01:00:00Z",
+            "updateTimestamp": "2024-01-01T01:01:00Z",
+            "status": 2,
+            "type": 1,
+            "side": 0,
+            "size": 1,
+            "fillVolume": 1,
+            "filledPrice": 17000.0,
+        }
+        order_manager.project_x.account_info.id = 12345
+        order_manager.project_x._make_request = AsyncMock(
+            side_effect=[
+                {"success": True, "orders": []},
+                {"success": True, "orders": [order_data]},
+            ]
+        )
+
+        order = await order_manager.get_order_by_id(123)
+
+        assert isinstance(order, Order)
+        assert order.id == 123
+        assert order.status == 2
+        assert order_manager.project_x._make_request.call_args_list[1].args[:2] == (
+            "POST",
+            "/Order/search",
+        )
 
     @pytest.mark.asyncio
     async def test_get_order_by_id_not_found(self, order_manager):
