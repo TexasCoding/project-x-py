@@ -1306,7 +1306,12 @@ class RealtimeDataManager(
                                 }
                             )
 
-                            self.data[tf_key] = pl.concat([current_data, new_bar])
+                            # Diagonal so a six-column realtime bar can extend a
+                            # wider historical frame (extra API fields become
+                            # null) instead of raising a width mismatch.
+                            self.data[tf_key] = pl.concat(
+                                [current_data, new_bar], how="diagonal_relaxed"
+                            )
                             self.last_bar_times[tf_key] = expected_bar_time
 
                             self.logger.debug(
@@ -1379,7 +1384,12 @@ class RealtimeDataManager(
                                 }
                             )
 
-                            self.data[tf_key] = pl.concat([current_data, new_bar])
+                            # Diagonal so a six-column realtime bar can extend a
+                            # wider historical frame (extra API fields become
+                            # null) instead of raising a width mismatch.
+                            self.data[tf_key] = pl.concat(
+                                [current_data, new_bar], how="diagonal_relaxed"
+                            )
                             self.last_bar_times[tf_key] = expected_bar_time
 
                             self.logger.debug(

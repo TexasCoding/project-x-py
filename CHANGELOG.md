@@ -14,6 +14,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Migration guides will be provided for all breaking changes
 - Semantic versioning (MAJOR.MINOR.PATCH) is strictly followed
 
+## [Unreleased]
+
+### 🐛 Fixed
+
+- **Realtime bar schema mismatch**: extra fields in the bars API response made
+  the historical seed wider than the six-column bars the realtime data manager
+  constructs, so appending a new realtime bar failed with a Polars width
+  mismatch (`unable to append to a DataFrame of width N with a DataFrame of
+  width 6`) and froze realtime timeframes. The realtime data manager now
+  appends bars with diagonal concatenation, tolerating the wider historical
+  schema (extra fields become null on realtime bars).
+
+### ✨ Added
+
+- **Preserve extra bar fields**: `get_bars` now keeps any additional fields the
+  bars API returns (canonical `timestamp, open, high, low, close, volume`
+  first), instead of dropping them, so callers retain access to the extra data.
+
 ## [3.5.8] - 2025-09-02
 
 ### 🐛 Fixed

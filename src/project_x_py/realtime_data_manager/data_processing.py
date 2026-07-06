@@ -734,7 +734,12 @@ class DataProcessingMixin:
                         }
                     )
 
-                    self.data[tf_key] = pl.concat([current_data, new_bar])
+                    # Diagonal so a six-column realtime bar can extend a wider
+                    # historical frame (extra API fields become null on the new
+                    # bar) instead of raising a width mismatch.
+                    self.data[tf_key] = pl.concat(
+                        [current_data, new_bar], how="diagonal_relaxed"
+                    )
                     self.last_bar_times[tf_key] = bar_time
 
                     # Track new bar creation with new statistics system

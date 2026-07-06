@@ -554,6 +554,14 @@ class MarketDataMixin:
             )
         )
 
+        # Order the canonical OHLCV columns first, but preserve any additional
+        # fields the bars API returns (e.g. trade count) rather than dropping
+        # them. The realtime data manager tolerates the wider historical schema
+        # via diagonal concatenation, so callers keep access to the extra data.
+        canonical = ["timestamp", "open", "high", "low", "close", "volume"]
+        extra = [column for column in data.columns if column not in canonical]
+        data = data.select(canonical + extra)
+
         # Handle datetime conversion robustly
         # Try the simple approach first (fastest for consistent data)
         try:
