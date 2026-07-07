@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Migration guides will be provided for all breaking changes
 - Semantic versioning (MAJOR.MINOR.PATCH) is strictly followed
 
+## [Unreleased]
+
+### 🐛 Fixed
+
+**Realtime Data Manager**:
+- Guarded data sampling for single-bar buffer limits so overflow cleanup
+  preserves the latest bar instead of raising a division-by-zero error.
+
 ## [3.5.8] - 2025-09-02
 
 ### 🐛 Fixed

@@ -329,6 +329,35 @@ class TestMemoryManagementMixinDataSampling:
         assert final_size < 200
 
     @pytest.mark.asyncio
+    async def test_apply_data_sampling_single_bar_limit_preserves_latest(self):
+        """Test data sampling handles single-bar limits without division by zero."""
+        memory_manager = MockRealtimeDataManager(max_bars=1)
+        memory_manager.configure_dynamic_buffer_sizing(enabled=True)
+        timestamps = [
+            datetime(2025, 1, 1, 10, minute, tzinfo=timezone.utc)
+            for minute in range(10)
+        ]
+        sample_data = pl.DataFrame(
+            {
+                "timestamp": timestamps,
+                "open": [100.0 + i for i in range(10)],
+                "high": [101.0 + i for i in range(10)],
+                "low": [99.0 + i for i in range(10)],
+                "close": [100.5 + i for i in range(10)],
+                "volume": [1000] * 10,
+            }
+        )
+        memory_manager.data["1min"] = sample_data
+        memory_manager.last_bar_times["1min"] = timestamps[-1]
+
+        await memory_manager._apply_data_sampling("1min")
+
+        final_data = memory_manager.data["1min"]
+        assert len(final_data) == 1
+        assert final_data.select(pl.col("timestamp")).item() == timestamps[-1]
+        assert memory_manager.last_bar_times["1min"] == timestamps[-1]
+
+    @pytest.mark.asyncio
     async def test_apply_data_sampling_preserves_recent_data(self, memory_manager):
         """Test data sampling preserves most recent data."""
         # Create dataset with identifiable recent data
@@ -705,7 +734,9 @@ class TestMemoryManagementMixinStatistics:
         """Test memory stats include overflow statistics."""
         # Mock overflow stats method
         mock_overflow_stats = {"disk_overflow_count": 5, "disk_usage_mb": 100.0}
-        memory_manager.get_overflow_stats_summary = AsyncMock(return_value=mock_overflow_stats)
+        memory_manager.get_overflow_stats_summary = AsyncMock(
+            return_value=mock_overflow_stats
+        )
 
         stats = await memory_manager.get_memory_stats()
 

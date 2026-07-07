@@ -286,7 +286,9 @@ class MemoryManagementMixin(TaskManagerMixin):
 
         current_data = self.data[timeframe]
         current_size = len(current_data)
-        target_size = int(self.max_bars_per_timeframe * 0.7)  # Reduce to 70% of max
+        target_size = max(
+            1, int(self.max_bars_per_timeframe * 0.7)
+        )  # Reduce to 70% of max
 
         if current_size <= target_size:
             return
@@ -296,7 +298,10 @@ class MemoryManagementMixin(TaskManagerMixin):
         self._sampling_ratios[timeframe] = sampling_ratio
 
         # Apply intelligent sampling - keep recent data and sample older data
-        recent_data_size = int(target_size * 0.3)  # Keep 30% as recent data
+        recent_data_size = min(
+            current_size,
+            max(1, int(target_size * 0.3)),
+        )  # Keep 30% as recent data
         sampled_older_size = target_size - recent_data_size
 
         # Keep all recent data
@@ -304,7 +309,9 @@ class MemoryManagementMixin(TaskManagerMixin):
 
         # Sample older data intelligently
         older_data = current_data.head(current_size - recent_data_size)
-        if len(older_data) > sampled_older_size:
+        if sampled_older_size <= 0 or older_data.is_empty():
+            sampled_older = current_data.head(0)
+        elif len(older_data) > sampled_older_size:
             # Sample every nth bar to maintain temporal distribution
             sample_step = max(1, len(older_data) // sampled_older_size)
             # Use gather to sample every nth row
