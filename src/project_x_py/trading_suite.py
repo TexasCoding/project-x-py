@@ -982,16 +982,21 @@ class TradingSuite:
         """
         logger.info("Disconnecting TradingSuite...")
 
+        # Disconnect realtime FIRST so the SignalR background reader thread is
+        # quiesced before any Polars data frames it writes into are freed. The
+        # previous order (cleanup contexts -> disconnect realtime) freed the
+        # frames while the reader was still live, racing native SignalR threads
+        # against Polars memory and corrupting the heap on disconnect
+        # (Windows STATUS_HEAP_CORRUPTION / 0xc0000374). See issue #98.
+        if self.realtime:
+            await self.realtime.disconnect()
+
         if self._instruments:
             # Multi-instrument mode - disconnect all contexts
             await self._disconnect_instrument_contexts()
         else:
             # Legacy single-instrument mode
             await self._disconnect_legacy_single_instrument()
-
-        # Disconnect realtime
-        if self.realtime:
-            await self.realtime.disconnect()
 
         # Clean up client context
         if hasattr(self, "_client_context") and self._client_context:
