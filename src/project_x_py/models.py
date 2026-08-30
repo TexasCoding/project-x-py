@@ -112,8 +112,27 @@ See Also:
     - `types`: Type definitions and protocols
 """
 
-from dataclasses import dataclass
-from typing import Union
+from collections.abc import Mapping
+from dataclasses import dataclass, fields
+from typing import Any, TypeVar, Union, cast
+
+T = TypeVar("T")
+
+
+def _from_api(  # noqa: UP047
+    cls: type[T],
+    data: Mapping[str, Any],
+    aliases: Mapping[str, str] | None = None,
+) -> T:
+    """Build a dataclass from Gateway JSON, ignoring unknown additive fields."""
+    values = dict(data)
+    if aliases:
+        for source, dest in aliases.items():
+            if dest not in values and source in values:
+                values[dest] = values[source]
+    known = {field.name for field in fields(cast(Any, cls))}
+    return cls(**{name: values[name] for name in known if name in values})
+
 
 __all__ = [
     "Account",
@@ -246,6 +265,11 @@ class Order:
         """Check if order was cancelled."""
         return self.status == 3  # OrderStatus.CANCELLED
 
+    @classmethod
+    def from_api(cls, data: Mapping[str, Any]) -> "Order":
+        """Create an Order from API data, ignoring additive unknown fields."""
+        return _from_api(cls, data)
+
     @property
     def is_rejected(self) -> bool:
         """Check if order was rejected."""
@@ -366,6 +390,7 @@ class Position:
             0=UNDEFINED, 1=LONG, 2=SHORT
         size (int): Position size (number of contracts, always positive)
         averagePrice (float): Average entry price of the position
+        contractDisplayName (Optional[str]): Human-readable contract display name
 
     Note:
         This model contains only the fields returned by ProjectX API.
@@ -385,16 +410,22 @@ class Position:
     type: int
     size: int
     averagePrice: float
+    contractDisplayName: str | None = None
 
     # Allow dict-like access for compatibility in tests/utilities
-    def __getitem__(self, key: str) -> Union[int, str, float]:
+    def __getitem__(self, key: str) -> Union[int, str, float, None]:
         value = getattr(self, key)
-        if isinstance(value, int | str | float):
+        if value is None or isinstance(value, int | str | float):
             return value
         else:
             raise TypeError(
                 f"Attribute {key} has type {type(value)}, expected int, str, or float"
             )
+
+    @classmethod
+    def from_api(cls, data: Mapping[str, Any]) -> "Position":
+        """Create a Position from API data, ignoring additive unknown fields."""
+        return _from_api(cls, data)
 
     @property
     def is_long(self) -> bool:
@@ -455,7 +486,7 @@ class Position:
             return 0.0
 
 
-@dataclass
+@dataclass(slots=True)
 class Trade:
     """
     Represents an executed trade with P&L information.
@@ -468,6 +499,7 @@ class Trade:
         price (float): Execution price
         profitAndLoss (Optional[float]): Realized P&L (None for half-turn trades)
         fees (float): Trading fees/commissions
+        commissions (Optional[float]): Gateway commission amount, if provided
         side (int): Trade side: 0=Buy, 1=Sell
         size (int): Number of contracts traded
         voided (bool): Whether the trade was voided/cancelled
@@ -483,20 +515,6 @@ class Trade:
         >>> print(f"{side_str} {trade.size} @ ${trade.price} - P&L: {pnl_str}")
     """
 
-    __slots__ = (
-        "accountId",
-        "contractId",
-        "creationTimestamp",
-        "fees",
-        "id",
-        "orderId",
-        "price",
-        "profitAndLoss",
-        "side",
-        "size",
-        "voided",
-    )
-
     id: int
     accountId: int
     contractId: str
@@ -508,6 +526,12 @@ class Trade:
     size: int
     voided: bool
     orderId: int
+    commissions: float | None = None
+
+    @classmethod
+    def from_api(cls, data: Mapping[str, Any]) -> "Trade":
+        """Create a Trade from API data, mapping commissions and ignoring extras."""
+        return _from_api(cls, data, aliases={"commissions": "fees"})
 
 
 @dataclass
@@ -568,7 +592,7 @@ class ProjectXConfig:
 
     Attributes:
         api_url (str): Base URL for the API endpoints
-        realtime_url (str): URL for real-time WebSocket connections
+        realtime_url (str): Legacy field; live hubs use user_hub_url and market_hub_url
         user_hub_url (str): URL for user hub WebSocket (accounts, positions, orders)
         market_hub_url (str): URL for market hub WebSocket (quotes, trades, depth)
         timezone (str): Timezone for timestamp handling
@@ -594,7 +618,7 @@ class ProjectXConfig:
 @dataclass
 class OrderUpdateEvent:
     orderId: int
-    status: int  # 0=Unknown, 1=Pending, 2=Filled, 3=Cancelled, 4=Rejected
+    status: int  # OrderStatus: 0=None, 1=Open, 2=Filled, 3=Cancelled, 4=Expired, 5=Rejected, 6=Pending
     fillVolume: int | None
     updateTimestamp: str
 

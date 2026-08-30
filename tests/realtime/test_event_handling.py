@@ -322,6 +322,25 @@ class TestCrossThreadEventScheduling:
     """Test cross-thread event scheduling for asyncio compatibility."""
 
     @pytest.mark.asyncio
+    async def test_schedule_async_task_captures_running_loop(self, event_handler):
+        """Scheduling captures the active event loop when none was stored."""
+        event_data = {"test": "data"}
+        received = asyncio.Event()
+
+        async def callback(data):
+            assert data == event_data
+            received.set()
+
+        await event_handler.add_callback("test_event", callback)
+
+        assert event_handler._loop is None
+
+        event_handler._schedule_async_task("test_event", (event_data,))
+
+        await asyncio.wait_for(received.wait(), timeout=1.0)
+        assert event_handler._loop == asyncio.get_running_loop()
+
+    @pytest.mark.asyncio
     async def test_schedule_event_from_different_thread(self, event_handler):
         """Test scheduling event from a different thread."""
         import threading

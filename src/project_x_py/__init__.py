@@ -2,8 +2,8 @@
 ProjectX Python SDK for Trading Applications
 
 Author: @TexasCoding
-Date: 2025-09-22
-Version: 3.5.9 - Realtime Data Validation Fix
+Date: 2026-08-29
+Version: 4.0.0 - TopstepX Gateway Revival
 
 Overview:
     A comprehensive Python SDK for the ProjectX Trading Platform Gateway API, providing
@@ -109,13 +109,10 @@ See Also:
     - `utils`: Utility functions and calculations
 """
 
-__version__ = "3.5.9"
+__version__ = "4.0.0"
 __author__ = "TexasCoding"
 
 # Core client classes - renamed from Async* to standard names
-# Enable uvloop for better async performance (if available and not on Windows)
-import sys
-
 from project_x_py.client import ProjectX
 
 # Configuration management
@@ -134,6 +131,7 @@ from project_x_py.event_bus import EventBus, EventType
 
 # Exceptions
 from project_x_py.exceptions import (
+    OrderSubmissionUncertainError,
     ProjectXAuthenticationError,
     ProjectXConnectionError,
     ProjectXDataError,
@@ -241,13 +239,7 @@ from project_x_py.utils import (
     setup_logging,
 )
 
-if sys.platform != "win32":
-    try:
-        import uvloop
-
-        uvloop.install()
-    except ImportError:
-        pass  # uvloop not available, use default event loop
+# uvloop is an optional extra. Do not install it as an import-time side effect.
 
 __all__ = [
     # Data Models
@@ -277,6 +269,7 @@ __all__ = [
     "OrderManager",
     "OrderManagerConfig",
     "OrderPlaceResponse",
+    "OrderSubmissionUncertainError",
     "OrderTemplate",
     "OrderTracker",
     "OrderSide",

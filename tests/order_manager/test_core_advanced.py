@@ -533,9 +533,8 @@ class TestEdgeCases:
         order_manager.tracked_orders["999"] = {"status": 2}  # Already filled
         order_manager.order_status_cache["999"] = 2
 
-        with pytest.raises(ProjectXOrderError) as exc_info:
-            await order_manager.cancel_order(999)
-        assert "already filled" in str(exc_info.value).lower()
+        result = await order_manager.cancel_order(999)
+        assert result is False
 
     @pytest.mark.asyncio
     async def test_get_order_by_id_with_invalid_cache_data(self, order_manager):

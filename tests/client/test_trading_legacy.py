@@ -60,8 +60,7 @@ class TestTradingMixin:
         }
         trading_client._make_request.return_value = mock_response
 
-        with pytest.warns(DeprecationWarning, match="(get_positions|Method renamed)"):
-            positions = await trading_client.get_positions()
+        positions = await trading_client.get_positions()
 
         assert len(positions) == 1
         assert positions[0].contractId == "MNQ"
@@ -113,6 +112,45 @@ class TestTradingMixin:
         assert positions[1].size == 2
         assert positions[1].type == 2  # SHORT
         trading_client._ensure_authenticated.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_search_open_positions_preserves_display_name_and_ignores_unknown_fields(
+        self, trading_client
+    ):
+        """Position search keeps known display fields and ignores unknown ones."""
+        trading_client.account_info = Account(
+            id=12345,
+            name="Test Account",
+            balance=10000.0,
+            canTrade=True,
+            isVisible=True,
+            simulated=False,
+        )
+
+        mock_response = {
+            "success": True,
+            "positions": [
+                {
+                    "id": "pos1",
+                    "accountId": 12345,
+                    "contractId": "CON.F.US.MNQ.Z25",
+                    "contractDisplayName": "MNQZ25",
+                    "unknownGatewayField": "ignored",
+                    "creationTimestamp": datetime.datetime.now(pytz.UTC).isoformat(),
+                    "size": 2,
+                    "averagePrice": 21342.25,
+                    "type": 1,
+                },
+            ],
+        }
+        trading_client._make_request.return_value = mock_response
+
+        positions = await trading_client.search_open_positions()
+
+        assert len(positions) == 1
+        assert positions[0].contractId == "CON.F.US.MNQ.Z25"
+        assert positions[0].contractDisplayName == "MNQZ25"
+        assert positions[0].size == 2
 
     @pytest.mark.asyncio
     async def test_search_open_positions_with_account_id(self, trading_client):
@@ -344,13 +382,12 @@ class TestTradingMixin:
 
         # Verify the request parameters
         trading_client._make_request.assert_called_once_with(
-            "GET",
-            "/trades/search",
-            params={
+            "POST",
+            "/Trade/search",
+            data={
                 "accountId": 12345,
-                "startDate": start_date.isoformat(),
-                "endDate": end_date.isoformat(),
-                "limit": 100,
+                "startTimestamp": start_date.isoformat(),
+                "endTimestamp": end_date.isoformat(),
             },
         )
 
@@ -390,8 +427,45 @@ class TestTradingMixin:
 
         # Verify contract_id was included in request
         call_args = trading_client._make_request.call_args
-        assert call_args[1]["params"]["contractId"] == "MNQ"
-        assert call_args[1]["params"]["limit"] == 50
+        assert call_args[1]["data"]["contractId"] == "MNQ"
+        assert len(trades) <= 50
+
+    @pytest.mark.asyncio
+    async def test_search_trades_preserves_gateway_commissions_field(
+        self, trading_client
+    ):
+        """Trade search keeps Gateway commissions while setting fees."""
+        trading_client.account_info = Account(
+            id=12345,
+            name="Test Account",
+            balance=10000.0,
+            canTrade=True,
+            isVisible=True,
+            simulated=False,
+        )
+
+        trading_client._make_request.return_value = [
+            {
+                "id": 1,
+                "accountId": 12345,
+                "contractId": "MNQ",
+                "creationTimestamp": datetime.datetime.now(pytz.UTC).isoformat(),
+                "price": 15000.0,
+                "profitAndLoss": 75.0,
+                "commissions": 2.25,
+                "side": 0,
+                "size": 3,
+                "voided": False,
+                "orderId": 102,
+                "extraField": "ignored",
+            }
+        ]
+
+        trades = await trading_client.search_trades(contract_id="MNQ")
+
+        assert len(trades) == 1
+        assert trades[0].fees == 2.25
+        assert trades[0].commissions == 2.25
 
     @pytest.mark.asyncio
     async def test_search_trades_custom_account_id(self, trading_client):
@@ -406,7 +480,7 @@ class TestTradingMixin:
 
         # Verify the request used custom account ID
         call_args = trading_client._make_request.call_args
-        assert call_args[1]["params"]["accountId"] == custom_account_id
+        assert call_args[1]["data"]["accountId"] == custom_account_id
 
     @pytest.mark.asyncio
     async def test_search_trades_no_account(self, trading_client):
@@ -441,10 +515,10 @@ class TestTradingMixin:
 
         # Verify date range is approximately 30 days
         call_args = trading_client._make_request.call_args
-        params = call_args[1]["params"]
+        data = call_args[1]["data"]
 
-        start_date = datetime.datetime.fromisoformat(params["startDate"])
-        end_date = datetime.datetime.fromisoformat(params["endDate"])
+        start_date = datetime.datetime.fromisoformat(data["startTimestamp"])
+        end_date = datetime.datetime.fromisoformat(data["endTimestamp"])
 
         date_diff = end_date - start_date
         assert 29 <= date_diff.days <= 31
@@ -476,10 +550,10 @@ class TestTradingMixin:
 
         # Verify end_date defaulted to now
         call_args = trading_client._make_request.call_args
-        params = call_args[1]["params"]
+        data = call_args[1]["data"]
 
-        assert params["startDate"] == start_date.isoformat()
-        end_date = datetime.datetime.fromisoformat(params["endDate"])
+        assert data["startTimestamp"] == start_date.isoformat()
+        end_date = datetime.datetime.fromisoformat(data["endTimestamp"])
         assert end_date == mock_now
 
     @pytest.mark.asyncio
@@ -503,10 +577,10 @@ class TestTradingMixin:
 
         # Verify start_date is 30 days before end_date
         call_args = trading_client._make_request.call_args
-        params = call_args[1]["params"]
+        data = call_args[1]["data"]
 
-        start_date = datetime.datetime.fromisoformat(params["startDate"])
-        assert params["endDate"] == end_date.isoformat()
+        start_date = datetime.datetime.fromisoformat(data["startTimestamp"])
+        assert data["endTimestamp"] == end_date.isoformat()
 
         date_diff = end_date - start_date
         assert 29 <= date_diff.days <= 31
@@ -559,8 +633,8 @@ class TestTradingMixin:
             simulated=False,
         )
 
-        # Invalid response type (dict instead of list)
-        trading_client._make_request.return_value = {"trades": []}
+        # Invalid response type (string instead of list/dict)
+        trading_client._make_request.return_value = "invalid response"
 
         trades = await trading_client.search_trades()
 
@@ -588,7 +662,5 @@ class TestTradingMixin:
         await trading_client.search_trades()
         assert trading_client._ensure_authenticated.call_count == 2
 
-        # Test get_positions (deprecated)
-        with pytest.warns(DeprecationWarning, match="(get_positions|Method renamed)"):
-            await trading_client.get_positions()
+        await trading_client.get_positions()
         assert trading_client._ensure_authenticated.call_count == 3

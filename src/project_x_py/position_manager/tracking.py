@@ -468,7 +468,7 @@ class PositionTrackingMixin:
                     }
                     position_dict.update(actual_position_data)
 
-                position: Position = Position(**position_dict)
+                position: Position = Position.from_api(position_dict)
                 self.tracked_positions[contract_id] = position
 
                 # Emit appropriate event
@@ -584,7 +584,7 @@ class PositionTrackingMixin:
     @deprecated(
         reason="Use TradingSuite.on() with EventType enum for event handling",
         version="3.1.0",
-        removal_version="4.0.0",
+        removal_version="5.0.0",
         replacement="TradingSuite.on(EventType.POSITION_UPDATED, callback)",
     )
     async def add_callback(

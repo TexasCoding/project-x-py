@@ -275,13 +275,14 @@ class TestTrading:
 
                 # Check request parameters
                 last_call = mock_httpx_client.request.call_args_list[-1]
-                params = last_call[1]["params"]
+                data = last_call[1]["json"]
 
-                assert params["accountId"] == 12345
-                assert params["startDate"] == start_date.isoformat()
-                assert params["endDate"] == end_date.isoformat()
-                assert params["limit"] == 50
-                assert params["contractId"] == "MGC"
+                assert last_call[1]["method"] == "POST"
+                assert last_call[1]["url"].endswith("/Trade/search")
+                assert data["accountId"] == 12345
+                assert data["startTimestamp"] == start_date.isoformat()
+                assert data["endTimestamp"] == end_date.isoformat()
+                assert data["contractId"] == "MGC"
 
     @pytest.mark.asyncio
     async def test_search_trades_empty(
@@ -346,14 +347,14 @@ class TestTrading:
 
                 # Check default date parameters
                 last_call = mock_httpx_client.request.call_args_list[-1]
-                params = last_call[1]["params"]
+                data = last_call[1]["json"]
 
                 # Should have start date 30 days ago
                 start_date = datetime.datetime.fromisoformat(
-                    params["startDate"].replace("Z", "+00:00")
+                    data["startTimestamp"].replace("Z", "+00:00")
                 )
                 end_date = datetime.datetime.fromisoformat(
-                    params["endDate"].replace("Z", "+00:00")
+                    data["endTimestamp"].replace("Z", "+00:00")
                 )
 
                 date_diff = end_date - start_date

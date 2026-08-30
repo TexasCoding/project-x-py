@@ -717,7 +717,7 @@ class OrderTrackingMixin:
                     from project_x_py.models import Order
 
                     try:
-                        order_obj = Order(**actual_order_data)
+                        order_obj = Order.from_api(actual_order_data)
                         event_payload = {
                             "order": order_obj,
                             "order_id": order_id,  # Add order_id for compatibility
@@ -1071,7 +1071,7 @@ class OrderTrackingMixin:
     @deprecated(
         reason="Use TradingSuite.on() with EventType enum for event handling",
         version="3.1.0",
-        removal_version="4.0.0",
+        removal_version="5.0.0",
         replacement="TradingSuite.on(EventType.ORDER_FILLED, callback)",
     )
     def add_callback(

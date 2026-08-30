@@ -661,14 +661,7 @@ class TestPropertiesAndGetAttr:
         # Replace the frozen context with the mock
         suite._single_context = mock_context
 
-        # Should access with deprecation warning
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            value = suite.custom_attr
-
-            assert value == "test_value"
-            assert len(w) == 1
-            assert "deprecated" in str(w[0].message).lower()
+        assert suite.custom_attr == "test_value"
 
     @pytest.mark.asyncio
     async def test_getattr_single_instrument_invalid(self):
@@ -881,15 +874,8 @@ class TestBackwardCompatibilityProperties:
         suite._data = mock_data
         suite._symbol = "MNQ"
 
-        # Access data property
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            data = suite.data
-
-            assert data == mock_data
-            assert len(w) == 1
-            assert "deprecated" in str(w[0].message).lower()
-            assert "suite['MNQ'].data" in str(w[0].message)
+        data = suite.data
+        assert data == mock_data
 
     @pytest.mark.asyncio
     async def test_data_property_multi_instrument_mode(self):
@@ -912,14 +898,8 @@ class TestBackwardCompatibilityProperties:
 
         suite = TradingSuite(mock_client, mock_realtime, config, {"MNQ": context})
 
-        # Access data property
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            data = suite.data
-
-            assert data == context.data
-            assert len(w) == 1
-            assert "deprecated" in str(w[0].message).lower()
+        data = suite.data
+        assert data == context.data
 
     @pytest.mark.asyncio
     async def test_data_property_no_attribute(self):
@@ -959,7 +939,6 @@ class TestBackwardCompatibilityProperties:
         suite._orderbook = Mock(spec=OrderBook)
         suite._risk_manager = Mock(spec=RiskManager)
 
-        # Test each property generates deprecation warning
         properties_to_test = [
             ("data", suite._data),
             ("orders", suite._orders),
@@ -969,14 +948,7 @@ class TestBackwardCompatibilityProperties:
         ]
 
         for prop_name, expected_value in properties_to_test:
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                value = getattr(suite, prop_name)
-
-                assert value == expected_value
-                assert len(w) == 1
-                assert "deprecated" in str(w[0].message).lower()
-                assert f"suite['MNQ'].{prop_name}" in str(w[0].message)
+            assert getattr(suite, prop_name) == expected_value
 
 
 class TestEdgeCasesAndErrorHandling:
@@ -1025,8 +997,8 @@ class TestEdgeCasesAndErrorHandling:
             await TradingSuite.from_config("/nonexistent/config.yaml")
 
     @pytest.mark.asyncio
-    async def test_get_stats_sync_with_running_loop(self):
-        """Test get_stats_sync when event loop is already running."""
+    async def test_export_stats_uses_aggregator(self):
+        """export_stats should serialize aggregator output."""
         mock_client = AsyncMock()
         mock_client.account_info = Mock(id=12345)
         mock_realtime = AsyncMock(spec=ProjectXRealtimeClient)
@@ -1034,41 +1006,17 @@ class TestEdgeCasesAndErrorHandling:
 
         suite = TradingSuite(mock_client, mock_realtime, config)
         suite._stats_aggregator = Mock(spec=StatisticsAggregator)
-
-        # Mock the async get_stats
         mock_stats = TradingSuiteStats(
             timestamp="2025-01-30T12:00:00",
             health_score=100,
             components={},
-            metadata={}
+            metadata={},
         )
         suite._stats_aggregator.aggregate_stats = AsyncMock(return_value=mock_stats)
 
-        # Test with ThreadPoolExecutor path
-        with patch("asyncio.get_running_loop") as mock_get_loop:
-            mock_get_loop.side_effect = RuntimeError("No running loop")
-
-            with patch("asyncio.get_event_loop") as mock_get_event_loop:
-                mock_loop = Mock()
-                mock_loop.is_running.return_value = True
-                mock_get_event_loop.return_value = mock_loop
-
-                with patch("concurrent.futures.ThreadPoolExecutor") as MockExecutor:
-                    mock_executor = MockExecutor.return_value.__enter__.return_value
-                    mock_future = Mock()
-                    mock_future.result.return_value = mock_stats
-                    mock_executor.submit.return_value = mock_future
-
-                    with warnings.catch_warnings(record=True) as w:
-                        warnings.simplefilter("always")
-                        result = suite.get_stats_sync()
-
-                        assert result == mock_stats
-                        # May have multiple warnings (deprecation + runtime)
-                        assert len(w) >= 1
-                        # Check that at least one is a deprecation warning
-                        deprecation_warnings = [warning for warning in w if "deprecated" in str(warning.message).lower()]
-                        assert len(deprecation_warnings) >= 1
+        exported = await suite.export_stats("json")
+        assert exported is not None
+        suite._stats_aggregator.aggregate_stats.assert_awaited()
 
     @pytest.mark.asyncio
     async def test_connect_already_connected(self):

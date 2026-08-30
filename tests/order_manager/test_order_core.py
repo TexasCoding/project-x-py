@@ -66,6 +66,67 @@ class TestOrderManagerCore:
         assert order_manager.order_status_cache[str(resp_order["id"])] == 1
 
     @pytest.mark.asyncio
+    async def test_search_open_orders_ignores_unknown_api_fields(self, order_manager):
+        """search_open_orders tolerates additive API fields like fills."""
+        resp_order = {
+            "id": 101,
+            "accountId": 12345,
+            "contractId": "MGC",
+            "creationTimestamp": "2024-01-01T01:00:00Z",
+            "updateTimestamp": None,
+            "status": 1,
+            "type": 1,
+            "side": 0,
+            "size": 2,
+            "fills": [{"price": 2100.5, "size": 1}],
+        }
+        order_manager.project_x.account_info.id = 12345
+        order_manager.project_x._make_request = AsyncMock(
+            return_value={"success": True, "orders": [resp_order]}
+        )
+
+        orders = await order_manager.search_open_orders()
+
+        assert orders == [
+            Order(
+                id=101,
+                accountId=12345,
+                contractId="MGC",
+                creationTimestamp="2024-01-01T01:00:00Z",
+                updateTimestamp=None,
+                status=1,
+                type=1,
+                side=0,
+                size=2,
+            )
+        ]
+        assert not hasattr(orders[0], "fills")
+        assert order_manager.tracked_orders["101"] == resp_order
+
+    @pytest.mark.asyncio
+    async def test_get_order_by_id_ignores_unknown_cached_fields(self, order_manager):
+        """get_order_by_id tolerates additive fields in tracked order data."""
+        order_manager._realtime_enabled = True
+        order_manager.tracked_orders["101"] = {
+            "id": 101,
+            "accountId": 12345,
+            "contractId": "MGC",
+            "creationTimestamp": "2024-01-01T01:00:00Z",
+            "updateTimestamp": None,
+            "status": 1,
+            "type": 1,
+            "side": 0,
+            "size": 2,
+            "fills": [{"price": 2100.5, "size": 1}],
+        }
+
+        order = await order_manager.get_order_by_id(101)
+
+        assert isinstance(order, Order)
+        assert order.id == 101
+        assert not hasattr(order, "fills")
+
+    @pytest.mark.asyncio
     async def test_is_order_filled_cache_hit(self, order_manager):
         """is_order_filled returns True from cache and does not call _make_request if cached."""
         order_manager._realtime_enabled = True
@@ -109,12 +170,102 @@ class TestOrderManagerCore:
         assert order_manager.order_status_cache["888"] == 3
         assert order_manager.stats["orders_cancelled"] == start + 1
 
+        order_manager.tracked_orders.pop("888", None)
+        order_manager.order_status_cache.pop("888", None)
         order_manager.project_x._make_request = AsyncMock(
             return_value={"success": False, "errorMessage": "fail"}
         )
         with pytest.raises(ProjectXOrderError) as exc_info:
             await order_manager.cancel_order(888)
         assert "Failed to cancel order 888: fail" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_cancel_order_reconciles_filled_race(self, order_manager):
+        """cancel_order returns False when a failed cancel reconciles to filled."""
+        order_data = {
+            "id": 888,
+            "accountId": 12345,
+            "contractId": "MNQ",
+            "creationTimestamp": "2024-01-01T01:00:00Z",
+            "updateTimestamp": "2024-01-01T01:01:00Z",
+            "status": 2,
+            "type": 1,
+            "side": 1,
+            "size": 1,
+            "fillVolume": 1,
+            "filledPrice": 30120.0,
+        }
+        order_manager.project_x.account_info.id = 12345
+        order_manager.project_x._make_request = AsyncMock(
+            side_effect=[
+                {"success": False, "errorMessage": None},
+                {"success": True, "orders": []},
+                {"success": True, "orders": [order_data]},
+            ]
+        )
+
+        assert await order_manager.cancel_order(888) is False
+        assert order_manager.order_status_cache["888"] == 2
+
+    @pytest.mark.asyncio
+    async def test_cancel_order_reconciles_cancelled_race(self, order_manager):
+        """cancel_order returns True when a failed cancel reconciles to cancelled."""
+        order_data = {
+            "id": 777,
+            "accountId": 12345,
+            "contractId": "MNQ",
+            "creationTimestamp": "2024-01-01T01:00:00Z",
+            "updateTimestamp": "2024-01-01T01:01:00Z",
+            "status": 3,
+            "type": 1,
+            "side": 1,
+            "size": 1,
+        }
+        order_manager.project_x.account_info.id = 12345
+        order_manager.project_x._make_request = AsyncMock(
+            side_effect=[
+                {"success": False, "errorMessage": None},
+                {"success": True, "orders": []},
+                {"success": True, "orders": [order_data]},
+            ]
+        )
+
+        assert await order_manager.cancel_order(777) is True
+        assert order_manager.order_status_cache["777"] == 3
+
+    @pytest.mark.asyncio
+    async def test_get_order_by_id_searches_order_history(self, order_manager):
+        """get_order_by_id falls back to historical search for terminal orders."""
+        order_data = {
+            "id": 123,
+            "accountId": 12345,
+            "contractId": "MNQ",
+            "creationTimestamp": "2024-01-01T01:00:00Z",
+            "updateTimestamp": "2024-01-01T01:01:00Z",
+            "status": 2,
+            "type": 1,
+            "side": 0,
+            "size": 1,
+            "fillVolume": 1,
+            "filledPrice": 17000.0,
+        }
+        order_manager.project_x.account_info.id = 12345
+        order_manager.project_x._make_request = AsyncMock(
+            side_effect=[
+                {"success": True, "orders": []},
+                {"success": True, "orders": [order_data]},
+            ]
+        )
+
+        order = await order_manager.get_order_by_id(123)
+
+        assert isinstance(order, Order)
+        assert order.id == 123
+        assert order.status == 2
+        assert order_manager.project_x._make_request.call_args_list[1].args[:2] == (
+            "POST",
+            "/Order/search",
+        )
 
     @pytest.mark.asyncio
     async def test_modify_order_success_and_aligns(self, order_manager):
@@ -404,3 +555,58 @@ class TestOrderManagerCore:
         stats = order_manager.get_order_statistics()
 
         assert stats["fill_rate"] == 0.0  # Should handle division by zero
+
+    @pytest.mark.asyncio
+    async def test_place_order_cancelled_request_is_uncertain(self, order_manager):
+        """A cancelled in-flight place_order must not look like a clean failure."""
+        import asyncio
+
+        from project_x_py.exceptions import OrderSubmissionUncertainError
+
+        order_manager.project_x.account_info.id = 12345
+        order_manager.project_x._make_request = AsyncMock(
+            side_effect=asyncio.CancelledError()
+        )
+
+        with pytest.raises(OrderSubmissionUncertainError, match="cancelled"):
+            await order_manager.place_order("MGC", 2, 0, 1)
+
+    @pytest.mark.asyncio
+    async def test_place_order_sends_native_gateway_brackets(self, order_manager):
+        """place_order forwards Gateway-native bracket fields on the payload."""
+        order_manager.project_x.account_info.id = 12345
+        order_manager.project_x._make_request = AsyncMock(
+            return_value={"success": True, "orderId": 9, "errorCode": 0, "errorMessage": None}
+        )
+
+        await order_manager.place_order(
+            "MGC",
+            2,
+            0,
+            1,
+            stop_loss_bracket={"ticks": 20, "type": 4},
+            take_profit_bracket={"ticks": 40, "type": 1},
+        )
+
+        payload = order_manager.project_x._make_request.call_args[1]["data"]
+        assert payload["stopLossBracket"] == {"ticks": 20, "type": 4}
+        assert payload["takeProfitBracket"] == {"ticks": 40, "type": 1}
+
+    @pytest.mark.asyncio
+    async def test_cancel_all_orders_includes_unparseable_raw_ids(self, order_manager):
+        """Flatten-and-cancel must still cancel orders that fail model parsing."""
+        order_manager.project_x.account_info.id = 12345
+        order_manager.search_open_orders = AsyncMock(return_value=[])
+        order_manager.cancel_order = AsyncMock(return_value=True)
+        order_manager.project_x._make_request = AsyncMock(
+            return_value={
+                "success": True,
+                "orders": [{"id": 555, "unparseable": True}],
+            }
+        )
+
+        results = await order_manager.cancel_all_orders()
+
+        assert results["total"] == 1
+        assert results["cancelled"] == 1
+        order_manager.cancel_order.assert_awaited_with(555, None)

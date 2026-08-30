@@ -157,18 +157,117 @@ class BracketOrderMixin:
         """
         try:
             order = await self.get_order_by_id(order_id)
-            if not order:
-                return False, 0, 0
+            if order:
+                filled_size = order.fillVolume or 0
+                if order.is_filled and filled_size == 0:
+                    filled_size = order.size
+                total_size = order.size
+                remaining_size = max(0, total_size - filled_size)
+                is_fully_filled = order.is_filled or filled_size >= total_size
+                return is_fully_filled, filled_size, remaining_size
 
-            filled_size = order.fillVolume or 0
-            total_size = order.size
-            remaining_size = total_size - filled_size
-            is_fully_filled = filled_size >= total_size
+            # Absence from open orders is not proof of failure for a market
+            # order that was accepted. Confirm via trades, then positions.
+            filled_from_trades = await self._filled_size_from_trades(order_id)
+            if filled_from_trades > 0:
+                return True, filled_from_trades, 0
 
-            return is_fully_filled, filled_size, remaining_size
+            return False, 0, 0
         except Exception as e:
             logger.warning(f"Failed to check order {order_id} fill status: {e}")
             return False, 0, 0
+
+    async def _try_native_bracket_order(
+        self: "OrderManagerProtocol",
+        contract_id: str,
+        side: int,
+        size: int,
+        entry_price: float | None,
+        stop_loss_price: float,
+        take_profit_price: float,
+        entry_type: str,
+        account_id: int | None,
+    ) -> BracketOrderResponse | None:
+        """Place a Gateway-native bracket when tick size and a reference price exist."""
+        if not hasattr(self, "project_x") or self.project_x is None:
+            return None
+        if entry_price is None:
+            return None
+
+        try:
+            from .utils import _get_cached_tick_size
+
+            tick_size = await _get_cached_tick_size(contract_id, self.project_x)
+            if tick_size is None or tick_size <= 0:
+                return None
+
+            stop_ticks = max(1, round(abs(entry_price - stop_loss_price) / tick_size))
+            target_ticks = max(
+                1, round(abs(take_profit_price - entry_price) / tick_size)
+            )
+            order_type = 2 if entry_type == "market" else 1
+
+            response = await self.place_order(
+                contract_id=contract_id,
+                order_type=order_type,
+                side=side,
+                size=size,
+                limit_price=entry_price if order_type == 1 else None,
+                account_id=account_id,
+                stop_loss_bracket={"ticks": stop_ticks, "type": 4},
+                take_profit_bracket={"ticks": target_ticks, "type": 1},
+            )
+            if not response or not response.success:
+                return None
+
+            stop_id: int | None = None
+            target_id: int | None = None
+            try:
+                open_orders = await self.search_open_orders(
+                    contract_id=contract_id, account_id=account_id
+                )
+                protective_side = 1 if side == 0 else 0
+                for order in open_orders:
+                    if order.id == response.orderId:
+                        continue
+                    if order.side != protective_side:
+                        continue
+                    if order.type == 4 and stop_id is None:
+                        stop_id = order.id
+                    elif order.type == 1 and target_id is None:
+                        target_id = order.id
+            except Exception as e:
+                logger.debug(f"Could not resolve native bracket child orders: {e}")
+
+            return BracketOrderResponse(
+                success=True,
+                entry_order_id=response.orderId,
+                stop_order_id=stop_id,
+                target_order_id=target_id,
+                entry_price=entry_price,
+                stop_loss_price=stop_loss_price,
+                take_profit_price=take_profit_price,
+                entry_response=response,
+                stop_response=None,
+                target_response=None,
+                error_message=None,
+            )
+        except Exception as e:
+            logger.info(f"Native Gateway brackets unavailable, using client-side: {e}")
+            return None
+
+    async def _filled_size_from_trades(
+        self: "OrderManagerProtocol", order_id: int
+    ) -> int:
+        """Sum trade sizes for an order from Gateway trade history."""
+        try:
+            if not hasattr(self, "project_x") or self.project_x is None:
+                return 0
+            trades = await self.project_x.search_trades(limit=200)
+            return sum(trade.size for trade in trades if trade.orderId == order_id)
+        except Exception as e:
+            logger.debug(f"Trade-history fill check failed for {order_id}: {e}")
+            return 0
 
     @retry_on_network_error(max_attempts=3, initial_delay=0.5, backoff_factor=2.0)
     async def _place_protective_orders_with_retry(
@@ -358,6 +457,19 @@ class BracketOrderMixin:
                         raise ProjectXOrderError(
                             f"Sell order take profit ({take_profit_price}) must be below entry ({entry_price})"
                         )
+
+            native = await self._try_native_bracket_order(
+                contract_id=contract_id,
+                side=side,
+                size=size,
+                entry_price=entry_price,
+                stop_loss_price=stop_loss_price,
+                take_profit_price=take_profit_price,
+                entry_type=entry_type_lower,
+                account_id=account_id,
+            )
+            if native is not None:
+                return native
 
             # Add order references to the recovery operation (if available)
             entry_ref: OrderReference | None = None

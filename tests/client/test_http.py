@@ -240,3 +240,18 @@ class TestHttpClient:
         assert health["cache_hit_ratio"] == 5 / 15  # 5/(5+10)
         assert health["total_requests"] == 15
         assert health["active_connections"] == 1  # authenticated
+
+    @pytest.mark.asyncio
+    async def test_cancelled_request_is_reraised(self, initialized_client):
+        """Cancellation of an in-flight request must surface as CancelledError."""
+        import asyncio
+
+        client = initialized_client
+
+        async def _cancelled(*_args, **_kwargs):
+            raise asyncio.CancelledError()
+
+        client._client.request.side_effect = _cancelled
+
+        with pytest.raises(asyncio.CancelledError):
+            await client._make_request("POST", "/Order/place", data={"size": 1})

@@ -165,6 +165,12 @@ class HealthMonitoringMixin:
         self._events_received_last_check: int = 0
         self._last_performance_check: float = time.time()
 
+        # Stale-feed watchdog (#97)
+        self.stale_feed_seconds: float = 30.0
+        self.stale_feed_check_interval: float = 5.0
+        self._stale_feed_task: asyncio.Task[Any] | None = None
+        self._stale_feed_emitted: bool = False
+
     @handle_errors("configure health monitoring")
     async def configure_health_monitoring(
         self: "ProjectXRealtimeClientProtocol",
@@ -232,6 +238,7 @@ class HealthMonitoringMixin:
                     persistent=True,
                 )
 
+        await self._start_stale_feed_watchdog()
         logger.debug("Health monitoring started")
 
     @handle_errors("stop health monitoring")
@@ -247,7 +254,72 @@ class HealthMonitoringMixin:
 
             self._heartbeat_tasks.clear()
 
+        await self._stop_stale_feed_watchdog()
         logger.debug("Health monitoring stopped")
+
+    async def _start_stale_feed_watchdog(
+        self: "ProjectXRealtimeClientProtocol",
+    ) -> None:
+        """Start the market-hub stale-feed watchdog."""
+        task = getattr(self, "_stale_feed_task", None)
+        if task is not None and not task.done():
+            return
+        self._stale_feed_emitted = False
+        self._stale_feed_task = asyncio.create_task(
+            self._stale_feed_watchdog_loop(), name="stale_feed_watchdog"
+        )
+
+    async def _stop_stale_feed_watchdog(
+        self: "ProjectXRealtimeClientProtocol",
+    ) -> None:
+        """Cancel the stale-feed watchdog."""
+        task = getattr(self, "_stale_feed_task", None)
+        if task is None or task.done():
+            return
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        self._stale_feed_task = None
+
+    async def _stale_feed_watchdog_loop(
+        self: "ProjectXRealtimeClientProtocol",
+    ) -> None:
+        """Reconnect the market hub when quotes/trades stop arriving."""
+        from project_x_py.event_bus import EventType
+
+        while True:
+            await asyncio.sleep(self.stale_feed_check_interval)
+            if not getattr(self, "market_connected", False):
+                continue
+            last_message = getattr(self, "_last_market_message", 0.0)
+            if last_message <= 0:
+                continue
+            age = time.monotonic() - last_message
+            if age < self.stale_feed_seconds:
+                self._stale_feed_emitted = False
+                continue
+
+            payload = {
+                "hub": "market",
+                "seconds_since_message": age,
+                "threshold_seconds": self.stale_feed_seconds,
+            }
+            logger.warning(
+                "Market feed stale; forcing reconnect",
+                extra=payload,
+            )
+            if not self._stale_feed_emitted:
+                event_bus = getattr(self, "event_bus", None)
+                if event_bus is not None:
+                    await event_bus.emit(
+                        EventType.FEED_STALE, payload, source="RealtimeClient"
+                    )
+                self._stale_feed_emitted = True
+
+            reconnect = getattr(self, "force_health_reconnect", None)
+            if reconnect is not None:
+                self._last_market_message = time.monotonic()
+                await reconnect()
 
     async def _user_heartbeat_loop(self: "ProjectXRealtimeClientProtocol") -> None:
         """Background task for user hub heartbeat monitoring."""

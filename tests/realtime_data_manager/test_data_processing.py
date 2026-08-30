@@ -912,5 +912,39 @@ class TestDataProcessingMixinIntegration:
             assert data.height > 0  # Should have created bars
 
 
+class TestDiagonalBarConcat:
+    """Realtime bars must append onto a wider historical schema."""
+
+    @pytest.mark.asyncio
+    async def test_new_bar_appends_to_wider_historical_frame(self):
+        processor = MockRealtimeDataManager()
+        historical = pl.DataFrame(
+            {
+                "timestamp": [datetime(2025, 1, 1, 9, 30, tzinfo=timezone.utc)],
+                "open": [19000.0],
+                "high": [19010.0],
+                "low": [18990.0],
+                "close": [19005.0],
+                "volume": [100],
+                "symbol": ["MNQ"],
+                "n": [1],
+            }
+        )
+        processor.data["1min"] = historical
+        processor.last_bar_times["1min"] = historical["timestamp"][0]
+
+        event = await processor._update_timeframe_data(
+            "1min",
+            datetime(2025, 1, 1, 9, 31, 5, tzinfo=timezone.utc),
+            19020.0,
+            10,
+        )
+
+        assert event is not None
+        assert processor.data["1min"].height == 2
+        assert "symbol" in processor.data["1min"].columns
+        assert processor.data["1min"]["symbol"][-1] is None
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

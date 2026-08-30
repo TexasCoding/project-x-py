@@ -167,7 +167,7 @@ class RealtimeHandler:
         # Quote callback for best bid/ask tracking
         await self.realtime_client.add_callback("quote_update", self._on_quote_update)
 
-    async def _on_market_depth_update(self, data: dict[str, Any]) -> None:
+    async def _on_market_depth_update(self, data: Any) -> None:
         """
         Callback for market depth updates (Level 2 data).
 
@@ -190,31 +190,31 @@ class RealtimeHandler:
             depth entry contains DomType information for proper processing.
         """
         try:
-            self.logger.debug(f"Market depth callback received: {list(data.keys())}")
-            # The data comes structured as {"contract_id": ..., "data": ...}
+            if not isinstance(data, dict):
+                self.logger.debug("Ignoring malformed market depth update")
+                return
+
             contract_id = data.get("contract_id", "")
-            if isinstance(data.get("data"), list) and len(data.get("data", [])) > 0:
-                self.logger.debug(f"First data entry: {data['data'][0]}")
             if not self._is_relevant_contract(contract_id):
                 return
 
-            # Process the market depth data
             await self._process_market_depth(data)
 
-            # Trigger any registered callbacks
-            await self.orderbook._trigger_callbacks(
-                "market_depth_processed",
-                {
-                    "contract_id": contract_id,
-                    "update_count": self.orderbook.level2_update_count,
-                    "timestamp": datetime.now(self.orderbook.timezone),
-                },
-            )
+            event_bus = getattr(self.orderbook, "event_bus", None)
+            if event_bus is None or event_bus.has_handlers():
+                await self.orderbook._trigger_callbacks(
+                    "market_depth_processed",
+                    {
+                        "contract_id": contract_id,
+                        "update_count": self.orderbook.level2_update_count,
+                        "timestamp": datetime.now(self.orderbook.timezone),
+                    },
+                )
 
         except Exception as e:
             self.logger.error(f"Error processing market depth update: {e}")
 
-    async def _on_quote_update(self, data: dict[str, Any]) -> None:
+    async def _on_quote_update(self, data: Any) -> None:
         """
         Callback for quote updates.
 
@@ -234,6 +234,10 @@ class RealtimeHandler:
             trigger quote-specific callbacks for client applications.
         """
         try:
+            if not isinstance(data, dict):
+                self.logger.debug("Ignoring malformed quote update")
+                return
+
             # The data comes structured as {"contract_id": ..., "data": ...}
             contract_id = data.get("contract_id", "")
             if not self._is_relevant_contract(contract_id):
@@ -287,6 +291,9 @@ class RealtimeHandler:
             >>> handler._is_relevant_contract("CON.F.US.NQ.H25")  # ES orderbook
             False
         """
+        if not isinstance(contract_id, str) or not contract_id:
+            return False
+
         if contract_id == self.orderbook.instrument:
             return True
 
@@ -304,7 +311,7 @@ class RealtimeHandler:
             )
         return is_match
 
-    async def _process_market_depth(self, data: dict[str, Any]) -> None:
+    async def _process_market_depth(self, data: Any) -> None:
         """
         Process market depth update from ProjectX Gateway.
 
@@ -328,15 +335,17 @@ class RealtimeHandler:
             This method acquires the orderbook lock and processes all updates
             atomically to ensure data consistency.
         """
+        if not isinstance(data, dict):
+            self.logger.debug("Ignoring malformed market depth payload")
+            return
+
         market_data = data.get("data", [])
+        if not isinstance(market_data, list):
+            self.logger.debug("Ignoring market depth payload with non-list data")
+            return
         if not market_data:
             return
 
-        self.logger.debug(f"Processing market depth data: {len(market_data)} entries")
-        if len(market_data) > 0:
-            self.logger.debug(f"Sample entry: {market_data[0]}")
-
-        # Update statistics
         self.orderbook.level2_update_count += 1
 
         # Process each market depth entry
@@ -363,7 +372,7 @@ class RealtimeHandler:
 
     async def _process_single_depth_entry(
         self,
-        entry: dict[str, Any],
+        entry: Any,
         current_time: datetime,
         pre_update_bid: float | None,
         pre_update_ask: float | None,
@@ -396,6 +405,10 @@ class RealtimeHandler:
             This method should only be called from within _process_market_depth
             while the orderbook lock is already held.
         """
+        if not isinstance(entry, dict):
+            self.logger.debug("Ignoring malformed market depth entry")
+            return
+
         try:
             trade_type = entry.get("type", 0)
             price = float(entry.get("price", 0))
