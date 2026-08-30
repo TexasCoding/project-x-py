@@ -91,6 +91,25 @@ async def place_market_order():
 asyncio.run(place_market_order())
 ```
 
+### Native Gateway brackets
+
+Prefer attaching stop and target on the entry when the Gateway accepts native brackets:
+
+```python
+await suite.orders.place_order(
+    contract_id=suite.instrument_info.id,
+    side=0,
+    size=1,
+    order_type=1,
+    limit_price=21000.0,
+    stop_loss_bracket={"ticks": 16, "type": 4},
+    take_profit_bracket={"ticks": 32, "type": 1},
+)
+```
+
+If a place/cancel HTTP call is cancelled or the transport drops after send, catch
+`OrderSubmissionUncertainError` and reconcile with `get_order_by_id()` before retrying.
+
 ### Limit Orders
 
 Limit orders execute only at specified price or better, providing price control but no fill guarantee.

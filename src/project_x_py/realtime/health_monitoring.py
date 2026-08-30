@@ -571,6 +571,7 @@ class HealthMonitoringMixin:
             success = await self.connect()
 
             if success:
+                await self._restore_realtime_subscriptions()
                 # Restart health monitoring
                 await self._start_health_monitoring()
                 logger.info("Health-based reconnection successful")
@@ -578,6 +579,20 @@ class HealthMonitoringMixin:
                 logger.error("Health-based reconnection failed")
 
             return success
+
+    async def _restore_realtime_subscriptions(
+        self: "ProjectXRealtimeClientProtocol",
+    ) -> None:
+        """Re-subscribe user and market channels after a reconnect."""
+        if getattr(self, "_user_updates_subscribed", False):
+            subscribe_user = getattr(self, "subscribe_user_updates", None)
+            if subscribe_user is not None:
+                await subscribe_user()
+        contracts = list(getattr(self, "_subscribed_contracts", []))
+        if contracts:
+            subscribe_market = getattr(self, "subscribe_market_data", None)
+            if subscribe_market is not None:
+                await subscribe_market(contracts)
 
     def _calculate_latency_stats(self, latencies: deque[float]) -> dict[str, float]:
         """Calculate latency statistics from samples."""

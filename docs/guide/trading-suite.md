@@ -302,7 +302,7 @@ async def config_from_file():
         "timeframes": ["1min", "5min"],
         "features": ["orderbook"]
     }
-    suite = await TradingSuite.from_dict(config_dict)
+    suite = await TradingSuite.from_config("suite.json")
 
     await suite.disconnect()
 ```
@@ -319,7 +319,7 @@ async def client_access():
     client = suite.client
 
     # Get account information
-    account = await client.get_account_info()
+    account = client.get_account_info()
     print(f"Account Balance: ${account.balance:,.2f}")
 
     # Get historical data via client

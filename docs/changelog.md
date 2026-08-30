@@ -5,6 +5,40 @@ All notable changes to the ProjectX Python SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+The canonical changelog is the repository root [CHANGELOG.md](https://github.com/TexasCoding/project-x-py/blob/main/CHANGELOG.md). This page is a docs-site copy.
+
+## [4.0.1] - 2026-08-30
+
+Live-order safety: mutating POSTs are not retried, stale-feed reconnect restores subscriptions, and native brackets fall back when children cannot be uniquely resolved. See the root CHANGELOG for the full list.
+
+## [4.0.0] - 2026-08-29
+
+### Breaking
+
+- Version is now **4.0.0**. ProjectX is TopstepX-only; defaults are
+  `https://api.topstepx.com` and `https://rtc.topstepx.com`.
+- Removed `TradingSuite.get_stats_sync()`. Use `await get_stats()` or
+  `await export_stats()`.
+- Removed import-time `uvloop.install()`. Install the optional `uvloop` extra
+  if you want it.
+- Removed unused default dependencies: `requests`, `plotly`, `msgpack-python`,
+  `signalrcore`, `websocket-client`.
+- Removed placeholder `suite.journal` / `suite.analytics` attributes.
+- Auth TypedDicts now use Gateway field names (`token`, `contracts`).
+- User-Agent is `ProjectX-Python-SDK/4.0.0`.
+
+### Added
+
+- Tolerant `from_api()` constructors for Order, Position, and Trade.
+- Native Gateway brackets on `place_order()` plus REST fill reconciliation.
+- `OrderSubmissionUncertainError` for interrupted HTTP submissions.
+- pysignalr-based realtime hubs with the existing `HubConnectionBuilder` API.
+- Stale-feed watchdog (`EventType.FEED_STALE`) and REST price fallback.
+- `TradingSuite.export_stats()` and `projectx-check` / `projectx-config` CLI.
+- `TradingSuite.create(username=, api_key=)` credential kwargs.
+
+See the [v3 → v4 migration guide](migration/v3-to-v4.md).
+
 ## [3.5.7] - 2025-02-02
 
 ### 🐛 Fixed

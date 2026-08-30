@@ -62,22 +62,4 @@ jobs:
         files: dist/*
         body_path: RELEASE_NOTES.md
         generate_release_notes: true
-
-    - name: Publish to Test PyPI
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
-      run: |
-        uv run twine upload --repository testpypi dist/*
-
-    - name: Test installation from Test PyPI
-      run: |
-        uv pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ project-x-py==${GITHUB_REF#refs/tags/v}
-        python -c "from project_x_py import TradingSuite; print('Installation test passed')"
-
-    - name: Publish to PyPI
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-      run: |
-        uv run twine upload dist/*
+      # PyPI publishing is `.github/workflows/publish-pypi.yml` (manual dispatch).

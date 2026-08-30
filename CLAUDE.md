@@ -30,7 +30,7 @@ PROJECT_X_API_KEY="..." PROJECT_X_USERNAME="..." uv run python script.py
 
 The test.sh script properly configures all required environment variables. DO NOT attempt to set PROJECT_X_API_KEY or PROJECT_X_USERNAME manually.
 
-## Project Status: v3.3.0 - Complete Statistics Module Redesign
+## Project Status: v4.0.1 - TopstepX Gateway revival and live-order hardening
 
 **IMPORTANT**: This project uses a fully asynchronous architecture. All APIs are async-only, optimized for high-performance futures trading.
 

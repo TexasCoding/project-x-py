@@ -28,18 +28,19 @@ A **high-performance async Python SDK** for the [ProjectX Trading Platform](http
 
 This Python SDK acts as a bridge between your trading strategies and the ProjectX platform, handling all the complex API interactions, data processing, and real-time connectivity.
 
-## 🚀 v3.5.8 - DateTime Parsing Fix for Mixed Timestamp Formats
+## 🚀 v4.0.0 - TopstepX Gateway Revival
 
-**Latest Version**: v3.5.8 - Fixed critical datetime parsing error when API returns mixed timestamp formats, ensuring reliable market data retrieval across all scenarios.
+**Latest Version**: v4.0.0 — the SDK is TopstepX-only, aligned with the current Gateway HTTP and SignalR APIs.
 
-**Key Improvements**:
-- 🕐 **Robust DateTime Parsing**: Handles all timestamp formats (with/without timezone info)
-- ⚡ **Performance Optimized**: Fast path for 95% of cases, with intelligent fallbacks
-- 🔄 **Zero Breaking Changes**: Fully backward compatible implementation
-- 🧪 **Test Stability**: Fixed flaky performance tests for reliable CI/CD
-- 📊 **TradingSuite Compatible**: Ensures smooth initialization with mixed data formats
+**Key changes**:
+- Official defaults: `https://api.topstepx.com` and `https://rtc.topstepx.com`
+- Native Gateway brackets on `place_order()`, plus REST fill reconciliation
+- `OrderSubmissionUncertainError` when an in-flight place is cancelled
+- pysignalr realtime hubs, stale-feed watchdog (`EventType.FEED_STALE`), REST price fallback
+- `TradingSuite.create(username=, api_key=)`, `export_stats()`, `projectx-check` / `projectx-config`
+- Removed `get_stats_sync()`, import-time `uvloop.install()`, and placeholder `suite.journal` / `suite.analytics`
 
-See [CHANGELOG.md](CHANGELOG.md) for complete v3.5.8 fixes and previous version features.
+See [CHANGELOG.md](CHANGELOG.md) and the [v3 → v4 migration guide](docs/migration/v3-to-v4.md).
 
 ### 📦 Production Stability Guarantee
 
@@ -67,17 +68,20 @@ Since v3.1.1, this project maintains:
 - **WebSocket Native**: Perfect for real-time trading applications
 - **Modern Python**: Leverages Python 3.12+ async features
 
-### Migration to v3.0+
+### Migration to v4.0
 
-If you're upgrading from v2.x, key changes include TradingSuite replacing factories:
+If you're upgrading from v3.x, start with the [v3 → v4 migration guide](docs/migration/v3-to-v4.md).
 
 ```python
-# Old (v2.x)
-suite = await create_initialized_trading_suite(\"MNQ\", client)
+# v3 (removed)
+stats = suite.get_stats_sync()
 
-# New (v3.0+)
-suite = await TradingSuite.create(\"MNQ\")
+# v4
+stats = await suite.get_stats()
+payload = await suite.export_stats("json")
 ```
+
+Single-instrument `suite.data` / `suite.orders` / `suite.positions` are official accessors. Multi-instrument still uses `suite["MNQ"]`.
 
 ## ✨ Key Features
 
@@ -177,8 +181,7 @@ async def multi_instrument_example():
     suite = await TradingSuite.create(
         instruments=["MNQ", "ES", "MGC"],  # E-mini NASDAQ, S&P 500, Gold
         timeframes=["1min", "5min"],
-        enable_orderbook=True,
-        enable_risk_management=True
+        features=["orderbook", "risk_manager"],
     )
 
     print(f"Managing {len(suite)} instruments: {list(suite.keys())}")
@@ -217,15 +220,14 @@ async def multi_instrument_example():
 
     await suite.disconnect()
 
-# Backward compatibility - existing single-instrument code still works
-async def backward_compatible_example():
-    # This still works but shows deprecation warnings
-    suite = await TradingSuite.create("MNQ")  # Single instrument (legacy)
-    data = await suite.data.get_data("5min")  # Direct access (deprecated)
+# Single-instrument accessors are official in v4
+async def single_instrument_example():
+    suite = await TradingSuite.create("MNQ")
+    data = await suite.data.get_data("5min")
 
-    # Recommended: Use explicit multi-instrument syntax
-    suite = await TradingSuite.create(["MNQ"])  # List notation
-    data = await suite["MNQ"].data.get_data("5min")  # Explicit access
+    # Multi-instrument still uses explicit context access
+    suite = await TradingSuite.create(["MNQ", "ES"])
+    data = await suite["MNQ"].data.get_data("5min")
 
     await suite.disconnect()
 
@@ -233,10 +235,9 @@ if __name__ == "__main__":
     asyncio.run(multi_instrument_example())
 ```
 
-**Migration from v3.4.x**:
-- Single instrument: `TradingSuite.create("MNQ")` → `TradingSuite.create(["MNQ"])`
-- Access managers: `suite.data` → `suite["MNQ"].data`
-- All existing code continues to work with deprecation warnings
+**Single vs multi-instrument (v4)**:
+- Single instrument: `TradingSuite.create("MNQ")` and `suite.data` / `suite.orders` / `suite.positions`
+- Multi-instrument: `TradingSuite.create(["MNQ", "ES"])` and `suite["MNQ"].data`
 
 📚 **Full Example**: See `examples/26_multi_instrument_trading.py` for comprehensive multi-instrument strategies.
 
@@ -432,11 +433,10 @@ export PROJECT_X_API_KEY="your_api_key"
 export PROJECT_X_USERNAME="your_username"
 ```
 
-Or use a config file (`~/.config/projectx/config.json`):
+Credentials come from `PROJECT_X_API_KEY` and `PROJECT_X_USERNAME` (or `TradingSuite.create(username=..., api_key=...)`). Optional URL overrides live in `~/.config/projectx/config.json` — that file does **not** load API keys:
+
 ```json
 {
-    "api_key": "your_api_key",
-    "username": "your_username",
     "api_url": "https://api.topstepx.com/api",
     "user_hub_url": "https://rtc.topstepx.com/hubs/user",
     "market_hub_url": "https://rtc.topstepx.com/hubs/market",
@@ -452,10 +452,10 @@ TradingSuite supports optional features that can be enabled during initializatio
 |---------|-------------|-------------|
 | **OrderBook** | `"orderbook"` | Level 2 market depth, bid/ask analysis, iceberg detection |
 | **Risk Manager** | `"risk_manager"` | Position sizing, risk validation, managed trades |
-| **Session Filtering** | Built-in (v3.4.0) | RTH/ETH session filtering (experimental) |
-| **Trade Journal** | `"trade_journal"` | Trade logging and performance tracking (future) |
-| **Performance Analytics** | `"performance_analytics"` | Advanced metrics and analysis (future) |
-| **Auto Reconnect** | `"auto_reconnect"` | Automatic WebSocket reconnection (future) |
+| **Performance Analytics** | `"performance_analytics"` | Correlation / orderbook analytics flags |
+| **Session Filtering** | Built-in | RTH/ETH session filtering (experimental) |
+| **Trade Journal** | `"trade_journal"` | Reserved — warns and has no effect in 4.0 |
+| **Auto Reconnect** | `"auto_reconnect"` | Reserved — warns and has no effect in 4.0 |
 
 **Note:** PositionManager and OrderManager are always included and don't require feature flags.
 
@@ -499,7 +499,7 @@ Async position tracking and analytics:
 ```python
 positions = await suite.positions.get_all_positions()
 pnl = await suite.positions.get_portfolio_pnl()
-await suite.positions.close_position(contract_id)
+await suite.orders.close_position(contract_id)
 ```
 
 #### RealtimeDataManager
@@ -559,7 +559,7 @@ print(f"System Health: {stats['health_score']:.1f}/100")
 
 # Performance metrics with enhanced tracking
 print(f"API Calls: {stats['total_api_calls']}")
-print(f"Success Rate: {stats['api_success_rate']:.1%}")
+print(f"Successful API Calls: {stats.get('successful_api_calls', 0)}")
 print(f"Memory Usage: {stats['memory_usage_mb']:.1f} MB")
 
 # Component-specific statistics (all async for consistency)
@@ -575,14 +575,12 @@ prometheus_metrics = await suite.export_stats("prometheus")
 csv_data = await suite.export_stats("csv")
 datadog_metrics = await suite.export_stats("datadog")
 
-# Real-time health monitoring with degradation detection
-health_score = await suite.get_health_score()
+# Health lives on the suite stats payload
+stats = await suite.get_stats()
+health_score = stats.get("health_score", 0)
 if health_score < 70:
-    print("⚠️ System health degraded - check components")
-    component_health = await suite.get_component_health()
-    for name, health in component_health.items():
-        if health['error_count'] > 0:
-            print(f"  {name}: {health['error_count']} errors")
+    print("System health degraded - inspect component stats")
+    print(await suite.export_stats("json"))
 ```
 
 **Key Features (v3.3.0):**
@@ -767,10 +765,7 @@ export PROJECT_X_USERNAME="your_username"
 # The TradingSuite handles connections automatically
 # If you need custom timeout handling:
 try:
-    suite = await TradingSuite.create(
-        "MNQ",
-        timeout=30  # Custom timeout in seconds
-    )
+    suite = await TradingSuite.create("MNQ")
 except Exception as e:
     print(f"Connection failed: {e}")
 ```

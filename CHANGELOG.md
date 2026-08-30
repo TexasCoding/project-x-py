@@ -14,6 +14,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Migration guides will be provided for all breaking changes
 - Semantic versioning (MAJOR.MINOR.PATCH) is strictly followed
 
+## [4.0.1] - 2026-08-30
+
+### Fixed
+
+- Do not retry mutating order/position POSTs after timeout, disconnect, or 5xx;
+  raise `OrderSubmissionUncertainError` instead of duplicating live orders.
+- Restore user and market SignalR subscriptions after stale-feed reconnect.
+- Native Gateway brackets fall back to client-side protection when child
+  orders cannot be uniquely resolved.
+- Stale-order recovery uses `POST /Order/search` with account timestamps.
+- Trade-history fill checks report partial fills when original size is known.
+- `Account.from_api()` / `Instrument.from_api()` ignore additive Gateway fields;
+  `filledSize` maps to `fillVolume`.
+- Failed position/trade searches raise instead of returning an empty list.
+- Enforce `max_order_size` when order validation is enabled.
+- Hub asyncio task names no longer include JWT query strings.
+- Reject remote `http://` API and hub URLs (localhost remains allowed).
+- Apply `requests_per_minute` to the HTTP rate limiter; disable HTTP redirects.
+
+### Changed
+
+- Package version source is `__version__` via Hatch `dynamic = ["version"]`.
+- GitHub `release.yml` publishes the GitHub Release only; PyPI stays on
+  `publish-pypi.yml`.
+- MkDocs GitHub Pages deploy is `docs.yml`; `mkdocs-deploy.yml` is manual.
+
 ## [4.0.0] - 2026-08-29
 
 ### Breaking

@@ -294,6 +294,15 @@ class ConfigManager:
                 errors.append(f"{url_field} must be a non-empty string")
             elif not url.startswith(("http://", "https://", "wss://")):
                 errors.append(f"{url_field} must be a valid URL")
+            elif url.startswith("http://"):
+                from urllib.parse import urlparse
+
+                host = (urlparse(url).hostname or "").lower()
+                if host not in {"localhost", "127.0.0.1"}:
+                    errors.append(
+                        f"{url_field} must use HTTPS (http:// is only allowed "
+                        "for localhost)"
+                    )
 
         # Validate numeric settings
         if config.timeout_seconds <= 0:

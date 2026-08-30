@@ -177,6 +177,11 @@ class Instrument:
     activeContract: bool
     symbolId: str | None = None
 
+    @classmethod
+    def from_api(cls, data: Mapping[str, Any]) -> "Instrument":
+        """Create an Instrument from API data, ignoring additive unknown fields."""
+        return _from_api(cls, data)
+
 
 @dataclass
 class Account:
@@ -203,6 +208,11 @@ class Account:
     canTrade: bool
     isVisible: bool
     simulated: bool
+
+    @classmethod
+    def from_api(cls, data: Mapping[str, Any]) -> "Account":
+        """Create an Account from API data, ignoring additive unknown fields."""
+        return _from_api(cls, data)
 
 
 @dataclass
@@ -268,7 +278,7 @@ class Order:
     @classmethod
     def from_api(cls, data: Mapping[str, Any]) -> "Order":
         """Create an Order from API data, ignoring additive unknown fields."""
-        return _from_api(cls, data)
+        return _from_api(cls, data, aliases={"filledSize": "fillVolume"})
 
     @property
     def is_rejected(self) -> bool:

@@ -16,7 +16,7 @@ The models module provides strongly-typed data structures for all SDK operations
 # Example account usage
 async with ProjectX.from_env() as client:
     await client.authenticate()
-    account = await client.get_account_info()
+    account = client.get_account_info()
 
     print(f"Account ID: {account.account_id}")
     print(f"Balance: ${account.balance:,.2f}")
@@ -248,7 +248,7 @@ from project_x_py.models import ProjectXConfig
 config = ProjectXConfig(
     api_key="your_api_key"  # pragma: allowlist secret,
     username="your_username",
-    api_url="https://gateway.projectx.com/api",
+    api_url="https://api.topstepx.com/api",
     timeout_seconds=60,
     retry_attempts=5,
     rate_limit_calls=100,
@@ -375,7 +375,7 @@ async def statistics_example():
     mnq_context = suite["MNQ"]
 
     # Get comprehensive statistics
-    stats = await suite.get_statistics()
+    stats = await suite.get_stats()
 
     # Access typed statistics
     print(f"Health Score: {stats.health_score}")

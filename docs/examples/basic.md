@@ -64,7 +64,7 @@ async def main():
         await client.authenticate()
 
         # Get account information
-        account_info = await client.get_account_info()
+        account_info = client.get_account_info()
         print(f"Account: {account_info}")
 
         # Get instrument information
@@ -341,7 +341,8 @@ Proper error handling patterns
 """
 import asyncio
 import logging
-from project_x_py import TradingSuite, ProjectXException, AuthenticationError
+from project_x_py import TradingSuite
+from project_x_py.exceptions import ProjectXAuthenticationError, ProjectXError
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -356,20 +357,20 @@ async def main():
         try:
             current_price = await mnq_context.data.get_current_price()
             logger.info(f"Current price: ${current_price:.2f}")
-        except ProjectXException as e:
+        except ProjectXError as e:
             logger.error(f"Failed to get current price: {e}")
 
         # Attempt to get positions with error handling
         try:
             positions = await mnq_context.positions.get_all_positions()
             logger.info(f"Retrieved {len(positions)} positions")
-        except ProjectXException as e:
+        except ProjectXError as e:
             logger.error(f"Failed to get positions: {e}")
 
-    except AuthenticationError as e:
+    except ProjectXAuthenticationError as e:
         logger.error(f"Authentication failed: {e}")
         logger.error("Check your API credentials and account permissions")
-    except ProjectXException as e:
+    except ProjectXError as e:
         logger.error(f"SDK error: {e}")
     except Exception as e:
         logger.error(f"Unexpected error: {e}")

@@ -207,7 +207,7 @@ from .candlestick import (
 )
 
 # Version info
-__version__ = "4.0.0"
+__version__ = "4.0.1"
 __author__ = "TexasCoding"
 
 
@@ -1092,6 +1092,7 @@ def get_indicator_groups() -> dict[str, list[str]]:
             "FVG",
             "ORDERBLOCK",
             "WAE",
+            "LORENZ",
             "DOJI",
             "HAMMER",
             "SHOOTINGSTAR",

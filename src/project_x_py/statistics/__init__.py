@@ -4,7 +4,7 @@ Async-first statistics system for ProjectX SDK.
 This module provides comprehensive statistics tracking, aggregation, and export
 capabilities for all SDK components with 100% async architecture.
 
-Author: SDK v3.3.0
+Author: SDK v4.0.0
 Date: 2025-01-21
 
 Key Components:
@@ -57,4 +57,4 @@ __all__ = [
     "CleanupScheduler",
 ]
 
-__version__ = "3.3.0"
+__version__ = "4.0.1"

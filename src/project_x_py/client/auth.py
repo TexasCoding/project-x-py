@@ -205,7 +205,7 @@ class AuthenticationMixin:
             raise ProjectXAuthenticationError(ErrorMessages.API_REQUEST_FAILED)
 
         accounts_data = accounts_response.get("accounts", [])
-        accounts = [Account(**acc) for acc in accounts_data]
+        accounts = [Account.from_api(acc) for acc in accounts_data]
 
         if not accounts:
             raise ProjectXAuthenticationError(ErrorMessages.AUTH_NO_ACCOUNTS)

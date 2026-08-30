@@ -7,6 +7,7 @@ import pytest
 
 from project_x_py import ProjectX
 from project_x_py.exceptions import (
+    OrderSubmissionUncertainError,
     ProjectXAuthenticationError,
     ProjectXConnectionError,
     ProjectXDataError,
@@ -242,8 +243,24 @@ class TestHttpClient:
         assert health["active_connections"] == 1  # authenticated
 
     @pytest.mark.asyncio
-    async def test_cancelled_request_is_reraised(self, initialized_client):
-        """Cancellation of an in-flight request must surface as CancelledError."""
+    async def test_cancelled_mutating_request_is_uncertain(self, initialized_client):
+        """Cancellation of an in-flight place must not look like a clean failure."""
+        import asyncio
+
+        client = initialized_client
+
+        async def _cancelled(*_args, **_kwargs):
+            raise asyncio.CancelledError()
+
+        client._client.request.side_effect = _cancelled
+
+        with pytest.raises(OrderSubmissionUncertainError):
+            await client._make_request("POST", "/Order/place", data={"size": 1})
+        assert client._client.request.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_cancelled_get_is_reraised(self, initialized_client):
+        """Cancellation of a safe GET still surfaces as CancelledError."""
         import asyncio
 
         client = initialized_client
@@ -254,4 +271,44 @@ class TestHttpClient:
         client._client.request.side_effect = _cancelled
 
         with pytest.raises(asyncio.CancelledError):
+            await client._make_request("GET", "/test/endpoint")
+
+    @pytest.mark.asyncio
+    async def test_mutating_place_does_not_retry_on_server_error(
+        self, initialized_client, mock_response
+    ):
+        """POST /Order/place must not be retried after a 5xx; treat as uncertain."""
+        client = initialized_client
+        error_response = mock_response(status_code=503, json_data={"success": False})
+        client._client.request.side_effect = [
+            error_response,
+            error_response,
+            error_response,
+        ]
+
+        with pytest.raises(OrderSubmissionUncertainError):
             await client._make_request("POST", "/Order/place", data={"size": 1})
+
+        assert client._client.request.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_mutating_place_timeout_is_uncertain(self, initialized_client):
+        """A timeout after sending /Order/place is uncertain, not a retryable miss."""
+        client = initialized_client
+        client._client.request.side_effect = httpx.TimeoutException("timed out")
+
+        with pytest.raises(OrderSubmissionUncertainError):
+            await client._make_request("POST", "/Order/place", data={"size": 1})
+
+        assert client._client.request.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_mutating_cancel_connect_error_is_uncertain(self, initialized_client):
+        """POST /Order/cancel connection errors must not be retried."""
+        client = initialized_client
+        client._client.request.side_effect = httpx.ConnectError("Failed to connect")
+
+        with pytest.raises(OrderSubmissionUncertainError):
+            await client._make_request("POST", "/Order/cancel", data={"orderId": 1})
+
+        assert client._client.request.call_count == 1

@@ -111,7 +111,9 @@ nav:
     - Position Manager: api/position-manager.md
     - Data Manager: api/data-manager.md
     - Statistics & Analytics: api/statistics.md
+    - Risk Manager: api/risk-manager.md
     - Indicators: api/indicators.md
+    - Lorenz Indicator: indicators/lorenz.md
     - Models: api/models.md
   - Examples:
     - Basic Usage: examples/basic.md
@@ -147,4 +149,4 @@ extra_javascript:
   - javascripts/mathjax.js
   - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
 
-copyright: Copyright &copy; 2024-2025 TexasCoding
+copyright: Copyright &copy; 2024-2026 TexasCoding

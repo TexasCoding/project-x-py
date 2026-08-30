@@ -525,6 +525,11 @@ class TestOrderTrackingEdgeCases:
 
         # Should update from API
         assert order_manager.tracked_orders["7000"]["status"] == OrderStatus.FILLED
+        call = order_manager.project_x._make_request.await_args
+        assert call.args[0] == "POST"
+        assert call.args[1] == "/Order/search"
+        assert "accountId" in call.kwargs["data"]
+        assert "startTimestamp" in call.kwargs["data"]
 
     @pytest.mark.asyncio
     async def test_handle_order_modification_tracking(self, order_manager):

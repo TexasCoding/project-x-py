@@ -160,7 +160,11 @@ class TradingMixin:
         # If response is a dict with success/positions structure
         elif isinstance(response, dict):
             if not response.get("success", False):
-                return []
+                raise ProjectXError(
+                    response.get("errorMessage")
+                    or response.get("error")
+                    or "Position search failed"
+                )
             positions_data = response.get("positions", [])
         else:
             return []
@@ -258,7 +262,11 @@ class TradingMixin:
             trades_data = response
         elif isinstance(response, dict):
             if not response.get("success", False):
-                return []
+                raise ProjectXError(
+                    response.get("errorMessage")
+                    or response.get("error")
+                    or "Trade search failed"
+                )
             trades_data = response.get("trades", [])
         else:
             return []

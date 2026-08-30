@@ -1,6 +1,10 @@
 # Jupyter Notebook Examples
 
-Interactive Jupyter notebooks for exploring the ProjectX Python SDK.
+The `notebooks/` tree is not currently shipped in this repository. Use the
+Python scripts under [`examples/`](https://github.com/TexasCoding/project-x-py/tree/main/examples)
+for runnable v4.0 samples.
+
+The links below are historical placeholders and may 404 until notebooks are republished.
 
 ## Available Notebooks
 

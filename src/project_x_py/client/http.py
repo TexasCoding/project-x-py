@@ -58,6 +58,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 import httpx
 
 from project_x_py.exceptions import (
+    OrderSubmissionUncertainError,
     ProjectXAuthenticationError,
     ProjectXConnectionError,
     ProjectXDataError,
@@ -75,7 +76,6 @@ from project_x_py.utils import (
     handle_errors,
     handle_rate_limit,
     log_api_call,
-    retry_on_network_error,
 )
 
 if TYPE_CHECKING:
@@ -84,6 +84,23 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 logger = ProjectXLogger.get_logger(__name__)
+
+MUTATING_ENDPOINTS = frozenset(
+    {
+        "/Order/place",
+        "/Order/cancel",
+        "/Order/modify",
+        "/Position/closeContract",
+        "/Position/partialCloseContract",
+    }
+)
+
+
+def _is_mutating_request(method: str, endpoint: str) -> bool:
+    """True when a retry would risk a duplicate live broker mutation."""
+    return method.upper() in {"POST", "PUT", "PATCH", "DELETE"} and (
+        endpoint in MUTATING_ENDPOINTS
+    )
 
 
 class HttpMixin:
@@ -139,9 +156,9 @@ class HttpMixin:
             limits=limits,
             http2=True,
             verify=True,
-            follow_redirects=True,
+            follow_redirects=False,
             headers={
-                "User-Agent": "ProjectX-Python-SDK/4.0.0",
+                "User-Agent": "ProjectX-Python-SDK/4.0.1",
                 "Accept": "application/json",
             },
         )
@@ -168,7 +185,6 @@ class HttpMixin:
         return self._client
 
     @handle_rate_limit()
-    @retry_on_network_error(max_attempts=3)
     async def _make_request(
         self: "ProjectXClientProtocol",
         method: str,
@@ -181,20 +197,74 @@ class HttpMixin:
         """
         Make an async HTTP request with error handling and retry logic.
 
-        Args:
-            method: HTTP method (GET, POST, PUT, DELETE)
-            endpoint: API endpoint path
-            data: Optional request body data
-            params: Optional query parameters
-            headers: Optional additional headers
-            retry_count: Current retry attempt count
-
-        Returns:
-            Response data (can be dict, list, or other JSON-serializable type)
-
-        Raises:
-            ProjectXError: Various specific exceptions based on error type
+        Mutating broker endpoints are never retried. A timeout, disconnect,
+        5xx, or cancellation after the request may have been sent raises
+        ``OrderSubmissionUncertainError`` so callers reconcile instead of
+        duplicating a live order.
         """
+        mutating = _is_mutating_request(method, endpoint)
+        max_attempts = 1 if mutating else 3
+        last_exception: Exception | None = None
+
+        for attempt in range(max_attempts):
+            try:
+                return await self._execute_http_request(
+                    method,
+                    endpoint,
+                    data=data,
+                    params=params,
+                    headers=headers,
+                    retry_count=retry_count,
+                )
+            except asyncio.CancelledError:
+                if mutating:
+                    raise OrderSubmissionUncertainError(
+                        "Order request was cancelled after it may have been "
+                        "submitted. Reconcile against positions and orders "
+                        "before retrying.",
+                        payload=data or {},
+                    ) from None
+                raise
+            except (ProjectXConnectionError, ProjectXServerError) as e:
+                if mutating:
+                    raise OrderSubmissionUncertainError(
+                        "Order request failed after a transport error; the "
+                        "broker may have accepted the order. Reconcile "
+                        "before retrying.",
+                        payload=data or {},
+                    ) from e
+                last_exception = e
+                if attempt < max_attempts - 1:
+                    delay = min(1.0 * (2.0**attempt), 60.0)
+                    logger.warning(
+                        f"Retry {attempt + 1}/{max_attempts} for _make_request "
+                        f"after {type(e).__name__}, waiting {delay:.1f}s",
+                        extra={
+                            "attempt": attempt + 1,
+                            "max_attempts": max_attempts,
+                            "delay": delay,
+                            "error_type": type(e).__name__,
+                            "endpoint": endpoint,
+                        },
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise
+
+        if last_exception is not None:
+            raise last_exception
+        raise ProjectXError("Unexpected state in HTTP request retry")
+
+    async def _execute_http_request(
+        self: "ProjectXClientProtocol",
+        method: str,
+        endpoint: str,
+        data: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        retry_count: int = 0,
+    ) -> dict[str, Any] | list[Any]:
+        """Send a single HTTP request. Callers handle retry policy."""
         with LogContext(
             logger,
             operation="api_request",

@@ -426,6 +426,18 @@ class OrderManager(
                     format_error_message(ErrorMessages.ORDER_INVALID_SIZE, size=size)
                 )
 
+            if self.enable_order_validation:
+                if not isinstance(size, int):
+                    raise ProjectXOrderError(
+                        format_error_message(
+                            ErrorMessages.ORDER_INVALID_SIZE, size=size
+                        )
+                    )
+                if size > self.max_order_size:
+                    raise ProjectXOrderError(
+                        f"Order size {size} exceeds max_order_size {self.max_order_size}"
+                    )
+
             # Validate order side and type against expected enums
             if side not in (0, 1):
                 raise ProjectXOrderError(
