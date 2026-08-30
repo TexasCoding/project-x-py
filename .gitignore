@@ -2,7 +2,9 @@
 __pycache__/
 *.py[cod]
 *$py.class
+# Grok: commit config.toml, rules, agents, skills, hooks. Keep local secrets out.
 .grok/settings.json
+.grok/settings.local.json
 # C extensions
 *.so
 

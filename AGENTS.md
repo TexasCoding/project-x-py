@@ -1,41 +1,62 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
-- `src/project_x_py/`: Library source (async client, order/position managers, indicators, utils).
-- `tests/`: Pytest suite (`test_*.py`) with unit/integration markers.
-- `examples/`: Usage patterns and reference strategies.
-- `scripts/`: Dev utilities (`check_quality.sh`, docs, build helpers).
-- `docs/` and `site/`: MkDocs docs and built site.
-- `dist/`: Built wheels/sdists. Do not edit by hand.
+Async-only Python SDK for TopstepX / ProjectX futures trading.
 
-## Build, Test, and Development Commands
-- Setup: `uv sync` (or `pip install -e ".[dev]"`).
-- Test all: `uv run pytest` (coverage and reports are enabled via config).
-- Lint/format: `uv run ruff format .` then `uv run ruff check . --fix`.
-- Type check: `uv run mypy src/`.
-- Full quality gate: `./check_quality.sh`.
-- Build artifacts: `uv run python -m build` (outputs to `dist/`).
-- Docs (MkDocs): `./scripts/serve-docs.sh` (local) or `./scripts/deploy-docs.sh`.
+## Layout
 
-## Coding Style & Naming Conventions
-- Python 3.12+, async-first I/O; prefer `async/await` APIs.
-- Formatting/linting via Ruff; line length 88, double quotes, space indentation.
-- Use comprehensive type hints; prefer modern syntax (`dict[str, Any]`, `A | B`).
-- Import order managed by Ruff/isort; first-party is `project_x_py`.
-- Keep public APIs backward compatible; add deprecations before removals.
+- `src/project_x_py/` — library (client, order/position managers, indicators, realtime, orderbook, risk)
+- `tests/` — pytest (`test_*.py`); markers: `unit`, `integration`, `slow`, `realtime`
+- `examples/` — usage patterns; **always run with `./test.sh`**
+- `scripts/` — quality/docs/build helpers
+- `.grok/` — Grok project config, rules, agents, skills, hooks
 
-## Testing Guidelines
-- Framework: Pytest with markers: `unit`, `integration`, `slow`, `realtime`.
-- Naming: files `tests/test_*.py`, functions `test_*`.
-- Run subsets: `uv run pytest -m "unit and not slow"`.
-- Coverage runs by default; maintain or improve coverage for PRs.
+## Commands
 
-## Commit & Pull Request Guidelines
-- Prefer Conventional Commits (`feat:`, `fix:`, `docs:`). Version bumps use `vX.Y.Z: ...`.
-- PRs must: describe changes, link issues, include tests/docs, and pass CI/`check_quality.sh`.
-- Keep changes focused; update `CHANGELOG.md` when user-facing behavior changes.
+- Setup: `uv sync`
+- Tests: `uv run pytest` (fast: `uv run pytest -m "unit and not slow"`)
+- Lint/format: `uv run ruff format .` then `uv run ruff check . --fix`
+- Types: `uv run mypy src/`
+- Quality gate: `./check_quality.sh`
+- Examples / credentialed scripts: `./test.sh examples/01_basic_client_connection.py`
+  - Never `uv run python examples/...` or `python examples/...`
+  - Never set `PROJECT_X_API_KEY` or `PROJECT_X_USERNAME` in the shell; `./test.sh` loads them
 
-## Security & Configuration Tips
-- Never commit secrets. Use `.env` (see `.env.example`) and environment vars like `PROJECT_X_API_KEY`.
-- Enable hooks: `uv run pre-commit install` then `uv run pre-commit run -a` before pushing.
-- Run `uv run bandit -r src/` for security scans when touching critical paths.
+## Code
+
+- Python 3.12+, `async`/`await` only
+- Polars only — never pandas
+- `Decimal` for prices; tick-size alignment in OrderManager
+- Type hints: `dict[str, Any]`, `A | B` (not `Optional`/`Union`/`Dict`)
+- Public APIs stay compatible: `@deprecated` from `project_x_py.utils.deprecation` for at least 2 minor versions; remove in major versions only
+- Wrap HTTP/API failures in `project_x_py.exceptions`
+- Details: `.grok/rules/`
+
+## Architecture
+
+- `TradingSuite.create(...)` is the public entry point
+- OrderManager and PositionManager are always included
+- Optional features via `Features` (orderbook, risk_manager, …)
+- Shared `EventBus`; one realtime client injected into managers
+
+## Agents
+
+Spawn these for SDK work. Superpowers owns TDD, debugging method, review, and planning. Built-in `explore` / `plan` cover research.
+
+| Agent | Role |
+|---|---|
+| `python-developer` | Implement async SDK features |
+| `integration-tester` | Write pytest-asyncio tests |
+| `code-debugger` | Trace failures; do not patch |
+| `code-reviewer` | PR / pre-release review |
+| `security-auditor` | Secrets, order-path, bandit |
+| `release-manager` | Semver, changelog, release |
+
+Use GitNexus skills when tracing call flow or blast radius.
+
+Ignore Vercel, Chrome DevTools, Octo, and frontend-design skills in this repo; they are not used here.
+
+## Git
+
+- Conventional Commits (`feat:`, `fix:`, `docs:`); version bumps `vX.Y.Z: ...`
+- PRs: tests, user-facing docs, `CHANGELOG.md` for behavior changes, `./check_quality.sh` green
+- Never commit secrets; use `.env` and `./test.sh`

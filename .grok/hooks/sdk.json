@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|run_terminal_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "scripts/pretool-shell.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "search_replace|write|Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "scripts/format-python.py",
+            "timeout": 25
+          }
+        ]
+      }
+    ]
+  }
+}

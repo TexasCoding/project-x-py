@@ -125,7 +125,7 @@ nav:
   - Development:
     - Contributing: development/contributing.md
     - Testing: development/testing.md
-    - Agents: development/agents.md
+    - Grok Agents: development/agents.md
     - Architecture: development/architecture.md
   - Migration:
     - v3 to v4: migration/v3-to-v4.md

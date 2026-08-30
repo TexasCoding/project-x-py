@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Raise the published `orjson` floor to `>=3.11.6`.
 - Add weekly grouped Dependabot updates for uv and GitHub Actions.
 
+### Changed
+
+- Replace Claude/Cursor/Gemini assistant scaffolding with a Grok-native
+  `.grok/` layout (`AGENTS.md`, project agents, skills, hooks, and MCP).
+
 ### Fixed
 
 - Query-cache LRU recency uses a monotonic counter so ties in wall-clock

@@ -91,7 +91,7 @@ docs/
 ├── development/               # Development docs
 │   ├── contributing.md       # Contribution guide
 │   ├── testing.md           # Testing guide
-│   ├── agents.md            # AI agents docs
+│   ├── agents.md            # Grok agents, skills, hooks
 │   └── architecture.md      # System architecture
 ├── migration/                # Migration guides
 │   ├── v3-to-v4.md         # v3 to v4 migration

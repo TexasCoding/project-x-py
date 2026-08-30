@@ -1,0 +1,26 @@
+# Project-scoped Grok config (committed).
+# Secrets stay in the environment — never put tokens in this file.
+# User-global tools (Obsidian, Tavily, GitNexus, Chrome, Vercel) live in ~/.grok/.
+
+[mcp_servers.github]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+startup_timeout_sec = 45
+env = { GITHUB_PERSONAL_ACCESS_TOKEN = "${GITHUB_PERSONAL_ACCESS_TOKEN}" }
+
+[mcp_servers.context7]
+command = "npx"
+args = ["-y", "@upstash/context7-mcp"]
+startup_timeout_sec = 45
+env = { CONTEXT7_API_KEY = "${CONTEXT7_API_KEY}" }
+
+# Intended skip list for this Python SDK. User-level [plugins].enabled in
+# ~/.grok/config.toml currently wins, so these may still load until that
+# user list is changed. Grok should still ignore them here.
+[plugins]
+disabled = [
+    "vercel",
+    "chrome-devtools-mcp",
+    "octo",
+    "frontend-design",
+]

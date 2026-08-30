@@ -298,7 +298,7 @@ logger = setup_logging(level="DEBUG")  # Change from INFO to DEBUG
 ### Getting Help
 
 - Review the main SDK documentation
-- Check the CLAUDE.md file for development guidance
+- Check `AGENTS.md` for development guidance
 - Look at error messages and stack traces
 - Test with the basic client connection example first
 

@@ -207,7 +207,7 @@ mnq_context = suite["MNQ"]  # Access specific instrument
 ### [Development](development/contributing.md)
 - [Contributing](development/contributing.md) - How to contribute
 - [Testing](development/testing.md) - Testing guidelines
-- [Agents](development/agents.md) - Development agents
+- [Agents](development/agents.md) - Grok agents, skills, and hooks
 - [Architecture](development/architecture.md) - System design
 
 ### [Migration](migration/v3-to-v4.md)
