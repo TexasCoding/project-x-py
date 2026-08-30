@@ -183,12 +183,12 @@ from project_x_py.order_templates import (
     get_template,
 )
 
-# Deprecated: These are re-exported for backward compatibility only
-# Use TradingSuite.track_order() and TradingSuite.order_chain() instead
+# Official suite APIs. Prefer TradingSuite.track_order() / order_chain();
+# the classes themselves are not deprecated.
 from project_x_py.order_tracker import (
-    OrderChainBuilder,  # Deprecated: Use TradingSuite.order_chain()
+    OrderChainBuilder,
     OrderLifecycleError,
-    OrderTracker,  # Deprecated: Use TradingSuite.track_order()
+    OrderTracker,
 )
 from project_x_py.orderbook import (
     OrderBook,

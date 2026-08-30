@@ -42,4 +42,11 @@ async def test_process_position_data_open_and_close(
     await pm._process_position_data(closure_data)
     assert key not in pm.tracked_positions
     assert pm.stats["closed_positions"] == 1
-    pm._trigger_callbacks.assert_any_call("position_closed", closure_data)
+    closed = [
+        call.args[1]
+        for call in pm._trigger_callbacks.await_args_list
+        if call.args and call.args[0] == "position_closed"
+    ]
+    assert closed
+    assert closed[0]["contractId"] == key
+    assert "pnl" in closed[0]

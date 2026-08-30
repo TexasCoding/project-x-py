@@ -176,6 +176,11 @@ class TestProtectiveOrdersAreOco:
         target_id = result["bracket_order"].target_order_id
         assert stop_id == 100
         assert target_id == 101
+        mock_order_manager.place_limit_order.assert_called()
+        assert (
+            mock_order_manager.place_limit_order.call_args.kwargs.get("linked_order_id")
+            == stop_id
+        )
 
         await mock_order_manager._handle_oco_fill(str(target_id))
 
@@ -237,6 +242,46 @@ class TestDailyLossFromPositionCloseEvents:
             {
                 "contract_id": "MNQ",
                 "position": position,
+                "pnl": -1500.0,
+            },
+        )
+
+        result = await rm.validate_trade(_mock_order())
+
+        assert result["is_valid"] is False
+        assert any("Daily loss" in reason for reason in result["reasons"])
+
+    @pytest.mark.asyncio
+    async def test_gateway_position_closed_payload_blocks_next_validate_trade(
+        self,
+        mock_client: MagicMock,
+        mock_order_manager: MagicMock,
+        mock_position_manager: MagicMock,
+    ) -> None:
+        """Live GatewayUserPosition close is {contractId, id, size:0} plus computed pnl."""
+        event_bus = EventBus()
+        config = RiskConfig(max_daily_loss_amount=Decimal("1000"))
+        rm = RiskManager(
+            project_x=mock_client,
+            order_manager=mock_order_manager,
+            event_bus=event_bus,
+            position_manager=mock_position_manager,
+            config=config,
+        )
+        if hasattr(rm, "_init_task"):
+            try:
+                await asyncio.wait_for(rm._init_task, timeout=1.0)
+            except TimeoutError:
+                pass
+
+        await event_bus.emit(
+            EventType.POSITION_CLOSED,
+            {
+                "id": 42,
+                "contractId": "CON.F.US.MNQ.U25",
+                "size": 0,
+                "averagePrice": 17900.0,
+                "type": 1,
                 "pnl": -1500.0,
             },
         )

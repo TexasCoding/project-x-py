@@ -156,6 +156,7 @@ class RiskManager(BaseStatisticsTracker):
                 data.get("position_id")
                 or data.get("id")
                 or getattr(position, "id", "")
+                or data.get("contractId")
                 or data.get("contract_id")
                 or ""
             )
@@ -1252,6 +1253,11 @@ class RiskManager(BaseStatisticsTracker):
 
     async def _pair_oco_orders(self, stop_id: int, target_id: int) -> None:
         """Link stop and target so a fill of either cancels the sibling."""
+        link = getattr(self.orders, "_link_oco_orders", None)
+        if callable(link):
+            link_result = link(stop_id, target_id)
+            if inspect.isawaitable(link_result):
+                await link_result
         track = getattr(self.orders, "track_oco_pair", None)
         if callable(track):
             result = track(str(stop_id), str(target_id))

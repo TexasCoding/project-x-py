@@ -126,6 +126,36 @@ class TestOrderManagerCore:
         order_manager.project_x._make_request.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_reducing_limit_skips_auto_risk_gate(
+        self, order_manager, make_order_response
+    ):
+        """Take-profit LIMIT opposite an open long must not be risk-gated."""
+        order_manager.auto_risk_management = True
+        position = MagicMock()
+        position.contractId = "MGC"
+        position.is_long = True
+        risk_manager = MagicMock()
+        risk_manager.positions = MagicMock()
+        risk_manager.positions.get_all_positions = AsyncMock(return_value=[position])
+        risk_manager.validate_trade = AsyncMock(
+            return_value={
+                "is_valid": False,
+                "reasons": ["Maximum positions limit reached (3)"],
+                "warnings": [],
+            }
+        )
+        order_manager.risk_manager = risk_manager
+        order_manager.project_x._make_request = AsyncMock(
+            return_value=make_order_response(8)
+        )
+
+        resp = await order_manager.place_limit_order("MGC", 1, 1, 2050.0)
+
+        assert resp.orderId == 8
+        risk_manager.validate_trade.assert_not_called()
+        order_manager.project_x._make_request.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_place_order_error_raises(self, order_manager, make_order_response):
         """place_order raises ProjectXOrderError when API fails."""
         order_manager.project_x._make_request = AsyncMock(

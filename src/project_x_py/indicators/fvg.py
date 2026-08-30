@@ -119,7 +119,7 @@ class FVG(BaseIndicator):
                 # Candle 1 (two bars ago)
                 pl.col(high_column).shift(2).alias("candle1_high"),
                 pl.col(low_column).shift(2).alias("candle1_low"),
-                # Candle 2 (previous bar) - not used in gap detection but kept for potential future use
+                # Candle 2 (previous bar) — middle candle must not fill the zone
                 pl.col(high_column).shift(1).alias("candle2_high"),
                 pl.col(low_column).shift(1).alias("candle2_low"),
                 # Candle 3 is current bar

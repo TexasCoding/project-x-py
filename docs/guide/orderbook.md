@@ -10,7 +10,7 @@ The OrderBook provides complete Level 2 market depth analysis with real-time upd
 
 - **Level 2 Market Depth**: Real-time bid/ask levels with volume
 - **Market Microstructure Analysis**: Spread analysis, depth imbalance, and liquidity metrics
-- **Spoofing Detection**: 6 different spoofing patterns with confidence scoring
+- **Spoofing heuristics**: Experimental volume-change labels (`detect_spoofing`), not order-lifecycle detection
 - **Iceberg Detection**: Identify hidden order algorithms
 - **Volume Profile**: Price-volume distribution analysis
 - **Trade Flow Analysis**: Real-time trade classification and flow

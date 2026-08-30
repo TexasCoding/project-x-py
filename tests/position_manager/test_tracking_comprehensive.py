@@ -38,7 +38,7 @@ def mock_position_data():
         "averagePrice": 18000.0,
         "id": 12345,
         "accountId": 67890,
-        "creationTimestamp": "2025-08-25T10:00:00Z"
+        "creationTimestamp": "2025-08-25T10:00:00Z",
     }
 
 
@@ -144,7 +144,9 @@ class TestPositionQueueProcessing:
     """Test position update queue processing."""
 
     @pytest.mark.asyncio
-    async def test_position_processor_processes_queue(self, tracking_mixin, mock_position_data):
+    async def test_position_processor_processes_queue(
+        self, tracking_mixin, mock_position_data
+    ):
         """Test that position processor processes queued items."""
         # Mock the process method
         tracking_mixin._process_position_data = AsyncMock()
@@ -166,7 +168,9 @@ class TestPositionQueueProcessing:
         await tracking_mixin._stop_position_processor()
 
     @pytest.mark.asyncio
-    async def test_position_processor_handles_errors(self, tracking_mixin, mock_position_data):
+    async def test_position_processor_handles_errors(
+        self, tracking_mixin, mock_position_data
+    ):
         """Test processor continues after errors."""
         # Mock process to fail once then succeed
         tracking_mixin._process_position_data = AsyncMock(
@@ -221,7 +225,9 @@ class TestPositionUpdateHandling:
     async def test_on_position_update_error_handling(self, tracking_mixin):
         """Test error handling in position update."""
         # Mock queue to raise error
-        tracking_mixin._position_update_queue.put = AsyncMock(side_effect=Exception("Queue error"))
+        tracking_mixin._position_update_queue.put = AsyncMock(
+            side_effect=Exception("Queue error")
+        )
 
         # Should handle error gracefully
         await tracking_mixin._on_position_update({"contractId": "MNQ"})
@@ -233,7 +239,9 @@ class TestPositionUpdateHandling:
         account_data = {"balance": 50000, "margin": 10000}
         await tracking_mixin._on_account_update(account_data)
 
-        tracking_mixin._trigger_callbacks.assert_called_once_with("account_update", account_data)
+        tracking_mixin._trigger_callbacks.assert_called_once_with(
+            "account_update", account_data
+        )
 
 
 class TestPayloadValidation:
@@ -259,7 +267,7 @@ class TestPayloadValidation:
             "contractId": "MNQ",
             "type": 99,  # Invalid type
             "size": 2,
-            "averagePrice": 18000.0
+            "averagePrice": 18000.0,
         }
         assert tracking_mixin._validate_position_payload(invalid) is False
 
@@ -269,7 +277,7 @@ class TestPayloadValidation:
             "contractId": "MNQ",
             "type": 1,
             "size": "not_a_number",  # Invalid size
-            "averagePrice": 18000.0
+            "averagePrice": 18000.0,
         }
         assert tracking_mixin._validate_position_payload(invalid) is False
 
@@ -279,7 +287,7 @@ class TestPayloadValidation:
             "contractId": "MNQ",
             "type": 0,  # UNDEFINED is valid
             "size": 2,
-            "averagePrice": 18000.0
+            "averagePrice": 18000.0,
         }
         assert tracking_mixin._validate_position_payload(valid) is True
 
@@ -310,7 +318,9 @@ class TestPositionDataProcessing:
             tracking_mixin._trigger_callbacks.assert_called()
 
     @pytest.mark.asyncio
-    async def test_process_position_data_wrapped(self, tracking_mixin, mock_position_data):
+    async def test_process_position_data_wrapped(
+        self, tracking_mixin, mock_position_data
+    ):
         """Test processing wrapped position data."""
         wrapped = {"action": 1, "data": mock_position_data}
 
@@ -324,7 +334,9 @@ class TestPositionDataProcessing:
             assert "MNQ" in tracking_mixin.tracked_positions
 
     @pytest.mark.asyncio
-    async def test_process_position_data_update(self, tracking_mixin, mock_position_data, mock_position):
+    async def test_process_position_data_update(
+        self, tracking_mixin, mock_position_data, mock_position
+    ):
         """Test updating existing position."""
         # Add initial position
         tracking_mixin.tracked_positions["MNQ"] = mock_position
@@ -350,7 +362,9 @@ class TestPositionDataProcessing:
             assert tracking_mixin.tracked_positions["MNQ"].size == 5
 
     @pytest.mark.asyncio
-    async def test_process_position_closure(self, tracking_mixin, mock_position_data, mock_position):
+    async def test_process_position_closure(
+        self, tracking_mixin, mock_position_data, mock_position
+    ):
         """Test processing position closure."""
         # Add initial position
         tracking_mixin.tracked_positions["MNQ"] = mock_position
@@ -367,14 +381,24 @@ class TestPositionDataProcessing:
 
         # Should update stats
         assert tracking_mixin.stats["closed_positions"] == 1
-        assert tracking_mixin.stats["winning_positions"] == 1  # Profit from 18000 to 18100
+        assert (
+            tracking_mixin.stats["winning_positions"] == 1
+        )  # Profit from 18000 to 18100
         assert tracking_mixin.stats["realized_pnl"] == 200.0  # (18100-18000) * 2
 
-        # Should trigger position_closed callback
-        tracking_mixin._trigger_callbacks.assert_any_call("position_closed", closure_data)
+        closed = [
+            call.args[1]
+            for call in tracking_mixin._trigger_callbacks.await_args_list
+            if call.args and call.args[0] == "position_closed"
+        ]
+        assert closed
+        assert closed[0]["contractId"] == "MNQ"
+        assert "pnl" in closed[0]
 
     @pytest.mark.asyncio
-    async def test_process_short_position_closure(self, tracking_mixin, mock_position_data):
+    async def test_process_short_position_closure(
+        self, tracking_mixin, mock_position_data
+    ):
         """Test closing short position with profit."""
         # Create short position
         short_position = Mock(spec=Position)
@@ -390,7 +414,7 @@ class TestPositionDataProcessing:
             "contractId": "ES",
             "type": 2,  # SHORT
             "size": 0,
-            "averagePrice": 4480.0  # Exit price
+            "averagePrice": 4480.0,  # Exit price
         }
 
         await tracking_mixin._process_position_data(closure_data)
@@ -400,7 +424,9 @@ class TestPositionDataProcessing:
         assert tracking_mixin.stats["winning_positions"] == 1
 
     @pytest.mark.asyncio
-    async def test_process_position_with_loss(self, tracking_mixin, mock_position, mock_position_data):
+    async def test_process_position_with_loss(
+        self, tracking_mixin, mock_position, mock_position_data
+    ):
         """Test closing position with loss."""
         tracking_mixin.tracked_positions["MNQ"] = mock_position
 
@@ -457,7 +483,9 @@ class TestPositionHistory:
         assert history[2]["size_change"] == -2  # 1-3
 
     @pytest.mark.asyncio
-    async def test_position_history_max_length(self, tracking_mixin, mock_position_data):
+    async def test_position_history_max_length(
+        self, tracking_mixin, mock_position_data
+    ):
         """Test that position history respects max length."""
         # History has maxlen=1000
         tracking_mixin.position_history["MNQ"] = deque(maxlen=3)  # Override for testing
@@ -497,7 +525,9 @@ class TestOrderSynchronization:
             await tracking_mixin._process_position_data(mock_position_data)
 
             # Should call on_position_changed even for new position (old_size=0, new_size=2)
-            tracking_mixin.order_manager.on_position_changed.assert_called_once_with("MNQ", 0, 2)
+            tracking_mixin.order_manager.on_position_changed.assert_called_once_with(
+                "MNQ", 0, 2
+            )
 
     @pytest.mark.asyncio
     async def test_order_sync_disabled(self, tracking_mixin, mock_position_data):
@@ -532,7 +562,9 @@ class TestAlertIntegration:
     """Test integration with alert system."""
 
     @pytest.mark.asyncio
-    async def test_check_position_alerts_called(self, tracking_mixin, mock_position_data, mock_position):
+    async def test_check_position_alerts_called(
+        self, tracking_mixin, mock_position_data, mock_position
+    ):
         """Test that position alerts are checked."""
         tracking_mixin.tracked_positions["MNQ"] = mock_position
 
@@ -565,7 +597,9 @@ class TestEventBusIntegration:
     """Test EventBus integration."""
 
     @pytest.mark.asyncio
-    async def test_trigger_callbacks_position_updated(self, tracking_mixin, mock_position_data):
+    async def test_trigger_callbacks_position_updated(
+        self, tracking_mixin, mock_position_data
+    ):
         """Test callbacks are triggered for position updates."""
         with patch("project_x_py.position_manager.tracking.Position") as MockPosition:
             mock_pos = Mock()
@@ -581,10 +615,14 @@ class TestEventBusIntegration:
             await tracking_mixin._process_position_data(mock_position_data)
 
             # Should trigger position_update callback (for new positions it's position_opened)
-            tracking_mixin._trigger_callbacks.assert_any_call("position_opened", mock_position_data)
+            tracking_mixin._trigger_callbacks.assert_any_call(
+                "position_opened", mock_position_data
+            )
 
     @pytest.mark.asyncio
-    async def test_trigger_callbacks_position_closed(self, tracking_mixin, mock_position_data, mock_position):
+    async def test_trigger_callbacks_position_closed(
+        self, tracking_mixin, mock_position_data, mock_position
+    ):
         """Test callbacks are triggered for position closure."""
         tracking_mixin.tracked_positions["MNQ"] = mock_position
 
@@ -593,18 +631,28 @@ class TestEventBusIntegration:
 
         await tracking_mixin._process_position_data(closure_data)
 
-        # Should trigger position_closed callback
-        tracking_mixin._trigger_callbacks.assert_any_call("position_closed", closure_data)
+        closed = [
+            call.args[1]
+            for call in tracking_mixin._trigger_callbacks.await_args_list
+            if call.args and call.args[0] == "position_closed"
+        ]
+        assert closed
+        assert closed[0]["contractId"] == "MNQ"
+        assert "pnl" in closed[0]
 
 
 class TestErrorHandling:
     """Test error handling in various scenarios."""
 
     @pytest.mark.asyncio
-    async def test_process_position_exception_handling(self, tracking_mixin, mock_position_data):
+    async def test_process_position_exception_handling(
+        self, tracking_mixin, mock_position_data
+    ):
         """Test exception handling in position processing."""
         # Mock to raise error
-        tracking_mixin._trigger_callbacks = AsyncMock(side_effect=Exception("Callback error"))
+        tracking_mixin._trigger_callbacks = AsyncMock(
+            side_effect=Exception("Callback error")
+        )
 
         # Should handle error gracefully
         await tracking_mixin._process_position_data(mock_position_data)

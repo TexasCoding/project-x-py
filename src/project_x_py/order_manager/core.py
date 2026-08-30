@@ -57,6 +57,7 @@ See Also:
 """
 
 import asyncio
+import inspect
 import time
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -259,6 +260,31 @@ class OrderManager(
         self._recovery_manager: OperationRecoveryManager = OperationRecoveryManager(
             self
         )
+
+    async def _is_reducing_order(self, contract_id: str, side: int) -> bool:
+        """True when this order exits an existing position (stop/target/scale-out)."""
+        risk_manager = getattr(self, "risk_manager", None)
+        positions_mgr = (
+            getattr(risk_manager, "positions", None) if risk_manager else None
+        )
+        getter = getattr(positions_mgr, "get_all_positions", None)
+        if not callable(getter):
+            return False
+        try:
+            positions = getter()
+            if inspect.isawaitable(positions):
+                positions = await positions
+        except Exception:
+            return False
+        for pos in positions or []:
+            if getattr(pos, "contractId", None) != contract_id:
+                continue
+            is_long = getattr(pos, "is_long", None)
+            if is_long is None:
+                is_long = getattr(pos, "type", 1) == 1
+            if (is_long and side == 1) or (not is_long and side == 0):
+                return True
+        return False
 
     async def initialize(
         self, realtime_client: Optional["ProjectXRealtimeClient"] = None
@@ -477,18 +503,23 @@ class OrderManager(
                 raise ProjectXOrderError(f"Invalid negative price: {trail_price}")
 
             # Entry-order backstop when features=["risk_manager"] is enabled.
-            # Skip protective types so attaching stops cannot be refused because
-            # max_positions already includes the live position.
+            # Skip protective/reducing orders so attaching stops/targets cannot
+            # be refused because max_positions already includes the live position.
             entry_types = {
                 OrderType.LIMIT,
                 OrderType.MARKET,
                 OrderType.JOIN_BID,
                 OrderType.JOIN_ASK,
             }
+            skip_risk_gate = (
+                order_type not in entry_types or linked_order_id is not None
+            )
+            if not skip_risk_gate:
+                skip_risk_gate = await self._is_reducing_order(contract_id, side)
             if (
                 self.auto_risk_management
                 and self.risk_manager is not None
-                and order_type in entry_types
+                and not skip_risk_gate
             ):
                 pending = Order(
                     id=0,

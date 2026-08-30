@@ -61,6 +61,7 @@ See Also:
 
 import asyncio
 import contextlib
+import inspect
 import logging
 from collections import defaultdict, deque
 from collections.abc import Callable, Coroutine
@@ -384,6 +385,7 @@ class PositionTrackingMixin:
 
             if is_position_closed:
                 # Position is closed - calculate realized P&L and update stats
+                pnl = 0.0
                 if old_position:
                     # Assume the averagePrice in the closing update is the exit price
                     exit_price = actual_position_data.get(
@@ -404,6 +406,21 @@ class PositionTrackingMixin:
                     else:  # SHORT
                         pnl_decimal = (entry_decimal - exit_decimal) * size_decimal
 
+                    point_value = Decimal("1")
+                    getter = getattr(self, "project_x", None)
+                    get_instrument = getattr(getter, "get_instrument", None)
+                    if callable(get_instrument):
+                        try:
+                            instrument = get_instrument(contract_id)
+                            if inspect.isawaitable(instrument):
+                                instrument = await instrument
+                            tick_size = Decimal(str(instrument.tickSize))
+                            tick_value = Decimal(str(instrument.tickValue))
+                            if tick_size > 0:
+                                point_value = tick_value / tick_size
+                        except Exception:
+                            point_value = Decimal("1")
+                    pnl_decimal *= point_value
                     pnl = float(pnl_decimal)  # Convert back for compatibility
                     self.stats["realized_pnl"] += pnl
                     self.stats["closed_positions"] += 1
@@ -437,8 +454,15 @@ class PositionTrackingMixin:
                 if self._order_sync_enabled and self.order_manager:
                     await self.order_manager.on_position_closed(contract_id)
 
-                # Trigger position_closed callbacks with the closure data
-                await self._trigger_callbacks("position_closed", actual_position_data)
+                # Trigger position_closed callbacks with computed PnL so
+                # RiskManager daily counters can move from live Gateway payloads.
+                close_payload = dict(actual_position_data)
+                close_payload["pnl"] = pnl
+                close_payload["contractId"] = contract_id
+                close_payload["contract_id"] = contract_id
+                if "id" not in close_payload and old_position is not None:
+                    close_payload["id"] = old_position.id
+                await self._trigger_callbacks("position_closed", close_payload)
             else:
                 # Position is open/updated - create or update position
                 is_new_position = contract_id not in self.tracked_positions

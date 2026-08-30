@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+None.
+
 ## [4.1.0] - 2026-08-30
 
 ### Tests
@@ -61,9 +63,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fill of either leg cancels the sibling.
 - `features=["risk_manager"]` now assigns `RiskManager` onto `OrderManager` and
   gates entry `place_*` calls through `validate_trade` before HTTP (protective
-  order types are skipped). `ManagedTrade` remains the recommended path.
-- Daily loss and trade counters update from `POSITION_CLOSED` events, not only
-  from explicit `record_trade_result` calls.
+  types, OCO-linked orders, and reducing exits are skipped). `ManagedTrade`
+  remains the recommended path.
+- Daily loss and trade counters update from `POSITION_CLOSED` events (Gateway
+  `contractId` plus computed `pnl`, sized with `tickValue`/`tickSize`), not
+  only from explicit `record_trade_result` calls.
 - Stop-distance math is unified: fixed = ticks × tickSize; percentage = percent
   of entry. Both `attach_risk_orders` and `calculate_stop_loss` use the same
   definition.

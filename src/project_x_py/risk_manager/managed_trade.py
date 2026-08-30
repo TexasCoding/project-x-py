@@ -3,6 +3,7 @@
 import asyncio
 import inspect
 import logging
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from project_x_py.event_bus import EventType
@@ -125,7 +126,7 @@ class ManagedTrade:
                 )
 
             # Filled position without a working stop is a live-money hole: flatten.
-            if self._needs_emergency_flatten():
+            if await self._needs_emergency_flatten():
                 logger.error(
                     "ManagedTrade exiting with a filled position and no working stop; "
                     f"flattening {self.instrument_id}"
@@ -137,6 +138,14 @@ class ManagedTrade:
                         f"Failed to flatten unprotected position {self.instrument_id}: "
                         f"{flatten_error}"
                     )
+                    if self._positions:
+                        try:
+                            await self.risk.attach_risk_orders(self._positions[0])
+                        except Exception as attach_error:
+                            logger.critical(
+                                "ManagedTrade could not flatten or attach stops for "
+                                f"{self.instrument_id}: {attach_error}"
+                            )
 
         except Exception as e:
             logger.error(f"Error in managed trade cleanup: {e}")
@@ -167,13 +176,45 @@ class ManagedTrade:
         status = getattr(order, "status", None)
         return status == OrderStatus.FILLED.value
 
-    def _needs_emergency_flatten(self) -> bool:
+    async def _needs_emergency_flatten(self) -> bool:
         has_position = bool(self._positions)
         entry_filled = self._order_is_filled(self._entry_order)
         has_working_stop = self._stop_order is not None and self._order_is_working(
             self._stop_order
         )
-        return (has_position or entry_filled) and not has_working_stop
+        if has_working_stop:
+            return False
+        if not (has_position or entry_filled):
+            return False
+        recovered = await self._recover_working_stop()
+        return not recovered
+
+    async def _recover_working_stop(self) -> bool:
+        """True if a working stop already exists on the exchange for this instrument."""
+        search = getattr(self.orders, "search_open_orders", None)
+        if not callable(search):
+            return False
+        try:
+            open_orders = search()
+            if inspect.isawaitable(open_orders):
+                open_orders = await open_orders
+        except Exception:
+            return False
+        for order in open_orders or []:
+            if getattr(order, "contractId", None) != self.instrument_id:
+                continue
+            order_type = getattr(order, "type", None)
+            if order_type in (
+                OrderType.STOP,
+                OrderType.STOP_LIMIT,
+                OrderType.TRAILING_STOP,
+                3,
+                4,
+                5,
+            ) and self._order_is_working(order):
+                self._stop_order = order
+                return True
+        return False
 
     async def _flatten_unprotected_position(self) -> None:
         for attr in ("close_position_direct", "close_position"):
@@ -216,9 +257,38 @@ class ManagedTrade:
                 entry_price = await self._get_market_price()
             if entry_price is None:
                 raise ValueError("Entry price required for stop loss calculation")
-            stop_loss = await self.risk.calculate_stop_loss(
-                entry_price=entry_price, side=OrderSide.BUY
-            )
+            instrument = None
+            try:
+                client = getattr(self.risk, "client", None)
+            except AttributeError:
+                client = None
+            get_instrument = getattr(client, "get_instrument", None)
+            if callable(get_instrument):
+                try:
+                    maybe = get_instrument(self.instrument_id)
+                    maybe_instrument = (
+                        await maybe if inspect.isawaitable(maybe) else maybe
+                    )
+                    tick_raw = getattr(maybe_instrument, "tickSize", None)
+                    if (
+                        isinstance(tick_raw, int | float | Decimal | str)
+                        and float(tick_raw) > 0
+                    ):
+                        instrument = maybe_instrument
+                except (TypeError, ValueError, AttributeError):
+                    instrument = None
+                except Exception:
+                    instrument = None
+            if instrument is not None:
+                stop_loss = await self.risk.calculate_stop_loss(
+                    entry_price=entry_price,
+                    side=OrderSide.BUY,
+                    instrument=instrument,
+                )
+            else:
+                stop_loss = await self.risk.calculate_stop_loss(
+                    entry_price=entry_price, side=OrderSide.BUY
+                )
 
         # Use market price if no entry price
         if entry_price is None and order_type != OrderType.MARKET:
