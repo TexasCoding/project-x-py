@@ -21,7 +21,7 @@ class TestHealthCoverage:
         # Test with completely empty stats
         empty_stats = {}
         health = await monitor.calculate_health(empty_stats)
-        assert health == 100.0  # Should default to healthy
+        assert health < 100.0  # Missing inputs must not score a perfect 100
 
         # Test with partial stats - only errors
         error_only_stats = {"errors": {"error_rate": 0.05}}

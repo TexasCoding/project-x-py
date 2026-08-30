@@ -34,25 +34,29 @@ class TestHealthCalculationLogic:
         """Test that invalid weights are properly rejected."""
         # This should fail - weights don't sum to 1.0
         with pytest.raises(ValueError) as exc_info:
-            HealthMonitor(weights={
-                "errors": 0.3,
-                "performance": 0.3,
-                "connection": 0.3,
-                "resources": 0.3,  # Sum = 1.2
-                "data_quality": 0.0,
-                "component_status": 0.0
-            })
+            HealthMonitor(
+                weights={
+                    "errors": 0.3,
+                    "performance": 0.3,
+                    "connection": 0.3,
+                    "resources": 0.3,  # Sum = 1.2
+                    "data_quality": 0.0,
+                    "component_status": 0.0,
+                }
+            )
         assert "must sum to 1.0" in str(exc_info.value)
 
         # Edge case: weights that are very close but not exactly 1.0
-        monitor = HealthMonitor(weights={
-            "errors": 0.25,
-            "performance": 0.20,
-            "connection": 0.20,
-            "resources": 0.15,
-            "data_quality": 0.15,
-            "component_status": 0.0500001  # Just over tolerance
-        })
+        monitor = HealthMonitor(
+            weights={
+                "errors": 0.25,
+                "performance": 0.20,
+                "connection": 0.20,
+                "resources": 0.15,
+                "data_quality": 0.15,
+                "component_status": 0.0500001,  # Just over tolerance
+            }
+        )
         # Should be created successfully if within tolerance
         assert monitor is not None
 
@@ -65,7 +69,7 @@ class TestHealthCalculationLogic:
         stats_zero_data = {
             "errors": {
                 "total_errors": 100,
-                "error_rate": 0.0  # This could be calculated as errors/requests
+                "error_rate": 0.0,  # This could be calculated as errors/requests
             },
             "performance": {
                 "operations": {}  # Empty operations
@@ -73,8 +77,8 @@ class TestHealthCalculationLogic:
             "data_manager": {
                 "bars_processed": 0,  # Zero data points
                 "ticks_processed": 0,
-                "data_validation_errors": 10  # But has errors
-            }
+                "data_validation_errors": 10,  # But has errors
+            },
         }
 
         # Should not crash with division by zero
@@ -83,12 +87,8 @@ class TestHealthCalculationLogic:
 
         # Test with NaN/inf values
         stats_nan = {
-            "performance": {
-                "avg_response_time": float('nan')
-            },
-            "errors": {
-                "error_rate": float('inf')
-            }
+            "performance": {"avg_response_time": float("nan")},
+            "errors": {"error_rate": float("inf")},
         }
 
         # Should handle gracefully
@@ -117,22 +117,14 @@ class TestHealthCalculationLogic:
         assert resources_score <= 100
 
         # Test with memory at exactly 100%
-        stats_max_memory = {
-            "memory": {
-                "memory_usage_percent": 100.0
-            }
-        }
+        stats_max_memory = {"memory": {"memory_usage_percent": 100.0}}
 
         breakdown_max = await monitor.get_health_breakdown(stats_max_memory)
         resources_score_max = breakdown_max["resources"]
         assert resources_score_max >= 0  # Should not go negative
 
         # Test with memory over 100% (shouldn't happen but defensive)
-        stats_over_memory = {
-            "memory": {
-                "memory_usage_percent": 150.0
-            }
-        }
+        stats_over_memory = {"memory": {"memory_usage_percent": 150.0}}
 
         breakdown_over = await monitor.get_health_breakdown(stats_over_memory)
         resources_score_over = breakdown_over["resources"]
@@ -146,7 +138,7 @@ class TestHealthCalculationLogic:
 
         stats = {
             "errors": {"error_rate": 0.01},
-            "performance": {"avg_response_time": 100.0}
+            "performance": {"avg_response_time": 100.0},
         }
 
         # Concurrent health calculations
@@ -159,7 +151,9 @@ class TestHealthCalculationLogic:
 
         # All should return very similar values (within 0.1 due to rounding)
         unique_results = set(results)
-        assert len(unique_results) <= 2, f"Too much variance in concurrent results: {unique_results}"
+        assert len(unique_results) <= 2, (
+            f"Too much variance in concurrent results: {unique_results}"
+        )
         if len(unique_results) == 2:
             vals = list(unique_results)
             assert abs(vals[0] - vals[1]) < 0.1, f"Results differ too much: {vals}"
@@ -172,25 +166,22 @@ class TestHealthCalculationLogic:
         new_health = await monitor.calculate_health(stats)
 
         # Should be different after cache expiry (lower health due to higher errors)
-        assert new_health < results[0], f"Cache not properly expiring or error rate not affecting health: new={new_health}, old={results[0]}"
+        assert new_health < results[0], (
+            f"Cache not properly expiring or error rate not affecting health: new={new_health}, old={results[0]}"
+        )
 
     @pytest.mark.asyncio
     async def test_missing_data_handling(self):
         """Test that missing data is handled correctly, not just defaulted."""
         monitor = HealthMonitor()
 
-        # Completely empty stats
+        # Completely empty stats — missing inputs must not score a perfect 100
         empty_stats = {}
         health_empty = await monitor.calculate_health(empty_stats)
-        assert health_empty == 100.0  # Should default to healthy
+        assert health_empty < 100.0
 
         # Stats with nested None values
-        stats_with_none = {
-            "errors": None,
-            "performance": {
-                "avg_response_time": None
-            }
-        }
+        stats_with_none = {"errors": None, "performance": {"avg_response_time": None}}
 
         # Should handle None values gracefully
         health_none = await monitor.calculate_health(stats_with_none)
@@ -220,10 +211,7 @@ class TestStatisticsAggregatorLogic:
         aggregator = StatisticsAggregator()
 
         # Create many components
-        components = [
-            BaseStatisticsTracker(f"component_{i}")
-            for i in range(50)
-        ]
+        components = [BaseStatisticsTracker(f"component_{i}") for i in range(50)]
 
         # Register concurrently
         async def register_component(idx):
@@ -350,7 +338,10 @@ class TestBoundedStatisticsBugs:
 
         stats = await tracker.get_stats()
         # Performance metrics are in stats["performance_metrics"]
-        if "performance_metrics" in stats and "operation" in stats["performance_metrics"]:
+        if (
+            "performance_metrics" in stats
+            and "operation" in stats["performance_metrics"]
+        ):
             op_stats = stats["performance_metrics"]["operation"]
 
             # Check basic stats that should be there

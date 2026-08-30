@@ -68,9 +68,18 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
+from project_x_py.event_bus import EventType
 from project_x_py.models import Position
 from project_x_py.types.trading import PositionType
 from project_x_py.utils.deprecation import deprecated
+
+_POSITION_EVENT_TYPE_MAPPING = {
+    "position_opened": EventType.POSITION_OPENED,
+    "position_closed": EventType.POSITION_CLOSED,
+    "position_update": EventType.POSITION_UPDATED,
+    "position_pnl_update": EventType.POSITION_PNL_UPDATE,
+    "position_alert": EventType.RISK_LIMIT_WARNING,
+}
 
 if TYPE_CHECKING:
     from asyncio import Lock
@@ -534,23 +543,13 @@ class PositionTrackingMixin:
             - Errors in callbacks are logged but don't stop other callbacks
             - Supports both sync and async callback functions
         """
-        # Emit event through EventBus
-        from project_x_py.event_bus import EventType
-
-        # Map position event types to EventType enum
-        event_mapping = {
-            "position_opened": EventType.POSITION_OPENED,
-            "position_closed": EventType.POSITION_CLOSED,
-            "position_update": EventType.POSITION_UPDATED,
-            "position_pnl_update": EventType.POSITION_PNL_UPDATE,
-            "position_alert": EventType.RISK_LIMIT_WARNING,  # Map alerts to risk warnings
-        }
-
-        if event_type in event_mapping:
+        if event_type in _POSITION_EVENT_TYPE_MAPPING:
             emitter = getattr(self.event_bus, "emit", None)
             if emitter is not None:
                 result = emitter(
-                    event_mapping[event_type], data, source="PositionManager"
+                    _POSITION_EVENT_TYPE_MAPPING[event_type],
+                    data,
+                    source="PositionManager",
                 )
                 # Support both sync and async emitters
                 try:
@@ -623,9 +622,10 @@ class PositionTrackingMixin:
             ...     "position_closed", on_position_closed
             ... )
         """
-        self.logger.warning(
-            "add_callback is deprecated. Use TradingSuite.on() with EventType enum instead."
-        )
+        mapped = _POSITION_EVENT_TYPE_MAPPING.get(event_type)
+        if mapped is None:
+            raise ValueError(f"Unknown event type: {event_type}")
+        await self.event_bus.on(mapped, callback)
 
     async def get_position_history_size(self, contract_id: str) -> int:
         """Get the current size of position history for a contract."""

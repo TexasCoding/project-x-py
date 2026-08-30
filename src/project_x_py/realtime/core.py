@@ -211,7 +211,7 @@ class ProjectXRealtimeClient(
         >>> async def handle_position(event):
         ...     data = event.data
         ...     print(f"Position: {data.get('contractId')} - {data.get('size')}")
-        >>> await suite.on(EventType.POSITION_UPDATE, handle_position)
+        >>> await suite.on(EventType.POSITION_UPDATED, handle_position)
         >>>
         >>> # V3.3.1: Safe token refresh with deadlock prevention
         >>> try:

@@ -1,8 +1,9 @@
 """
-Order lifecycle tracking and management for ProjectX SDK v3.0.0.
+Order lifecycle tracking and management for ProjectX SDK.
 
-DEPRECATED: This module is deprecated as of v3.1.14 and will be removed in v5.0.0.
-            Use TradingSuite.track_order() and TradingSuite.order_chain() instead.
+`OrderTracker` and `OrderChainBuilder` are the official types returned by
+`TradingSuite.track_order()` and `TradingSuite.order_chain()`. The standalone
+`track_order()` helper is deprecated; use the suite methods instead.
 
 Author: SDK v3.0.0
 Date: 2025-08-04
@@ -62,7 +63,7 @@ from typing import TYPE_CHECKING, Any, Union
 
 from project_x_py.event_bus import EventType
 from project_x_py.models import BracketOrderResponse, Order, OrderPlaceResponse
-from project_x_py.utils.deprecation import deprecated, deprecated_class
+from project_x_py.utils.deprecation import deprecated
 
 if TYPE_CHECKING:
     from project_x_py.trading_suite import TradingSuite
@@ -70,21 +71,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@deprecated_class(
-    reason="Use TradingSuite.track_order() for integrated order tracking",
-    version="3.1.14",
-    removal_version="5.0.0",
-    replacement="TradingSuite.track_order()",
-)
 class OrderTracker:
     """
     Context manager for comprehensive order lifecycle tracking.
 
-    DEPRECATED: Use TradingSuite.track_order() instead. Will be removed in v4.0.0.
-
-    Provides automatic order state management with async waiting capabilities,
-    eliminating the need for manual order status polling and complex state
-    tracking in trading strategies.
+    Instantiated by `TradingSuite.track_order()`. Provides automatic order
+    state management with async waiting capabilities, eliminating the need
+    for manual order status polling and complex state tracking in strategies.
 
     Features:
         - Automatic order status tracking via EventBus
@@ -370,20 +363,12 @@ class OrderTracker:
         )  # FILLED, CANCELLED, EXPIRED, REJECTED
 
 
-@deprecated_class(
-    reason="Use TradingSuite.order_chain() for integrated order chain building",
-    version="3.1.14",
-    removal_version="5.0.0",
-    replacement="TradingSuite.order_chain()",
-)
 class OrderChainBuilder:
     """
     Fluent API for building complex order chains.
 
-    DEPRECATED: Use TradingSuite.order_chain() instead. Will be removed in v4.0.0.
-
-    Allows creating multi-part orders (entry + stops + targets) with a
-    clean, chainable syntax that's easy to read and maintain.
+    Instantiated by `TradingSuite.order_chain()`. Allows creating multi-part
+    orders (entry + stops + targets) with a clean, chainable syntax.
 
     Example:
         ```python

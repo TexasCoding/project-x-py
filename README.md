@@ -92,12 +92,12 @@ Single-instrument `suite.data` / `suite.orders` / `suite.positions` are official
 - **Risk Management**: Portfolio analytics and risk metrics
 
 ### Advanced Features
-- **59+ Technical Indicators**: Full TA-Lib compatibility with Polars optimization including new pattern indicators
-- **Level 2 OrderBook**: Depth analysis, iceberg detection, spoofing detection with 6 pattern types
+- **64 named indicators**: Polars implementations; **not** a full TA-Lib port
+- **Level 2 OrderBook**: Depth analysis, iceberg detection, and experimental spoofing heuristics (`quote_stuffing`, `layering`, `momentum_ignition`, `flashing`, `pinging`, `order_manipulation`)
 - **Real-time WebSockets**: Async streaming for quotes, trades, and account updates
 - **Performance Optimized**: Connection pooling, intelligent caching, memory management
 - **Pattern Recognition**: Fair Value Gaps, Order Blocks, Waddah Attar Explosion, and Lorenz Formula indicators
-- **Market Manipulation Detection**: Advanced spoofing detection with confidence scoring
+- **Order-flow heuristics**: Iceberg detection and experimental volume-change spoofing labels (`detect_spoofing`)
 - **Financial Precision**: All calculations use Decimal type for exact precision
 - **Enterprise Error Handling**: Production-ready error handling with decorators and structured logging
 - **Comprehensive Type Safety**: Full TypedDict and Protocol definitions for IDE support and static analysis
@@ -593,7 +593,7 @@ if health_score < 70:
 
 ### Technical Indicators
 
-All 59+ indicators work with async data pipelines:
+All 64 named indicators work with async data pipelines (`RSI(df)` is a function):
 ```python
 import polars as pl
 from project_x_py.indicators import RSI, SMA, MACD, FVG, ORDERBLOCK, WAE

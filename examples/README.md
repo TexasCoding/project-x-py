@@ -92,7 +92,7 @@ uv run examples/01_basic_client_connection.py
 
 #### 07. Technical Indicators (`07_technical_indicators.py`)
 **Comprehensive technical analysis**
-- 58+ indicators including pattern recognition
+- 64 named indicators including pattern recognition (not a full TA-Lib port)
 - Fair Value Gap (FVG) detection
 - Order Block identification
 - Multi-timeframe indicator analysis

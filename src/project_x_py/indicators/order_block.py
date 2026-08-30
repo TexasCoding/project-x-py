@@ -205,6 +205,10 @@ class OrderBlock(BaseIndicator):
             for j in range(1, lookback_periods + 1):
                 ob_idx = i - j
 
+                # Mutually exclusive: a bar already tagged bullish cannot also be bearish
+                if ob_bullish[ob_idx]:
+                    continue
+
                 # Check if potential OB candle is bullish, current breaks low, and volume is sufficient
                 if (
                     data_dict["is_bullish_candle"][ob_idx]

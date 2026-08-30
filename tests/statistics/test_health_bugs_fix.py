@@ -16,16 +16,9 @@ class TestHealthBugFixes:
 
         # Test with stats that don't have 'suite' key
         stats_no_suite = {
-            "errors": {
-                "total_errors": 100,
-                "error_rate": 0.1
-            },
-            "performance": {
-                "avg_response_time": 200.0
-            },
-            "memory": {
-                "usage_percent": 60.0
-            }
+            "errors": {"total_errors": 100, "error_rate": 0.1},
+            "performance": {"avg_response_time": 200.0},
+            "memory": {"usage_percent": 60.0},
         }
 
         # Should not crash with KeyError
@@ -42,17 +35,13 @@ class TestHealthBugFixes:
         """Test that completely empty stats are handled."""
         monitor = HealthMonitor()
 
-        # Completely empty
+        # Completely empty — missing inputs must not score a perfect 100
         empty_stats = {}
         health_empty = await monitor.calculate_health(empty_stats)
-        assert health_empty == 100.0  # Should default to healthy
+        assert health_empty < 100.0
 
         # Empty nested dicts
-        nested_empty = {
-            "suite": {},
-            "errors": {},
-            "performance": {}
-        }
+        nested_empty = {"suite": {}, "errors": {}, "performance": {}}
         health_nested = await monitor.calculate_health(nested_empty)
         assert 0 <= health_nested <= 100
 
@@ -64,12 +53,10 @@ class TestHealthBugFixes:
         stats_no_components = {
             "suite": {
                 "avg_response_time_ms": 150.0,
-                "cache_hit_rate": 0.75
+                "cache_hit_rate": 0.75,
                 # No 'components' key
             },
-            "errors": {
-                "error_rate": 0.02
-            }
+            "errors": {"error_rate": 0.02},
         }
 
         # Should handle missing components

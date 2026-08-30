@@ -301,9 +301,9 @@ data_config = DataManagerConfig(
 # OrderBook Configuration
 orderbook_config = OrderbookConfig(
     max_depth_levels=10,
-    enable_order_flow=True,
-    track_volume_profile=True,
-    enable_spoofing_detection=True
+    max_trade_history=1000,
+    enable_analytics=True,
+    enable_pattern_detection=True,
 )
 ```
 
