@@ -292,43 +292,38 @@ class DataAccessMixin:
                 )
                 # Continue to fallback logic below
 
-        # Fallback to most recent bar close (already aligned)
-        # Use optimized read lock if available
+        # Copy bar close under the lock, then release before any HTTP.
+        bar_price = await self._copy_latest_bar_close()
+        if bar_price is not None and not tick_is_stale:
+            return bar_price
+
+        rest_price = await self._get_rest_fallback_price()
+        if rest_price is not None:
+            return rest_price
+        return bar_price
+
+    async def _copy_latest_bar_close(self) -> float | None:
+        """Copy the latest bar close without holding the lock across I/O."""
+
+        def _read_close() -> float | None:
+            for tf_key in ["1min", "5min", "15min"]:
+                frame = self.data.get(tf_key)
+                if frame is not None and not frame.is_empty():
+                    return float(frame["close"][-1])
+            return None
+
         if hasattr(self, "data_rw_lock"):
             try:
                 from project_x_py.utils.lock_optimization import AsyncRWLock
 
                 if isinstance(self.data_rw_lock, AsyncRWLock):
                     async with self.data_rw_lock.read_lock():
-                        for tf_key in [
-                            "1min",
-                            "5min",
-                            "15min",
-                        ]:  # Check common timeframes
-                            if tf_key in self.data and not self.data[tf_key].is_empty():
-                                bar_price = float(self.data[tf_key]["close"][-1])
-                                if not tick_is_stale:
-                                    return bar_price
-                                rest_price = await self._get_rest_fallback_price()
-                                return (
-                                    rest_price if rest_price is not None else bar_price
-                                )
-                    return await self._get_rest_fallback_price()
+                        return _read_close()
             except (ImportError, TypeError):
-                # Fall back to regular lock if AsyncRWLock not available or type check fails
                 pass
 
-        # Fallback to regular lock
         async with self.data_lock:  # type: ignore
-            for tf_key in ["1min", "5min", "15min"]:  # Check common timeframes
-                if tf_key in self.data and not self.data[tf_key].is_empty():
-                    bar_price = float(self.data[tf_key]["close"][-1])
-                    if not tick_is_stale:
-                        return bar_price
-                    rest_price = await self._get_rest_fallback_price()
-                    return rest_price if rest_price is not None else bar_price
-
-        return await self._get_rest_fallback_price()
+            return _read_close()
 
     async def _get_rest_fallback_price(self) -> float | None:
         """Use REST partial bars when the realtime tick feed is stale or empty."""

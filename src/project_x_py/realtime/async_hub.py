@@ -2,6 +2,9 @@
 
 Keeps a signalrcore-compatible builder/connection surface so existing tests
 and call sites can keep using HubConnectionBuilder, on/on_open/start/stop/send.
+
+The pysignalr receive buffer is capped at ``HUB_RECEIVE_MAX_SIZE`` (10_000)
+messages so a stalled consumer cannot grow memory without bound.
 """
 
 from __future__ import annotations
@@ -16,6 +19,8 @@ from urllib.parse import parse_qs, urlparse
 from project_x_py.utils import ProjectXLogger
 
 logger = ProjectXLogger.get_logger(__name__)
+
+HUB_RECEIVE_MAX_SIZE = 10_000
 
 
 async def invoke_maybe(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
@@ -57,7 +62,7 @@ class AsyncHubConnection:
             retry_sleep=1.0,
             retry_multiplier=1.5,
             retry_count=10,
-            max_size=None,
+            max_size=HUB_RECEIVE_MAX_SIZE,
         )
 
         async def _on_open() -> None:

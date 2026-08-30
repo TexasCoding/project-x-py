@@ -410,6 +410,8 @@ class ConnectionManagementMixin:
         self: "ProjectXRealtimeClientProtocol",
     ) -> None:
         """Queue subscription restore after a hub reopen (not the first connect)."""
+        if getattr(self, "_restore_in_flight", False):
+            return
         should_restore = getattr(self, "_user_updates_subscribed", False) or bool(
             getattr(self, "_subscribed_contracts", [])
         )
@@ -424,7 +426,30 @@ class ConnectionManagementMixin:
                 loop = asyncio.get_running_loop()
             except RuntimeError:
                 return
-        loop.create_task(restore())
+        loop.create_task(self._serialized_subscription_restore())
+
+    async def _serialized_subscription_restore(
+        self: "ProjectXRealtimeClientProtocol",
+    ) -> None:
+        """Restore subscriptions once; drop overlapping on_open restores."""
+        if getattr(self, "_restore_in_flight", False):
+            return
+        lock = getattr(self, "_restore_lock", None)
+        if lock is None:
+            restore = getattr(self, "_restore_realtime_subscriptions", None)
+            if restore is not None:
+                await restore()
+            return
+        async with lock:
+            if getattr(self, "_restore_in_flight", False):
+                return
+            self._restore_in_flight = True
+        try:
+            restore = getattr(self, "_restore_realtime_subscriptions", None)
+            if restore is not None:
+                await restore()
+        finally:
+            self._restore_in_flight = False
 
     def _on_user_hub_open(self: "ProjectXRealtimeClientProtocol") -> None:
         """

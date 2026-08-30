@@ -169,7 +169,12 @@ class HealthMonitoringMixin:
         self.stale_feed_seconds: float = 30.0
         self.stale_feed_check_interval: float = 5.0
         self._stale_feed_task: asyncio.Task[Any] | None = None
-        self._stale_feed_emitted: bool = False
+        self._stale_feed_emitted: dict[str, bool] = {"user": False, "market": False}
+        self._hub_watch_started: dict[str, float] = {"user": 0.0, "market": 0.0}
+        self._restore_lock = asyncio.Lock()
+        self._restore_in_flight = False
+        self._last_market_message: float = 0.0
+        self._last_user_message: float = 0.0
 
     @handle_errors("configure health monitoring")
     async def configure_health_monitoring(
@@ -260,11 +265,17 @@ class HealthMonitoringMixin:
     async def _start_stale_feed_watchdog(
         self: "ProjectXRealtimeClientProtocol",
     ) -> None:
-        """Start the market-hub stale-feed watchdog."""
+        """Start the user- and market-hub stale-feed watchdog."""
         task = getattr(self, "_stale_feed_task", None)
         if task is not None and not task.done():
             return
-        self._stale_feed_emitted = False
+        self._stale_feed_emitted = {"user": False, "market": False}
+        now = time.monotonic()
+        started = getattr(self, "_hub_watch_started", {"user": 0.0, "market": 0.0})
+        self._hub_watch_started = {
+            "user": started.get("user", 0.0) or now,
+            "market": started.get("market", 0.0) or now,
+        }
         self._stale_feed_task = asyncio.create_task(
             self._stale_feed_watchdog_loop(), name="stale_feed_watchdog"
         )
@@ -284,42 +295,97 @@ class HealthMonitoringMixin:
     async def _stale_feed_watchdog_loop(
         self: "ProjectXRealtimeClientProtocol",
     ) -> None:
-        """Reconnect the market hub when quotes/trades stop arriving."""
+        """Reconnect when user or market hub messages stop arriving."""
         from project_x_py.event_bus import EventType
 
         while True:
             await asyncio.sleep(self.stale_feed_check_interval)
-            if not getattr(self, "market_connected", False):
-                continue
-            last_message = getattr(self, "_last_market_message", 0.0)
-            if last_message <= 0:
-                continue
-            age = time.monotonic() - last_message
-            if age < self.stale_feed_seconds:
-                self._stale_feed_emitted = False
+            stale_hubs: list[tuple[str, float]] = []
+            for hub in ("market", "user"):
+                age = self._hub_silence_age(hub)
+                if age is None:
+                    continue
+                stale_hubs.append((hub, age))
+
+            if not stale_hubs:
                 continue
 
-            payload = {
-                "hub": "market",
-                "seconds_since_message": age,
-                "threshold_seconds": self.stale_feed_seconds,
-            }
-            logger.warning(
-                "Market feed stale; forcing reconnect",
-                extra=payload,
-            )
-            if not self._stale_feed_emitted:
-                event_bus = getattr(self, "event_bus", None)
-                if event_bus is not None:
-                    await event_bus.emit(
-                        EventType.FEED_STALE, payload, source="RealtimeClient"
-                    )
-                self._stale_feed_emitted = True
+            event_bus = getattr(self, "event_bus", None)
+            emitted = self._stale_feed_emitted
+            if not isinstance(emitted, dict):
+                emitted = {"user": False, "market": False}
+                self._stale_feed_emitted = emitted
 
+            for hub, age in stale_hubs:
+                payload = {
+                    "hub": hub,
+                    "seconds_since_message": age,
+                    "threshold_seconds": self.stale_feed_seconds,
+                }
+                logger.warning(
+                    "%s feed stale; forcing reconnect",
+                    hub.title(),
+                    extra=payload,
+                )
+                if not emitted.get(hub, False):
+                    if event_bus is not None:
+                        await event_bus.emit(
+                            EventType.FEED_STALE, payload, source="RealtimeClient"
+                        )
+                    emitted[hub] = True
+
+            await self._serialized_health_reconnect()
+
+    def _hub_silence_age(self, hub: str) -> float | None:
+        """Return seconds since last hub message, or None if the hub is not stale."""
+        connected_attr = "market_connected" if hub == "market" else "user_connected"
+        if not getattr(self, connected_attr, False):
+            return None
+
+        last_attr = "_last_market_message" if hub == "market" else "_last_user_message"
+        last_message = float(getattr(self, last_attr, 0.0) or 0.0)
+        if last_message <= 0:
+            started = getattr(self, "_hub_watch_started", {}).get(hub, 0.0)
+            last_message = float(started or 0.0)
+        if last_message <= 0:
+            return None
+
+        age = time.monotonic() - last_message
+        if age < self.stale_feed_seconds:
+            emitted = getattr(self, "_stale_feed_emitted", None)
+            if isinstance(emitted, dict):
+                emitted[hub] = False
+            return None
+        return age
+
+    async def _serialized_health_reconnect(
+        self: "ProjectXRealtimeClientProtocol",
+    ) -> bool:
+        """Run at most one health reconnect at a time; extras are dropped."""
+        if getattr(self, "_restore_in_flight", False) or self._restore_lock.locked():
+            return False
+        async with self._restore_lock:
+            if getattr(self, "_restore_in_flight", False):
+                return False
+            self._restore_in_flight = True
+        try:
             reconnect = getattr(self, "force_health_reconnect", None)
-            if reconnect is not None:
-                self._last_market_message = time.monotonic()
-                await reconnect()
+            if reconnect is None:
+                return False
+            success = bool(await reconnect())
+            if success:
+                self._mark_hubs_fresh()
+            return success
+        finally:
+            self._restore_in_flight = False
+
+    def _mark_hubs_fresh(self) -> None:
+        """Record a successful restore so the watchdog does not immediately re-trip."""
+        now = time.monotonic()
+        self._last_market_message = now
+        self._last_user_message = now
+        self._hub_watch_started = {"user": now, "market": now}
+        self._stale_feed_emitted = {"user": False, "market": False}
 
     async def _user_heartbeat_loop(self: "ProjectXRealtimeClientProtocol") -> None:
         """Background task for user hub heartbeat monitoring."""
@@ -574,6 +640,9 @@ class HealthMonitoringMixin:
                 await self._restore_realtime_subscriptions()
                 # Restart health monitoring
                 await self._start_health_monitoring()
+                mark_fresh = getattr(self, "_mark_hubs_fresh", None)
+                if mark_fresh is not None:
+                    mark_fresh()
                 logger.info("Health-based reconnection successful")
             else:
                 logger.error("Health-based reconnection failed")

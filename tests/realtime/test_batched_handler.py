@@ -290,8 +290,39 @@ class TestOptimizedRealtimeHandler:
         # Wait for batch processing
         await asyncio.sleep(0.2)
 
-        # Only latest depth per contract should be forwarded
-        assert len(client.depth_received) <= 6
+        # GatewayDepth is per price level: every row in the batch must be processed
+        assert len(client.depth_received) == 6
+
+    @pytest.mark.asyncio
+    async def test_depth_batch_processes_every_price_level(self):
+        """A batch of three depth prices must forward three levels, not the last only."""
+        forwarded: list[dict] = []
+
+        class MockClient:
+            async def _forward_event_async(self, event_type, args):
+                forwarded.append({"event_type": event_type, "payload": args[0]})
+
+            def _forward_market_depth(self, depth):
+                forwarded.append(depth)
+
+        client = MockClient()
+        handler = OptimizedRealtimeHandler(client)
+        depths = [
+            {"contract_id": "MNQ", "price": 18500.0, "side": 0, "volume": 10},
+            {"contract_id": "MNQ", "price": 18499.75, "side": 0, "volume": 8},
+            {"contract_id": "MNQ", "price": 18500.25, "side": 1, "volume": 12},
+        ]
+
+        await handler._process_depth_batch(depths)
+
+        assert len(forwarded) == 3
+        prices = [
+            item["payload"]["price"]
+            if isinstance(item, dict) and "payload" in item
+            else item["price"]
+            for item in forwarded
+        ]
+        assert prices == [18500.0, 18499.75, 18500.25]
 
     @pytest.mark.asyncio
     async def test_get_all_stats(self):

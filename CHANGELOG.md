@@ -41,6 +41,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stale-feed watchdog watches user and market hubs, treats a silent hub as
+  stale after `stale_feed_seconds`, and only resets last-message timestamps
+  after a successful restore. Concurrent reconnects are serialized.
+- Realtime `enable_batching()` no longer awaits the sync quote forwarder
+  (TypeError that tripped the batch circuit). Batched depth forwards every
+  GatewayDepth row instead of the last row per contract.
+- DST live-bar detection uses the 2 AM US transition window, not a midnight
+  offset walk. Session RTH/ETH filters convert each bar to
+  `America/New_York` instead of applying bar 0's DST offset.
+- pysignalr hub receive buffer is capped at `HUB_RECEIVE_MAX_SIZE` (10_000).
+- REST price fallback copies bar state and releases the data lock before HTTP.
+- `EventBus.wait_for` rejects re-entrant calls from inside `emit` handlers.
+
 - Query-cache LRU recency uses a monotonic counter so ties in wall-clock
   `time.time()` do not evict the wrong entry.
 - Partial close sends Gateway field `size` (was `closeSize`).

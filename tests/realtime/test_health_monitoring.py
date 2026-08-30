@@ -717,7 +717,124 @@ class TestStaleFeedWatchdog:
 
         client.event_bus.emit.assert_awaited()
         assert client.event_bus.emit.await_args.args[0] == EventType.FEED_STALE
+        payload = client.event_bus.emit.await_args.args[1]
+        assert payload["hub"] == "market"
         client.force_health_reconnect.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_silent_hub_still_goes_stale(self):
+        """A hub that never received a message still goes stale after the threshold."""
+        from project_x_py.event_bus import EventType
+
+        client = MockHealthMonitoringClient()
+        client.stale_feed_seconds = 0.01
+        client.stale_feed_check_interval = 0.001
+        client._last_market_message = 0.0
+        client._last_user_message = 0.0
+        started = time.monotonic() - 1.0
+        client._hub_watch_started = {"user": started, "market": started}
+        client.event_bus = AsyncMock()
+        client.force_health_reconnect = AsyncMock(return_value=True)
+
+        calls = 0
+
+        async def fake_sleep(_delay: float) -> None:
+            nonlocal calls
+            calls += 1
+            if calls > 1:
+                raise asyncio.CancelledError()
+
+        with patch("asyncio.sleep", fake_sleep):
+            with pytest.raises(asyncio.CancelledError):
+                await client._stale_feed_watchdog_loop()
+
+        client.event_bus.emit.assert_awaited()
+        assert client.event_bus.emit.await_args.args[0] == EventType.FEED_STALE
+        assert client.event_bus.emit.await_args.args[1]["hub"] in ("market", "user")
+        client.force_health_reconnect.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_user_hub_stale_emits_feed_stale(self):
+        """User hub silence is watched independently of the market hub."""
+        from project_x_py.event_bus import EventType
+
+        client = MockHealthMonitoringClient()
+        client.stale_feed_seconds = 0.01
+        client.stale_feed_check_interval = 0.001
+        client._last_market_message = time.monotonic()
+        client._last_user_message = time.monotonic() - 1.0
+        client.event_bus = AsyncMock()
+        client.force_health_reconnect = AsyncMock(return_value=True)
+
+        calls = 0
+
+        async def fake_sleep(_delay: float) -> None:
+            nonlocal calls
+            calls += 1
+            if calls > 1:
+                raise asyncio.CancelledError()
+
+        with patch("asyncio.sleep", fake_sleep):
+            with pytest.raises(asyncio.CancelledError):
+                await client._stale_feed_watchdog_loop()
+
+        client.event_bus.emit.assert_awaited()
+        assert client.event_bus.emit.await_args.args[0] == EventType.FEED_STALE
+        assert client.event_bus.emit.await_args.args[1]["hub"] == "user"
+        client.force_health_reconnect.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_failed_reconnect_does_not_reset_timestamp(self):
+        """Failed reconnect leaves the timestamp stale so the next loop retries."""
+        client = MockHealthMonitoringClient()
+        client.stale_feed_seconds = 0.01
+        client.stale_feed_check_interval = 0.001
+        stale_time = time.monotonic() - 1.0
+        client._last_market_message = stale_time
+        client.event_bus = AsyncMock()
+        client.force_health_reconnect = AsyncMock(return_value=False)
+
+        calls = 0
+
+        async def fake_sleep(_delay: float) -> None:
+            nonlocal calls
+            calls += 1
+            if calls > 2:
+                raise asyncio.CancelledError()
+
+        with patch("asyncio.sleep", fake_sleep):
+            with pytest.raises(asyncio.CancelledError):
+                await client._stale_feed_watchdog_loop()
+
+        assert client._last_market_message == stale_time
+        assert client.force_health_reconnect.await_count >= 2
+
+    @pytest.mark.asyncio
+    async def test_restore_is_serialized(self):
+        """Two overlapping stale-feed reconnects must not stack."""
+        client = MockHealthMonitoringClient()
+        reconnect_count = 0
+        in_flight = 0
+        max_in_flight = 0
+
+        async def slow_reconnect() -> bool:
+            nonlocal reconnect_count, in_flight, max_in_flight
+            reconnect_count += 1
+            in_flight += 1
+            max_in_flight = max(max_in_flight, in_flight)
+            await asyncio.sleep(0.05)
+            in_flight -= 1
+            return True
+
+        client.force_health_reconnect = slow_reconnect
+
+        await asyncio.gather(
+            client._serialized_health_reconnect(),
+            client._serialized_health_reconnect(),
+        )
+
+        assert reconnect_count == 1
+        assert max_in_flight == 1
 
 
 if __name__ == "__main__":
