@@ -35,17 +35,7 @@ jobs:
 
     - name: Run tests
       run: |
-        uv run pytest tests/ -v --cov=project_x_py --cov-report=xml --ignore=tests/benchmarks/
-
-    - name: Upload coverage
-      uses: codecov/codecov-action@v7
-      if: always()  # Always run coverage upload even if tests fail
-      with:
-        file: ./coverage.xml
-        fail_ci_if_error: false  # Don't fail if codecov is down
-        token: ${{ secrets.CODECOV_TOKEN }}  # Required for public repos
-        verbose: true  # Optional: for debugging
-        name: codecov-${{ matrix.python-version }}  # Optional: name per Python version
+        uv run pytest tests/ -v --ignore=tests/benchmarks/
 
   lint:
     runs-on: ubuntu-latest

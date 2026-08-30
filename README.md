@@ -1,7 +1,6 @@
 # ProjectX Python SDK
 
 [![CI](https://github.com/TexasCoding/project-x-py/workflows/CI/badge.svg)](https://github.com/TexasCoding/project-x-py/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/TexasCoding/project-x-py/branch/main/graph/badge.svg)](https://codecov.io/gh/TexasCoding/project-x-py)
 [![PyPI - Version](https://img.shields.io/pypi/v/project-x-py)](https://pypi.org/project/project-x-py/)
 [![PyPI - Downloads](https://img.shields.io/pypi/dm/project-x-py)](https://pypi.org/project/project-x-py/)
 [![Python Version](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://python.org)

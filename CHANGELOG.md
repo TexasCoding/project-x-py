@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Replace Claude/Cursor/Gemini assistant scaffolding with a Grok-native
   `.grok/` layout (`AGENTS.md`, project agents, skills, hooks, and MCP).
+- Remove the Codecov GitHub Action, `codecov.yml`, and README badge.
+  Coverage still runs locally via pytest-cov.
 
 ### Fixed
 
