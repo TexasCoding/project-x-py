@@ -824,6 +824,15 @@ class OrderTrackingMixin:
                                 f"Failed to process OCO logic for order {order_id}: {e}"
                             )
 
+                        # Honor track_oco_pair (string-keyed oco_pairs)
+                        try:
+                            if str(order_id) in getattr(self, "oco_pairs", {}):
+                                await self._handle_oco_fill(str(order_id))
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to handle OCO pair fill for order {order_id}: {e}"
+                            )
+
                 # Check for partial fills with safe data access
                 try:
                     fills = actual_order_data.get("fills", [])

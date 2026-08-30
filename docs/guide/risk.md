@@ -13,6 +13,10 @@ The SDK's risk management system provides:
 - **Risk metrics calculation** (win rate, profit factor, Sharpe ratio, max drawdown)
 - **Integration** with all trading components through statistics tracking
 
+**Recommended path:** use `ManagedTrade` (or `suite.managed_trade()`) for entries. It sizes the trade, validates it, and attaches OCO stop/target orders.
+
+**Backstop:** enabling `features=["risk_manager"]` also sets `auto_risk_management` on `OrderManager`. Direct `suite.orders.place_market_order` / `place_limit_order` / `place_join_*` calls then run `RiskManager.validate_trade` *before* the HTTP request and refuse the entry when `is_valid` is False. Protective types (stop, stop-limit, trailing stop) skip this gate so attaching stops cannot be blocked because `max_positions` already includes the live position. This auto-gate is an extra safety net, not a replacement for `ManagedTrade`.
+
 ## Getting Started
 
 ### Enable Risk Manager
@@ -54,7 +58,7 @@ async def configure_risk():
         max_risk_per_trade=Decimal("0.02"),            # 2% of account per trade
         default_risk_reward_ratio=Decimal("2.0"),      # 1:2 risk/reward
         use_stop_loss=True,                            # Always use stops
-        default_stop_distance=Decimal("25")            # 25-point default stops
+        default_stop_distance=Decimal("25")            # 25 ticks (× tickSize) default stops
     )
 
     suite = await TradingSuite.create(

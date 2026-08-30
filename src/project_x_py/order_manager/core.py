@@ -67,7 +67,7 @@ from project_x_py.models import Order, OrderPlaceResponse
 from project_x_py.statistics import BaseStatisticsTracker
 from project_x_py.types.config_types import OrderManagerConfig
 from project_x_py.types.stats_types import OrderManagerStats
-from project_x_py.types.trading import OrderStatus
+from project_x_py.types.trading import OrderStatus, OrderType
 from project_x_py.utils import (
     ErrorMessages,
     LogContext,
@@ -187,6 +187,7 @@ class OrderManager(
 
         # Store configuration with defaults
         self.config = config or {}
+        self.risk_manager: Any = None
         self._apply_config_defaults()
 
         # Async lock for thread safety
@@ -475,6 +476,43 @@ class OrderManager(
             if trail_price is not None and trail_price < 0:
                 raise ProjectXOrderError(f"Invalid negative price: {trail_price}")
 
+            # Entry-order backstop when features=["risk_manager"] is enabled.
+            # Skip protective types so attaching stops cannot be refused because
+            # max_positions already includes the live position.
+            entry_types = {
+                OrderType.LIMIT,
+                OrderType.MARKET,
+                OrderType.JOIN_BID,
+                OrderType.JOIN_ASK,
+            }
+            if (
+                self.auto_risk_management
+                and self.risk_manager is not None
+                and order_type in entry_types
+            ):
+                pending = Order(
+                    id=0,
+                    accountId=account_id or 0,
+                    contractId=contract_id,
+                    creationTimestamp=datetime.now(UTC).isoformat(),
+                    updateTimestamp=None,
+                    status=OrderStatus.PENDING,
+                    type=order_type,
+                    side=side,
+                    size=size,
+                    limitPrice=limit_price,
+                    stopPrice=stop_price,
+                )
+                validation = await self.risk_manager.validate_trade(pending)
+                if not validation.get("is_valid", False):
+                    reasons = validation.get("reasons") or ["risk validation failed"]
+                    self.stats["risk_violations"] = (
+                        int(self.stats.get("risk_violations", 0)) + 1
+                    )
+                    raise ProjectXOrderError(
+                        f"Risk validation failed: {'; '.join(str(r) for r in reasons)}"
+                    )
+
             # CRITICAL: Align prices to tick size BEFORE any price operations
             if limit_price is not None:
                 aligned_limit = await align_price_to_tick_size(
@@ -627,8 +665,6 @@ class OrderManager(
                     self.stats["largest_order"] = size
 
                 # Update order type specific statistics
-                from project_x_py.types.trading import OrderType
-
                 if order_type == OrderType.LIMIT:
                     self.stats["limit_orders"] += 1
                 elif order_type == OrderType.MARKET:

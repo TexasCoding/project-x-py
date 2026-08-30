@@ -281,6 +281,7 @@ class OrderManagerProtocol(Protocol):
         size: int,
         limit_price: float,
         account_id: int | None = None,
+        linked_order_id: int | None = None,
     ) -> "OrderPlaceResponse": ...
 
     async def place_stop_order(
@@ -290,6 +291,7 @@ class OrderManagerProtocol(Protocol):
         size: int,
         stop_price: float,
         account_id: int | None = None,
+        linked_order_id: int | None = None,
     ) -> "OrderPlaceResponse": ...
 
     async def place_bracket_order(
@@ -428,6 +430,12 @@ class OrderManagerProtocol(Protocol):
     ) -> "OrderPlaceResponse | None": ...
 
     def _get_recovery_manager(self) -> Any: ...
+
+    oco_pairs: dict[str, str]
+
+    async def track_oco_pair(self, order1_id: str, order2_id: str) -> None: ...
+
+    async def _handle_oco_fill(self, order_id: str) -> None: ...
 
 
 class PositionManagerProtocol(Protocol):

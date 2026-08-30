@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import inspect
 import logging
 import statistics
 from collections import deque
@@ -9,7 +10,9 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Optional
 
+from project_x_py.event_bus import EventType
 from project_x_py.exceptions import InvalidOrderParameters
+from project_x_py.order_manager.utils import align_price_to_tick
 from project_x_py.statistics.base import BaseStatisticsTracker
 from project_x_py.types import (
     OrderSide,
@@ -76,6 +79,8 @@ class RiskManager(BaseStatisticsTracker):
         self._daily_loss = Decimal("0")
         self._daily_trades = 0
         self._last_reset_date = datetime.now().date()
+        self._recorded_trade_ids: set[str] = set()
+        self._news_warning_logged = False
 
         # Track trade history for Kelly criterion
         self._trade_history: deque[dict[str, Any]] = deque(maxlen=100)
@@ -116,10 +121,66 @@ class RiskManager(BaseStatisticsTracker):
             await self.set_gauge(
                 "max_daily_loss", float(self.config.max_daily_loss) * 100
             )
+            await self._subscribe_trade_events()
+            if self.config.avoid_news_events and not self._news_warning_logged:
+                logger.warning(
+                    "RiskConfig.avoid_news_events is True but no news calendar is "
+                    "available; the flag is ignored and does not block trades."
+                )
+                self._news_warning_logged = True
             await self.set_status("active")
         except Exception as e:
             logger.error(f"Error initializing risk stats: {e}")
             await self.track_error(e, "initialize_risk_stats")
+
+    async def _subscribe_trade_events(self) -> None:
+        """Subscribe to position-close events so daily counters track real fills."""
+        on = getattr(self.event_bus, "on", None)
+        if not callable(on):
+            return
+        result = on(EventType.POSITION_CLOSED, self._on_position_closed)
+        if inspect.isawaitable(result):
+            await result
+
+    async def _on_position_closed(self, event: Any) -> None:
+        """Update daily loss/trade counters from a closed-position event."""
+        data = event.data if hasattr(event, "data") else event
+        position = None
+        pnl: float | None = None
+        position_id = ""
+
+        if isinstance(data, dict):
+            position = data.get("position")
+            raw_pnl = data.get("pnl", data.get("realized"))
+            position_id = str(
+                data.get("position_id")
+                or data.get("id")
+                or getattr(position, "id", "")
+                or data.get("contract_id")
+                or ""
+            )
+            if raw_pnl is not None:
+                try:
+                    pnl = float(raw_pnl)
+                except (TypeError, ValueError):
+                    pnl = None
+        else:
+            position = data
+
+        if pnl is None and position is not None:
+            realized = getattr(position, "realized", None)
+            if realized is not None:
+                try:
+                    pnl = float(realized)
+                except (TypeError, ValueError):
+                    pnl = None
+            if not position_id:
+                position_id = str(getattr(position, "id", "") or "")
+
+        if pnl is None or not position_id:
+            return
+
+        await self.record_trade_result(position_id, pnl, duration_seconds=0)
 
     def set_position_manager(self, position_manager: PositionManagerProtocol) -> None:
         """Set the position manager after initialization to resolve circular dependency.
@@ -444,57 +505,20 @@ class RiskManager(BaseStatisticsTracker):
 
             # Calculate stop loss if not provided
             if stop_loss is None and self.config.use_stop_loss:
+                atr_value = None
                 if self.config.stop_loss_type == "atr":
-                    if not self.data_manager:
-                        logger.warning(
-                            "ATR stop loss configured but no data manager is available. "
-                            "Falling back to fixed stop."
-                        )
-                        stop_distance = (
-                            float(self.config.default_stop_distance) * tick_size
-                        )
-                    else:
-                        # Fetch data to calculate ATR. A common period for ATR is 14.
-                        # We need enough data for the calculation. Let's fetch 50 bars.
-                        # A default timeframe of '15min' is reasonable for ATR stops.
-                        ohlc_data = await self.data_manager.get_data(
-                            timeframe="15min", bars=50
-                        )
-                        if ohlc_data is None or ohlc_data.height < 14:
-                            logger.warning(
-                                "Not enough data to calculate ATR. Falling back to fixed stop."
-                            )
-                            stop_distance = (
-                                float(self.config.default_stop_distance) * tick_size
-                            )
-                        else:
-                            from project_x_py.indicators import calculate_atr
-
-                            data_with_atr = calculate_atr(ohlc_data, period=14)
-                            latest_atr = data_with_atr["atr_14"].tail(1).item()
-                            if latest_atr:
-                                stop_distance = latest_atr * float(
-                                    self.config.default_stop_atr_multiplier
-                                )
-                            else:
-                                logger.warning(
-                                    "ATR calculation resulted in None. Falling back to fixed stop."
-                                )
-                                stop_distance = (
-                                    float(self.config.default_stop_distance) * tick_size
-                                )
-                elif self.config.stop_loss_type == "percentage":
-                    stop_distance = entry_price * (
-                        float(self.config.default_stop_distance) / 100
-                    )
-                else:  # fixed
-                    stop_distance = float(self.config.default_stop_distance) * tick_size
-
+                    atr_value = await self._latest_atr_value()
+                stop_distance = self._stop_distance(
+                    entry_price, tick_size, atr_value=atr_value
+                )
                 stop_loss = (
                     entry_price - stop_distance
                     if is_long
                     else entry_price + stop_distance
                 )
+
+            if stop_loss is not None:
+                stop_loss = align_price_to_tick(float(stop_loss), tick_size)
 
             # Calculate take profit if not provided
             if take_profit is None and self.config.use_take_profit and stop_loss:
@@ -502,12 +526,15 @@ class RiskManager(BaseStatisticsTracker):
                 reward = risk * float(self.config.default_risk_reward_ratio)
                 take_profit = entry_price + reward if is_long else entry_price - reward
 
+            if take_profit is not None:
+                take_profit = align_price_to_tick(float(take_profit), tick_size)
+
             # Place bracket order
             # For an existing position, we need to place exit orders
             # These are opposite side to the position
             exit_side = OrderSide.SELL if is_long else OrderSide.BUY
 
-            # Place stop loss order
+            # Place stop first, then target with linked_order_id for native OCO.
             stop_response = None
             if stop_loss:
                 stop_response = await self.orders.place_stop_order(
@@ -517,15 +544,23 @@ class RiskManager(BaseStatisticsTracker):
                     stop_price=stop_loss,
                 )
 
-            # Place take profit order
             target_response = None
             if take_profit:
-                target_response = await self.orders.place_limit_order(
-                    contract_id=position.contractId,
-                    side=exit_side,
-                    size=position_size,
-                    limit_price=take_profit,
-                )
+                limit_kwargs: dict[str, Any] = {
+                    "contract_id": position.contractId,
+                    "side": exit_side,
+                    "size": position_size,
+                    "limit_price": take_profit,
+                }
+                stop_id = self._successful_order_id(stop_response)
+                if stop_id is not None:
+                    limit_kwargs["linked_order_id"] = stop_id
+                target_response = await self.orders.place_limit_order(**limit_kwargs)
+
+            stop_id = self._successful_order_id(stop_response)
+            target_id = self._successful_order_id(target_response)
+            if stop_id is not None and target_id is not None:
+                await self._pair_oco_orders(stop_id, target_id)
 
             # Track risk order placement
             await self.increment("risk_orders_attached")
@@ -756,6 +791,7 @@ class RiskManager(BaseStatisticsTracker):
                     )
                     self._daily_loss = Decimal("0")
                     self._daily_trades = 0
+                    self._recorded_trade_ids.clear()
                     self._last_reset_date = current_date
 
                     # Update daily reset metrics
@@ -1058,6 +1094,11 @@ class RiskManager(BaseStatisticsTracker):
             pnl: Profit/loss amount
             duration_seconds: Trade duration
         """
+        trade_key = str(position_id)
+        if trade_key in self._recorded_trade_ids:
+            return
+        self._recorded_trade_ids.add(trade_key)
+
         self._trade_history.append(
             {
                 "position_id": position_id,
@@ -1167,39 +1208,103 @@ class RiskManager(BaseStatisticsTracker):
             if today > self._last_reset_date:
                 self._daily_loss = Decimal("0")
                 self._daily_trades = 0
+                self._recorded_trade_ids.clear()
                 self._last_reset_date = today
                 await self.increment("daily_reset")
 
-    async def calculate_stop_loss(
-        self, entry_price: float, side: OrderSide, atr_value: float | None = None
+    def _tick_size(self, instrument: Optional["Instrument"] = None) -> float:
+        """Return instrument tick size, defaulting to 1.0 when unknown."""
+        if instrument is not None:
+            try:
+                tick = float(instrument.tickSize)
+            except (TypeError, ValueError, AttributeError):
+                tick = 0.0
+            if tick > 0:
+                return tick
+        return 1.0
+
+    def _stop_distance(
+        self,
+        entry_price: float,
+        tick_size: float,
+        atr_value: float | None = None,
     ) -> float:
-        """Calculate stop loss price."""
-        if self.config.stop_loss_type == "fixed":
-            distance = float(self.config.default_stop_distance)
-            return (
-                entry_price - distance
-                if side == OrderSide.BUY
-                else entry_price + distance
-            )
+        """Unified stop distance: fixed = ticks * tickSize; percentage = entry * pct/100."""
+        if self.config.stop_loss_type == "atr" and atr_value:
+            return atr_value * float(self.config.default_stop_atr_multiplier)
+        if self.config.stop_loss_type == "percentage":
+            return entry_price * (float(self.config.default_stop_distance) / 100.0)
+        return float(self.config.default_stop_distance) * tick_size
 
-        elif self.config.stop_loss_type == "percentage":
-            pct = float(self.config.default_stop_distance)
-            return (
-                entry_price * (1 - pct)
-                if side == OrderSide.BUY
-                else entry_price * (1 + pct)
-            )
+    @staticmethod
+    def _successful_order_id(response: Any) -> int | None:
+        """Extract a numeric order id from a successful place response."""
+        if response is None or not getattr(response, "success", False):
+            return None
+        raw = getattr(response, "orderId", None)
+        if isinstance(raw, bool) or raw is None:
+            return None
+        if isinstance(raw, int):
+            return raw
+        if isinstance(raw, str) and raw.lstrip("-").isdigit():
+            return int(raw)
+        return None
 
-        elif self.config.stop_loss_type == "atr" and atr_value:
-            distance = atr_value * float(self.config.default_stop_atr_multiplier)
-            return (
-                entry_price - distance
-                if side == OrderSide.BUY
-                else entry_price + distance
-            )
+    async def _pair_oco_orders(self, stop_id: int, target_id: int) -> None:
+        """Link stop and target so a fill of either cancels the sibling."""
+        track = getattr(self.orders, "track_oco_pair", None)
+        if callable(track):
+            result = track(str(stop_id), str(target_id))
+            if inspect.isawaitable(result):
+                await result
 
-        # Default fallback
-        return entry_price - 50 if side == OrderSide.BUY else entry_price + 50
+    async def _latest_atr_value(self) -> float | None:
+        """Best-effort ATR lookup; returns None so callers fall back to fixed ticks."""
+        if not self.data_manager:
+            logger.warning(
+                "ATR stop loss configured but no data manager is available. "
+                "Falling back to fixed stop."
+            )
+            return None
+        ohlc_data = await self.data_manager.get_data(timeframe="15min", bars=50)
+        if ohlc_data is None or ohlc_data.height < 14:
+            logger.warning(
+                "Not enough data to calculate ATR. Falling back to fixed stop."
+            )
+            return None
+        from project_x_py.indicators import calculate_atr
+
+        data_with_atr = calculate_atr(ohlc_data, period=14)
+        latest_atr = data_with_atr["atr_14"].tail(1).item()
+        if not latest_atr:
+            logger.warning(
+                "ATR calculation resulted in None. Falling back to fixed stop."
+            )
+            return None
+        return float(latest_atr)
+
+    async def calculate_stop_loss(
+        self,
+        entry_price: float,
+        side: OrderSide,
+        atr_value: float | None = None,
+        instrument: Optional["Instrument"] = None,
+    ) -> float:
+        """Calculate stop loss price.
+
+        Fixed stops use `default_stop_distance` ticks * tickSize (tickSize defaults
+        to 1.0 when no instrument is provided). Percentage stops use percent of
+        entry (`entry * pct / 100`).
+        """
+        if self.config.stop_loss_type not in {"fixed", "percentage", "atr"}:
+            return entry_price - 50 if side == OrderSide.BUY else entry_price + 50
+
+        tick_size = self._tick_size(instrument)
+        distance = self._stop_distance(entry_price, tick_size, atr_value=atr_value)
+        stop = (
+            entry_price - distance if side == OrderSide.BUY else entry_price + distance
+        )
+        return align_price_to_tick(stop, tick_size)
 
     async def calculate_take_profit(
         self,

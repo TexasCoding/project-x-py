@@ -30,7 +30,9 @@ class RiskConfig:
     # Stop-loss configuration
     use_stop_loss: bool = True
     stop_loss_type: str = "fixed"  # "fixed", "atr", "percentage"
-    default_stop_distance: Decimal = Decimal("50")  # Default stop distance in points
+    default_stop_distance: Decimal = Decimal(
+        "50"
+    )  # Fixed = ticks (distance * tickSize); percentage = percent of entry
     default_stop_atr_multiplier: Decimal = Decimal(
         "2.0"
     )  # ATR multiplier for dynamic stops
@@ -56,7 +58,7 @@ class RiskConfig:
     allowed_trading_hours: list[tuple[str, str]] = field(
         default_factory=lambda: [("09:30", "16:00")]
     )
-    avoid_news_events: bool = True
+    avoid_news_events: bool = True  # Ignored: no news calendar is wired
     news_blackout_minutes: int = 30  # Minutes before/after news
 
     # Correlation limits
