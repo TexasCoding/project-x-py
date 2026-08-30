@@ -359,3 +359,285 @@ class TestTrading:
 
                 date_diff = end_date - start_date
                 assert 29 <= date_diff.days <= 31  # Approximately 30 days
+
+    @pytest.mark.asyncio
+    async def test_search_trades_preserves_null_profit_and_loss(
+        self, initialized_client, mock_trades_data
+    ):
+        """Gateway profitAndLoss: null stays None on Trade, not 0.0."""
+        from unittest.mock import AsyncMock
+
+        initialized_client._ensure_authenticated = AsyncMock(return_value=None)
+        initialized_client.account_info = type(
+            "Account", (), {"id": 12345, "name": "Test"}
+        )()
+        initialized_client._make_request = AsyncMock(
+            return_value={"success": True, "trades": mock_trades_data}
+        )
+
+        trades = await initialized_client.search_trades()
+
+        assert len(trades) == 2
+        assert trades[0].profitAndLoss is None
+        assert trades[0].profitAndLoss != 0.0
+        assert trades[1].profitAndLoss == 150.0
+
+    @pytest.mark.asyncio
+    async def test_search_trades_failed_gateway_raises(self, initialized_client):
+        """success: false from /Trade/search raises, it does not return []."""
+        from unittest.mock import AsyncMock
+
+        initialized_client._ensure_authenticated = AsyncMock(return_value=None)
+        initialized_client.account_info = type(
+            "Account", (), {"id": 12345, "name": "Test"}
+        )()
+        initialized_client._make_request = AsyncMock(
+            return_value={"success": False, "errorMessage": "Trade search failed"}
+        )
+
+        with pytest.raises(ProjectXError, match="Trade search failed"):
+            await initialized_client.search_trades()
+
+    @pytest.mark.asyncio
+    async def test_search_trades_limit_is_applied_locally(self, initialized_client):
+        """limit truncates after fetch; Gateway payload must not include limit."""
+        from unittest.mock import AsyncMock
+
+        initialized_client._ensure_authenticated = AsyncMock(return_value=None)
+        initialized_client.account_info = type(
+            "Account", (), {"id": 12345, "name": "Test"}
+        )()
+        rows = [
+            {
+                "id": i,
+                "accountId": 12345,
+                "contractId": "MGC",
+                "creationTimestamp": datetime.datetime.now(pytz.UTC).isoformat(),
+                "size": 1,
+                "price": 1900.0 + i,
+                "profitAndLoss": None,
+                "fees": 2.5,
+                "side": 0,
+                "voided": False,
+                "orderId": 100 + i,
+            }
+            for i in range(3)
+        ]
+        initialized_client._make_request = AsyncMock(
+            return_value={"success": True, "trades": rows}
+        )
+
+        trades = await initialized_client.search_trades(limit=2)
+
+        assert len(trades) == 2
+        payload = initialized_client._make_request.call_args.kwargs["data"]
+        assert "limit" not in payload
+
+    @pytest.mark.asyncio
+    async def test_search_trades_preserves_gateway_commissions_field(
+        self, initialized_client
+    ):
+        """commissions maps onto fees and is kept on Trade."""
+        from unittest.mock import AsyncMock
+
+        initialized_client._ensure_authenticated = AsyncMock(return_value=None)
+        initialized_client.account_info = type(
+            "Account", (), {"id": 12345, "name": "Test"}
+        )()
+        initialized_client._make_request = AsyncMock(
+            return_value={
+                "success": True,
+                "trades": [
+                    {
+                        "id": 1,
+                        "accountId": 12345,
+                        "contractId": "MNQ",
+                        "creationTimestamp": datetime.datetime.now(
+                            pytz.UTC
+                        ).isoformat(),
+                        "price": 15000.0,
+                        "profitAndLoss": 75.0,
+                        "commissions": 2.25,
+                        "side": 0,
+                        "size": 3,
+                        "voided": False,
+                        "orderId": 102,
+                        "extraField": "ignored",
+                    }
+                ],
+            }
+        )
+
+        trades = await initialized_client.search_trades(contract_id="MNQ")
+
+        assert len(trades) == 1
+        assert trades[0].fees == pytest.approx(2.25)
+        assert trades[0].commissions == pytest.approx(2.25)
+
+    @pytest.mark.asyncio
+    async def test_search_open_positions_failed_response(self, initialized_client):
+        """success: false from /Position/searchOpen raises ProjectXError."""
+        from unittest.mock import AsyncMock
+
+        initialized_client._ensure_authenticated = AsyncMock(return_value=None)
+        initialized_client.account_info = type(
+            "Account", (), {"id": 12345, "name": "Test"}
+        )()
+        initialized_client._make_request = AsyncMock(
+            return_value={"success": False, "error": "API Error"}
+        )
+
+        with pytest.raises(ProjectXError, match="API Error"):
+            await initialized_client.search_open_positions()
+
+    @pytest.mark.asyncio
+    async def test_search_open_positions_preserves_display_name(
+        self, initialized_client
+    ):
+        """Position search keeps known display fields and ignores unknown ones."""
+        from unittest.mock import AsyncMock
+
+        initialized_client._ensure_authenticated = AsyncMock(return_value=None)
+        initialized_client.account_info = type(
+            "Account", (), {"id": 12345, "name": "Test"}
+        )()
+        initialized_client._make_request = AsyncMock(
+            return_value={
+                "success": True,
+                "positions": [
+                    {
+                        "id": "pos1",
+                        "accountId": 12345,
+                        "contractId": "CON.F.US.MNQ.Z25",
+                        "contractDisplayName": "MNQZ25",
+                        "unknownGatewayField": "ignored",
+                        "creationTimestamp": datetime.datetime.now(
+                            pytz.UTC
+                        ).isoformat(),
+                        "size": 2,
+                        "averagePrice": 21342.25,
+                        "type": 1,
+                    }
+                ],
+            }
+        )
+
+        positions = await initialized_client.search_open_positions()
+
+        assert len(positions) == 1
+        assert positions[0].contractId == "CON.F.US.MNQ.Z25"
+        assert positions[0].contractDisplayName == "MNQZ25"
+        assert not hasattr(positions[0], "unknownGatewayField")
+
+    @pytest.mark.asyncio
+    async def test_get_positions_is_alias_for_search_open_positions(
+        self, initialized_client
+    ):
+        """get_positions is an undeprecated alias, not a warning-emitting leftover."""
+        import warnings
+        from unittest.mock import AsyncMock
+
+        initialized_client._ensure_authenticated = AsyncMock(return_value=None)
+        initialized_client.account_info = type(
+            "Account", (), {"id": 12345, "name": "Test"}
+        )()
+        initialized_client._make_request = AsyncMock(
+            return_value={"success": True, "positions": []}
+        )
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            positions = await initialized_client.get_positions()
+
+        assert positions == []
+        assert not any(issubclass(w.category, DeprecationWarning) for w in caught)
+        initialized_client._make_request.assert_awaited_once_with(
+            "POST", "/Position/searchOpen", data={"accountId": 12345}
+        )
+
+    @pytest.mark.asyncio
+    async def test_search_open_positions_list_response(self, initialized_client):
+        """A raw list from the Gateway is accepted as the new searchOpen format."""
+        from unittest.mock import AsyncMock
+
+        initialized_client._ensure_authenticated = AsyncMock(return_value=None)
+        initialized_client.account_info = type(
+            "Account", (), {"id": 12345, "name": "Test"}
+        )()
+        initialized_client._make_request = AsyncMock(
+            return_value=[
+                {
+                    "id": "pos1",
+                    "accountId": 12345,
+                    "contractId": "CL",
+                    "creationTimestamp": datetime.datetime.now(pytz.UTC).isoformat(),
+                    "size": 5,
+                    "averagePrice": 75.50,
+                    "type": 1,
+                }
+            ]
+        )
+
+        positions = await initialized_client.search_open_positions()
+
+        assert len(positions) == 1
+        assert positions[0].contractId == "CL"
+
+    @pytest.mark.asyncio
+    async def test_search_open_positions_none_response(self, initialized_client):
+        """None from searchOpen is an empty book, not an error."""
+        from unittest.mock import AsyncMock
+
+        initialized_client._ensure_authenticated = AsyncMock(return_value=None)
+        initialized_client.account_info = type(
+            "Account", (), {"id": 12345, "name": "Test"}
+        )()
+        initialized_client._make_request = AsyncMock(return_value=None)
+
+        assert await initialized_client.search_open_positions() == []
+
+    @pytest.mark.asyncio
+    async def test_search_open_positions_invalid_response_type(
+        self, initialized_client
+    ):
+        """Non list/dict searchOpen payloads return []."""
+        from unittest.mock import AsyncMock
+
+        initialized_client._ensure_authenticated = AsyncMock(return_value=None)
+        initialized_client.account_info = type(
+            "Account", (), {"id": 12345, "name": "Test"}
+        )()
+        initialized_client._make_request = AsyncMock(return_value="invalid response")
+
+        assert await initialized_client.search_open_positions() == []
+
+    @pytest.mark.asyncio
+    async def test_search_trades_none_and_invalid_response(self, initialized_client):
+        """None or unexpected types from /Trade/search return []."""
+        from unittest.mock import AsyncMock
+
+        initialized_client._ensure_authenticated = AsyncMock(return_value=None)
+        initialized_client.account_info = type(
+            "Account", (), {"id": 12345, "name": "Test"}
+        )()
+        initialized_client._make_request = AsyncMock(return_value=None)
+        assert await initialized_client.search_trades() == []
+
+        initialized_client._make_request = AsyncMock(return_value="invalid")
+        assert await initialized_client.search_trades() == []
+
+    @pytest.mark.asyncio
+    async def test_search_trades_custom_account_id(self, initialized_client):
+        """Explicit account_id is sent even when account_info is missing."""
+        from unittest.mock import AsyncMock
+
+        initialized_client._ensure_authenticated = AsyncMock(return_value=None)
+        initialized_client.account_info = None
+        initialized_client._make_request = AsyncMock(return_value=[])
+
+        trades = await initialized_client.search_trades(account_id=67890)
+
+        assert trades == []
+        payload = initialized_client._make_request.call_args.kwargs["data"]
+        assert payload["accountId"] == 67890
+        assert "limit" not in payload

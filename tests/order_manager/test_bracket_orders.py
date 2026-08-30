@@ -1050,3 +1050,168 @@ class TestBracketOrderMixin:
         assert result.entry_order_id == 10
         assert result.stop_order_id is None
         assert result.target_order_id is None
+
+
+def _native_child_order(
+    order_id: int, order_type: int, side: int, size: int = 1
+) -> Order:
+    return Order.from_api(
+        {
+            "id": order_id,
+            "accountId": 12345,
+            "contractId": "MNQ",
+            "creationTimestamp": "2024-01-01T00:00:00Z",
+            "updateTimestamp": None,
+            "status": 1,
+            "type": order_type,
+            "side": side,
+            "size": size,
+        }
+    )
+
+
+class TestPlaceBracketOrderNativePublicPath:
+    """Public place_bracket_order with project_x present must use native first."""
+
+    @pytest.mark.asyncio
+    async def test_place_bracket_order_returns_native_when_children_unique(
+        self, order_manager, make_order_response
+    ):
+        """Native children resolve → return native IDs and do not place client-side legs."""
+        order_manager.project_x._make_request = AsyncMock(
+            return_value=make_order_response(10)
+        )
+        order_manager.search_open_orders = AsyncMock(
+            return_value=[
+                _native_child_order(10, 1, 0),
+                _native_child_order(11, 4, 1),
+                _native_child_order(12, 1, 1),
+            ]
+        )
+        order_manager._wait_for_order_fill = AsyncMock(return_value=True)
+        order_manager._check_order_fill_status = AsyncMock(return_value=(True, 1, 0))
+
+        with patch(
+            "project_x_py.order_manager.utils._get_cached_tick_size",
+            new=AsyncMock(return_value=0.25),
+        ):
+            result = await order_manager.place_bracket_order(
+                contract_id="MNQ",
+                side=0,
+                size=1,
+                entry_type="limit",
+                entry_price=100.0,
+                stop_loss_price=95.0,
+                take_profit_price=110.0,
+            )
+
+        assert result.success is True
+        assert result.entry_order_id == 10
+        assert result.stop_order_id == 11
+        assert result.target_order_id == 12
+        place_calls = [
+            call
+            for call in order_manager.project_x._make_request.await_args_list
+            if call.args[1] == "/Order/place"
+        ]
+        assert len(place_calls) == 1
+        payload = place_calls[0].kwargs["data"]
+        assert payload["type"] == 1
+        assert payload["side"] == 0
+        assert payload["size"] == 1
+        assert payload["stopLossBracket"] == {"ticks": 20, "type": 4}
+        assert payload["takeProfitBracket"] == {"ticks": 40, "type": 1}
+        order_manager._wait_for_order_fill.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_place_bracket_order_falls_back_when_native_returns_none(
+        self, order_manager, make_order_response
+    ):
+        """Missing tick size → native is None → client-side entry/stop/target still run."""
+        order_manager.project_x._make_request = AsyncMock(
+            side_effect=[
+                make_order_response(1),
+                make_order_response(2),
+                make_order_response(3),
+            ]
+        )
+        order_manager._wait_for_order_fill = AsyncMock(return_value=True)
+        order_manager._check_order_fill_status = AsyncMock(return_value=(True, 1, 0))
+        order_manager._get_recovery_manager = MagicMock(return_value=None)
+
+        with patch(
+            "project_x_py.order_manager.utils._get_cached_tick_size",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await order_manager.place_bracket_order(
+                contract_id="MNQ",
+                side=0,
+                size=1,
+                entry_type="limit",
+                entry_price=100.0,
+                stop_loss_price=95.0,
+                take_profit_price=105.0,
+            )
+
+        assert result.success is True
+        assert result.entry_order_id == 1
+        assert result.stop_order_id == 2
+        assert result.target_order_id == 3
+        place_calls = [
+            call
+            for call in order_manager.project_x._make_request.await_args_list
+            if call.args[1] == "/Order/place"
+        ]
+        assert len(place_calls) == 3
+        for call in place_calls:
+            payload = call.kwargs["data"]
+            assert "stopLossBracket" not in payload
+            assert "takeProfitBracket" not in payload
+        types = [call.kwargs["data"]["type"] for call in place_calls]
+        assert types == [1, 4, 1]  # limit entry, stop, limit target
+
+    @pytest.mark.asyncio
+    async def test_place_bracket_order_falls_back_when_native_raises(
+        self, order_manager, make_order_response
+    ):
+        """Native place reject → client-side three-leg OCO still runs."""
+        order_manager.project_x._make_request = AsyncMock(
+            side_effect=[
+                ProjectXOrderError("no native brackets"),
+                make_order_response(1),
+                make_order_response(2),
+                make_order_response(3),
+            ]
+        )
+        order_manager._wait_for_order_fill = AsyncMock(return_value=True)
+        order_manager._check_order_fill_status = AsyncMock(return_value=(True, 1, 0))
+        order_manager._get_recovery_manager = MagicMock(return_value=None)
+
+        with patch(
+            "project_x_py.order_manager.utils._get_cached_tick_size",
+            new=AsyncMock(return_value=0.25),
+        ):
+            result = await order_manager.place_bracket_order(
+                contract_id="MNQ",
+                side=0,
+                size=1,
+                entry_type="limit",
+                entry_price=100.0,
+                stop_loss_price=95.0,
+                take_profit_price=105.0,
+            )
+
+        assert result.success is True
+        assert result.entry_order_id == 1
+        assert result.stop_order_id == 2
+        assert result.target_order_id == 3
+        place_calls = [
+            call
+            for call in order_manager.project_x._make_request.await_args_list
+            if call.args[1] == "/Order/place"
+        ]
+        assert len(place_calls) == 4
+        native_payload = place_calls[0].kwargs["data"]
+        assert native_payload["stopLossBracket"] == {"ticks": 20, "type": 4}
+        for call in place_calls[1:]:
+            assert "stopLossBracket" not in call.kwargs["data"]
