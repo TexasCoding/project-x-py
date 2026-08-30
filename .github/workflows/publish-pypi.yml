@@ -1,0 +1,46 @@
+name: Publish to PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to build and publish
+        required: true
+        default: v4.0.0
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Verify package version
+        run: |
+          REF="${{ inputs.ref }}"
+          TAG_VERSION="${REF#v}"
+          PACKAGE_VERSION=$(uv run python -c "from project_x_py import __version__; print(__version__)")
+          echo "ref=$REF tag=$TAG_VERSION package=$PACKAGE_VERSION"
+          test "$TAG_VERSION" = "$PACKAGE_VERSION"
+
+      - name: Build package
+        run: uv build
+
+      - name: Publish to PyPI
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: uv publish
