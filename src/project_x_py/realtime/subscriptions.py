@@ -258,41 +258,49 @@ class SubscriptionsMixin:
                 extra={"channel": "market_data", "count": len(contract_ids)},
             )
 
-            # Store for reconnection (avoid duplicates)
-            for contract_id in contract_ids:
-                if contract_id not in self._subscribed_contracts:
-                    self._subscribed_contracts.append(contract_id)
+            lock = getattr(self, "_subscription_lock", None)
+            if lock is None:
+                self._subscription_lock = asyncio.Lock()
+                lock = self._subscription_lock
 
-            for contract_id in contract_ids:
-                if self.market_connection is None:
-                    logger.error(
-                        LogMessages.WS_ERROR,
-                        extra={"error": "Market connection not available"},
-                    )
-                    return False
+            async with lock:
+                # Store for reconnection (avoid duplicates)
+                for contract_id in contract_ids:
+                    if contract_id not in self._subscribed_contracts:
+                        self._subscribed_contracts.append(contract_id)
 
-                try:
-                    await invoke_maybe(
-                        self.market_connection.send,
-                        "SubscribeContractQuotes",
-                        [contract_id],
-                    )
-                    await invoke_maybe(
-                        self.market_connection.send,
-                        "SubscribeContractTrades",
-                        [contract_id],
-                    )
-                    await invoke_maybe(
-                        self.market_connection.send,
-                        "SubscribeContractMarketDepth",
-                        [contract_id],
-                    )
-                except Exception as e:
-                    logger.error(
-                        LogMessages.WS_ERROR,
-                        extra={"error": f"Failed to subscribe to {contract_id}: {e!s}"},
-                    )
-                    return False
+                for contract_id in contract_ids:
+                    if self.market_connection is None:
+                        logger.error(
+                            LogMessages.WS_ERROR,
+                            extra={"error": "Market connection not available"},
+                        )
+                        return False
+
+                    try:
+                        await invoke_maybe(
+                            self.market_connection.send,
+                            "SubscribeContractQuotes",
+                            [contract_id],
+                        )
+                        await invoke_maybe(
+                            self.market_connection.send,
+                            "SubscribeContractTrades",
+                            [contract_id],
+                        )
+                        await invoke_maybe(
+                            self.market_connection.send,
+                            "SubscribeContractMarketDepth",
+                            [contract_id],
+                        )
+                    except Exception as e:
+                        logger.error(
+                            LogMessages.WS_ERROR,
+                            extra={
+                                "error": f"Failed to subscribe to {contract_id}: {e!s}"
+                            },
+                        )
+                        return False
 
             logger.debug(
                 LogMessages.DATA_SUBSCRIBE,
@@ -427,34 +435,40 @@ class SubscriptionsMixin:
                 extra={"channel": "market_data", "count": len(contract_ids)},
             )
 
-            # Remove from stored contracts
-            for contract_id in contract_ids:
-                if contract_id in self._subscribed_contracts:
-                    self._subscribed_contracts.remove(contract_id)
+            lock = getattr(self, "_subscription_lock", None)
+            if lock is None:
+                self._subscription_lock = asyncio.Lock()
+                lock = self._subscription_lock
 
-            if self.market_connection is None:
-                logger.error(
-                    LogMessages.WS_ERROR,
-                    extra={"error": "Market connection not available"},
-                )
-                return False
+            async with lock:
+                # Remove from stored contracts
+                for contract_id in contract_ids:
+                    if contract_id in self._subscribed_contracts:
+                        self._subscribed_contracts.remove(contract_id)
 
-            for contract_id in contract_ids:
-                await invoke_maybe(
-                    self.market_connection.send,
-                    "UnsubscribeContractQuotes",
-                    [contract_id],
-                )
-                await invoke_maybe(
-                    self.market_connection.send,
-                    "UnsubscribeContractTrades",
-                    [contract_id],
-                )
-                await invoke_maybe(
-                    self.market_connection.send,
-                    "UnsubscribeContractMarketDepth",
-                    [contract_id],
-                )
+                if self.market_connection is None:
+                    logger.error(
+                        LogMessages.WS_ERROR,
+                        extra={"error": "Market connection not available"},
+                    )
+                    return False
+
+                for contract_id in contract_ids:
+                    await invoke_maybe(
+                        self.market_connection.send,
+                        "UnsubscribeContractQuotes",
+                        [contract_id],
+                    )
+                    await invoke_maybe(
+                        self.market_connection.send,
+                        "UnsubscribeContractTrades",
+                        [contract_id],
+                    )
+                    await invoke_maybe(
+                        self.market_connection.send,
+                        "UnsubscribeContractMarketDepth",
+                        [contract_id],
+                    )
 
             logger.debug(
                 LogMessages.DATA_UNSUBSCRIBE,

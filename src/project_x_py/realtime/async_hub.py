@@ -43,6 +43,7 @@ class AsyncHubConnection:
         self._close_handlers: list[Callable[[], Any]] = []
         self._error_handlers: list[Callable[[Any], Any]] = []
         self._event_handlers: dict[str, list[Callable[..., Any]]] = {}
+        self._send_lock = asyncio.Lock()
 
     def _token_factory(self) -> str:
         parsed = urlparse(self.url)
@@ -130,7 +131,8 @@ class AsyncHubConnection:
 
     async def send(self, method: str, arguments: list[Any] | None = None) -> None:
         client = self._ensure_client()
-        await client.send(method, arguments or [])
+        async with self._send_lock:
+            await client.send(method, arguments or [])
 
 
 class HubConnectionBuilder:

@@ -626,6 +626,7 @@ class ProjectXRealtimeClientProtocol(Protocol):
     # Async locks and events
     _callback_lock: asyncio.Lock
     _connection_lock: asyncio.Lock
+    _subscription_lock: asyncio.Lock
     user_hub_ready: asyncio.Event
     market_hub_ready: asyncio.Event
 

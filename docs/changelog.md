@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The canonical changelog is the repository root [CHANGELOG.md](https://github.com/TexasCoding/project-x-py/blob/main/CHANGELOG.md). This page is a docs-site copy.
 
+## [4.1.1] - 2026-08-30
+
+Fix multi-instrument `TradingSuite.create()` racing the shared market-hub
+`send()` (`Subscription returned False`). See the root CHANGELOG for the
+full list.
+
 ## [4.1.0] - 2026-08-30
 
 Gateway coverage, live-trading risk OCO and entry-order gating, realtime stale-feed/batching/DST fixes, and honest indicator/docs claims. See the root CHANGELOG for the full list.

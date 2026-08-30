@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
 
 import pytest
 
+from project_x_py.realtime.async_hub import AsyncHubConnection
 from project_x_py.realtime.subscriptions import SubscriptionsMixin
 
 
@@ -453,6 +454,38 @@ class TestSubscriptionEdgeCases:
 
         # All should succeed
         assert all(results)
+
+    @pytest.mark.asyncio
+    async def test_concurrent_subscribe_does_not_overlap_hub_send(
+        self, subscription_handler
+    ):
+        """Issue #126: concurrent subscribe_market_data must serialize hub send()."""
+        in_flight = 0
+        max_in_flight = 0
+        connection = AsyncHubConnection(
+            "https://example.test/hubs/market", hub_name="market"
+        )
+
+        class FakeClient:
+            async def send(self, method: str, arguments: list) -> None:
+                nonlocal in_flight, max_in_flight
+                in_flight += 1
+                max_in_flight = max(max_in_flight, in_flight)
+                await asyncio.sleep(0.02)
+                in_flight -= 1
+
+        connection._client = FakeClient()
+        subscription_handler.market_connection = connection
+
+        results = await asyncio.gather(
+            subscription_handler.subscribe_market_data(["MNQ"]),
+            subscription_handler.subscribe_market_data(["MES"]),
+        )
+
+        assert all(results)
+        assert max_in_flight == 1
+        assert "MNQ" in subscription_handler._subscribed_contracts
+        assert "MES" in subscription_handler._subscribed_contracts
 
     @pytest.mark.asyncio
     async def test_subscription_state_consistency(self, subscription_handler):

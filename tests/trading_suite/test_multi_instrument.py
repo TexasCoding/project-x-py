@@ -184,6 +184,111 @@ async def test_multi_instrument_suite_creation():
 
 
 @pytest.mark.asyncio
+async def test_multi_instrument_create_subscribes_once_then_starts_feeds():
+    """Issue #126: one market-hub subscribe for all contracts, then start feeds."""
+    mock_client = MagicMock()
+    mock_client.account_info = Account(
+        id=12345,
+        name="TEST_ACCOUNT",
+        balance=100000.0,
+        canTrade=True,
+        isVisible=True,
+        simulated=True,
+    )
+    mock_client.session_token = "mock_jwt_token"
+    mock_client.config = MagicMock()
+    mock_client.authenticate = AsyncMock()
+
+    instruments = {
+        "MNQ": MagicMock(id="CON.F.US.MNQ.U26", symbol="MNQ"),
+        "MES": MagicMock(id="CON.F.US.MES.U26", symbol="MES"),
+    }
+
+    async def mock_get_instrument(symbol: str):
+        return instruments[symbol]
+
+    mock_client.get_instrument = AsyncMock(side_effect=mock_get_instrument)
+    mock_client.search_all_orders = AsyncMock(return_value=[])
+    mock_client.search_open_positions = AsyncMock(return_value=[])
+
+    mock_context = AsyncMock()
+    mock_context.__aenter__.return_value = mock_client
+    mock_context.__aexit__.return_value = None
+
+    call_order: list[tuple[str, object]] = []
+
+    mock_realtime = MagicMock()
+    mock_realtime.connect = AsyncMock(return_value=True)
+    mock_realtime.disconnect = AsyncMock(return_value=None)
+    mock_realtime.subscribe_user_updates = AsyncMock(return_value=True)
+    mock_realtime.is_connected.return_value = True
+
+    async def track_subscribe(contract_ids):
+        call_order.append(("subscribe", list(contract_ids)))
+        return True
+
+    mock_realtime.subscribe_market_data = AsyncMock(side_effect=track_subscribe)
+
+    def create_mock_data_manager(instrument, **kwargs):
+        mock_dm = MagicMock()
+        mock_dm.initialize = AsyncMock(return_value=True)
+
+        async def start_feed():
+            call_order.append(("start_feed", instrument))
+            return True
+
+        mock_dm.start_realtime_feed = AsyncMock(side_effect=start_feed)
+        mock_dm.stop_realtime_feed = AsyncMock(return_value=None)
+        mock_dm.cleanup = AsyncMock(return_value=None)
+        return mock_dm
+
+    def create_mock_position_manager(*args, **kwargs):
+        mock_pm = MagicMock()
+        mock_pm.initialize = AsyncMock(return_value=True)
+        mock_pm.get_all_positions = AsyncMock(return_value=[])
+        return mock_pm
+
+    with patch(
+        "project_x_py.trading_suite.ProjectX.from_env", return_value=mock_context
+    ):
+        with patch(
+            "project_x_py.trading_suite.ProjectXRealtimeClient",
+            return_value=mock_realtime,
+        ):
+            with patch(
+                "project_x_py.trading_suite.RealtimeDataManager",
+                side_effect=create_mock_data_manager,
+            ):
+                with patch(
+                    "project_x_py.trading_suite.PositionManager",
+                    side_effect=create_mock_position_manager,
+                ):
+                    suite = await TradingSuite.create(
+                        instruments=["MNQ", "MES"],
+                        timeframes=["1min", "5min"],
+                    )
+
+                    subscribe_calls = [
+                        item for item in call_order if item[0] == "subscribe"
+                    ]
+                    start_calls = [
+                        item for item in call_order if item[0] == "start_feed"
+                    ]
+
+                    assert len(subscribe_calls) == 1
+                    assert set(subscribe_calls[0][1]) == {
+                        "CON.F.US.MNQ.U26",
+                        "CON.F.US.MES.U26",
+                    }
+                    assert len(start_calls) == 2
+                    first_subscribe = call_order.index(subscribe_calls[0])
+                    first_start = min(call_order.index(c) for c in start_calls)
+                    assert first_subscribe < first_start
+
+                    await suite.disconnect()
+
+
+@pytest.mark.asyncio
 async def test_backward_compatibility_single_instrument():
     """
     RED: Test that single-instrument access still works with deprecation warnings.

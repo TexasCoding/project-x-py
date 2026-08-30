@@ -18,6 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 None.
 
+## [4.1.1] - 2026-08-30
+
+### Fixed
+
+- Serialize SignalR hub `send()` so concurrent market subscriptions cannot
+  overlap on the shared pysignalr client (#126).
+- `TradingSuite.create(["MNQ", "MES"])` subscribes all contracts in one
+  market-hub call, then starts feeds. `start_realtime_feed` skips a second
+  subscribe when the contract is already tracked.
+- Health-monitor heartbeats await async hub `send()` instead of dropping the
+  coroutine (`RuntimeWarning: coroutine 'AsyncHubConnection.send' was never
+  awaited`).
+
 ## [4.1.0] - 2026-08-30
 
 ### Tests

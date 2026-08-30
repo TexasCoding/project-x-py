@@ -1041,13 +1041,22 @@ class RealtimeDataManager(
                 self._on_trade_update,  # Use market_trade event name
             )
 
-            # Subscribe to market data using the contract ID
+            # Subscribe to market data using the contract ID.
+            # TradingSuite already subscribes once for all instruments; skip the
+            # second hub send when this contract is already tracked (#126).
             self.logger.debug(
                 LogMessages.DATA_SUBSCRIBE, extra={"contract_id": self.contract_id}
             )
-            subscription_success = await self.realtime_client.subscribe_market_data(
-                [self.contract_id]
+            subscribed = getattr(self.realtime_client, "_subscribed_contracts", None)
+            already_subscribed = isinstance(subscribed, list | tuple | set) and (
+                self.contract_id in subscribed
             )
+            if already_subscribed:
+                subscription_success = True
+            else:
+                subscription_success = await self.realtime_client.subscribe_market_data(
+                    [self.contract_id]
+                )
 
             if not subscription_success:
                 raise ProjectXError(

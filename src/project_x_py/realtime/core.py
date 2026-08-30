@@ -375,6 +375,7 @@ class ProjectXRealtimeClient(
         # Track subscribed contracts for reconnection
         self._subscribed_contracts: list[str] = []
         self._user_updates_subscribed: bool = False
+        self._subscription_lock = asyncio.Lock()
 
         # Logger
         self.logger = logging.getLogger(__name__)
