@@ -6,6 +6,7 @@ when in-memory limits are reached, preventing memory exhaustion while
 maintaining fast access to recent data.
 """
 
+import tempfile
 from contextlib import suppress
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -76,9 +77,13 @@ class MMapOverflowMixin:
             # Additional security check - ensure resolved path is in safe locations
             path_str = str(self.mmap_storage_path)
             home_str = str(Path.home())
-            # Include both /var/folders and /private/var/folders for macOS temp directories
+            # Include the resolved system temp directory so platform symlink
+            # resolution is honored (e.g. macOS resolves /tmp -> /private/tmp),
+            # plus /var/folders and /private/var/folders for macOS temp dirs.
             temp_dirs = [
+                str(Path(tempfile.gettempdir()).resolve()),
                 "/tmp",  # nosec B108 - needed for temp file validation
+                "/private/tmp",  # nosec B108 - macOS resolves /tmp here
                 "/var/folders",
                 "/private/var/folders",
                 str(Path.cwd()),
@@ -101,7 +106,7 @@ class MMapOverflowMixin:
             if "traversal" in str(e):
                 raise
             # For other invalid paths (unsafe or non-existent), disable overflow
-            logger.warning(f"Invalid overflow storage path, disabling overflow: {e}")
+            logger.error(f"Invalid overflow storage path, disabling overflow: {e}")
             self.enable_mmap_overflow = False
         except Exception as e:
             logger.error(f"Failed to create overflow storage directory: {e}")

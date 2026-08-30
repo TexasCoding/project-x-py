@@ -14,6 +14,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Migration guides will be provided for all breaking changes
 - Semantic versioning (MAJOR.MINOR.PATCH) is strictly followed
 
+## [Unreleased]
+
+### 🐛 Fixed
+
+**Realtime Data Manager**:
+- **MMap overflow silently disabled on macOS**: the overflow storage path
+  security validation did not account for platform symlink resolution
+  (macOS resolves `/tmp` to `/private/tmp`), so legitimate temp-directory
+  paths were rejected and memory-mapped disk overflow was silently disabled.
+  The allowlist now includes the resolved system temp directory
+  (`tempfile.gettempdir()`) and `/private/tmp`.
+- **Silent disable severity**: an invalid overflow storage path now logs at
+  ERROR level (previously WARNING), since it disables a data-safety feature.
+
 ## [3.5.8] - 2025-09-02
 
 ### 🐛 Fixed
