@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+None.
+
+## [4.1.0] - 2026-08-30
+
+### Tests
+
+- Gateway payload and error-path coverage for JoinBid/JoinAsk, native
+  `place_bracket_order`, mutating uncertain errors, half-turn trades,
+  depth `volume`, and `close_all_positions` tracking.
+
 ### Security
 
 - Refresh `uv.lock` to patched floors for Dependabot findings (aiohttp 3.14.3,
@@ -29,6 +39,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.grok/` layout (`AGENTS.md`, project agents, skills, hooks, and MCP).
 - Remove the Codecov GitHub Action, `codecov.yml`, and README badge.
   Coverage still runs locally via pytest-cov.
+- Indicator docs now say 64 named Polars indicators, not a full TA-Lib port.
+  Package-level `RSI`/`SMA`/`MACD`/`ATR` are functions; classes are
+  `RSIIndicator` and siblings. Hilbert-style names are documented as stubs.
+- `OrderTracker` / `OrderChainBuilder` are the official suite APIs (no class
+  deprecation). Standalone `track_order()` remains deprecated until 5.0.0.
+- `Features.TRADE_JOURNAL` / `AUTO_RECONNECT` stay as warn-and-noop flags;
+  `PERFORMANCE_ANALYTICS` is documented as unused config flags. Statistics
+  aggregator is single-instrument (first symbol).
 
 ### Added
 
@@ -40,6 +58,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Gateway `OrderStatus.PENDING_CANCELLATION` (7) and `SUSPENDED` (8).
 
 ### Fixed
+
+- Protective stop and target from `attach_risk_orders` are paired as OCO so a
+  fill of either leg cancels the sibling.
+- `features=["risk_manager"]` now assigns `RiskManager` onto `OrderManager` and
+  gates entry `place_*` calls through `validate_trade` before HTTP (protective
+  types, OCO-linked orders, and reducing exits are skipped). `ManagedTrade`
+  remains the recommended path.
+- Daily loss and trade counters update from `POSITION_CLOSED` events (Gateway
+  `contractId` plus computed `pnl`, sized with `tickValue`/`tickSize`), not
+  only from explicit `record_trade_result` calls.
+- Stop-distance math is unified: fixed = ticks × tickSize; percentage = percent
+  of entry. Both `attach_risk_orders` and `calculate_stop_loss` use the same
+  definition.
+- `ManagedTrade` flattens if it exits after a fill with no working stop;
+  `scale_in` validates first; `scale_out` resizes protective order size to the
+  remainder.
+- Stale-feed watchdog watches user and market hubs, treats a silent hub as
+  stale after `stale_feed_seconds`, and only resets last-message timestamps
+  after a successful restore. Concurrent reconnects are serialized.
+- Realtime `enable_batching()` no longer awaits the sync quote forwarder
+  (TypeError that tripped the batch circuit). Batched depth forwards every
+  GatewayDepth row instead of the last row per contract.
+- DST live-bar detection uses the 2 AM US transition window, not a midnight
+  offset walk. Session RTH/ETH filters convert each bar to
+  `America/New_York` instead of applying bar 0's DST offset.
+- pysignalr hub receive buffer is capped at `HUB_RECEIVE_MAX_SIZE` (10_000).
+- REST price fallback copies bar state and releases the data lock before HTTP.
+- `EventBus.wait_for` rejects re-entrant calls from inside `emit` handlers.
+- Deprecated `add_callback` shims on OrderManager, OrderBook, PositionManager,
+  and RealtimeDataManager forward to EventBus (unknown names raise
+  `ValueError`). Removal version is 5.0.0.
+- FVG requires the middle candle not to fill the zone and keeps historical
+  `fvg_bullish` when mitigated (`fvg_mitigated` is added). Order Block types
+  are mutually exclusive. WAE explosion formula is documented and no longer
+  rejects frames shorter than the ATR dead-zone period.
+- `is_market_open` / `get_current_session` treat overnight Globex as ETH, not
+  BREAK; 17:00–18:00 ET is maintenance.
+- `calculate_position_sizing` and `RiskRewardTemplate` use
+  `ticks = price_risk / tick_size` (MNQ tick_size=0.25, tick_value=0.50).
+- Stats export redacts secrets in Prometheus/CSV/Datadog. Missing health
+  inputs no longer score a perfect 100.
 
 - Query-cache LRU recency uses a monotonic counter so ties in wall-clock
   `time.time()` do not evict the wrong entry.

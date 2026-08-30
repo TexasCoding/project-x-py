@@ -365,6 +365,51 @@ class TestGetCurrentPrice:
         assert price2 is not None
         assert price2 == 19025.0
 
+    @pytest.mark.asyncio
+    async def test_rest_fallback_does_not_hold_lock_during_http(self):
+        """REST price fallback must copy state, release the lock, then HTTP."""
+        manager = MockDataAccessManager()
+        delattr(manager, "data_rw_lock")
+        manager.data = {
+            "1min": pl.DataFrame({"close": [19000.0]}),
+        }
+        manager.current_tick_data = deque([{"price": 100.0}])
+        manager.stale_price_seconds = 0.01
+        manager._last_tick_time = time.time() - 10
+        manager.instrument = "MNQ"
+
+        lock_held_during_http = True
+        http_started = asyncio.Event()
+        allow_http = asyncio.Event()
+
+        async def slow_get_bars(*_args, **_kwargs):
+            nonlocal lock_held_during_http
+            lock_held_during_http = manager.data_lock.locked()
+            http_started.set()
+            await allow_http.wait()
+            return pl.DataFrame({"close": [19050.0]})
+
+        manager.project_x = MagicMock()
+        manager.project_x.get_bars = slow_get_bars
+
+        task = asyncio.create_task(manager.get_current_price())
+        await asyncio.wait_for(http_started.wait(), timeout=1.0)
+
+        acquired_while_http = False
+        try:
+            await asyncio.wait_for(manager.data_lock.acquire(), timeout=0.1)
+            acquired_while_http = True
+            manager.data_lock.release()
+        except TimeoutError:
+            acquired_while_http = False
+
+        allow_http.set()
+        price = await asyncio.wait_for(task, timeout=1.0)
+
+        assert lock_held_during_http is False
+        assert acquired_while_http is True
+        assert price == 19050.0
+
 
 class TestGetMTFData:
     """Test the get_mtf_data method following TDD principles."""
@@ -378,7 +423,7 @@ class TestGetMTFData:
         assert set(result.keys()) == {"1min", "5min", "15min"}
 
         # Each timeframe should have valid DataFrame
-        for tf, df in result.items():
+        for _tf, df in result.items():
             assert isinstance(df, pl.DataFrame)
             assert len(df) == 5  # Each has 5 bars of sample data
 

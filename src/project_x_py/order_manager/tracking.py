@@ -58,8 +58,19 @@ from typing import TYPE_CHECKING, Any, cast
 
 from cachetools import TTLCache
 
+from project_x_py.event_bus import Event, EventType
 from project_x_py.types.trading import OrderStatus
 from project_x_py.utils.deprecation import deprecated
+
+_ORDER_EVENT_TYPE_MAPPING = {
+    "order_placed": EventType.ORDER_PLACED,
+    "order_filled": EventType.ORDER_FILLED,
+    "order_partial_fill": EventType.ORDER_PARTIAL_FILL,
+    "order_cancelled": EventType.ORDER_CANCELLED,
+    "order_rejected": EventType.ORDER_REJECTED,
+    "order_expired": EventType.ORDER_EXPIRED,
+    "order_modified": EventType.ORDER_MODIFIED,
+}
 
 if TYPE_CHECKING:
     from project_x_py.event_bus import EventBus
@@ -824,6 +835,15 @@ class OrderTrackingMixin:
                                 f"Failed to process OCO logic for order {order_id}: {e}"
                             )
 
+                        # Honor track_oco_pair (string-keyed oco_pairs)
+                        try:
+                            if str(order_id) in getattr(self, "oco_pairs", {}):
+                                await self._handle_oco_fill(str(order_id))
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to handle OCO pair fill for order {order_id}: {e}"
+                            )
+
                 # Check for partial fills with safe data access
                 try:
                     fills = actual_order_data.get("fills", [])
@@ -1075,17 +1095,27 @@ class OrderTrackingMixin:
         removal_version="5.0.0",
         replacement="TradingSuite.on(EventType.ORDER_FILLED, callback)",
     )
-    def add_callback(
+    async def add_callback(
         self,
-        _event_type: str,
-        _callback: Callable[[dict[str, Any]], None],
+        event_type: str,
+        callback: Callable[[dict[str, Any]], Coroutine[Any, Any, None] | None],
     ) -> None:
         """
         DEPRECATED: Use TradingSuite.on() with EventType enum instead.
 
-        This method is provided for backward compatibility only and will be removed in v4.0.
+        This method is provided for backward compatibility only and will be
+        removed in v5.0.0. It forwards to EventBus using the mapped EventType.
         """
-        # Deprecation warning handled by decorator
+        mapped = _ORDER_EVENT_TYPE_MAPPING.get(event_type)
+        if mapped is None:
+            raise ValueError(f"Unknown event type: {event_type}")
+        if self.event_bus is None:
+            raise ValueError("EventBus is not available")
+        handler = cast(
+            Callable[[Event], Coroutine[Any, Any, None]],
+            callback,
+        )
+        await self.event_bus.on(mapped, handler)
 
     async def _trigger_callbacks(self, event_type: str, data: Any) -> None:
         """
@@ -1095,26 +1125,12 @@ class OrderTrackingMixin:
             event_type: Type of event that occurred
             data: Event data to pass to callbacks
         """
-        # Emit event through EventBus
-        from project_x_py.event_bus import EventType
-
-        # Map order event types to EventType enum
-        event_mapping = {
-            "order_placed": EventType.ORDER_PLACED,
-            "order_filled": EventType.ORDER_FILLED,
-            "order_partial_fill": EventType.ORDER_PARTIAL_FILL,
-            "order_cancelled": EventType.ORDER_CANCELLED,
-            "order_rejected": EventType.ORDER_REJECTED,
-            "order_expired": EventType.ORDER_EXPIRED,
-            "order_modified": EventType.ORDER_MODIFIED,
-        }
-
         if self.event_bus is None:
             return
 
-        if event_type in event_mapping:
+        if event_type in _ORDER_EVENT_TYPE_MAPPING:
             await self.event_bus.emit(
-                event_mapping[event_type], data, source="OrderManager"
+                _ORDER_EVENT_TYPE_MAPPING[event_type], data, source="OrderManager"
             )
 
         # Legacy callbacks have been removed - use EventBus

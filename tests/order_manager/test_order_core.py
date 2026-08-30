@@ -1,10 +1,10 @@
 """Tests for OrderManager core API."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from project_x_py.exceptions import ProjectXOrderError
+from project_x_py.exceptions import ProjectXError, ProjectXOrderError
 from project_x_py.models import Order, OrderPlaceResponse
 
 
@@ -74,6 +74,86 @@ class TestOrderManagerCore:
         order_manager.max_order_size = 2
         with pytest.raises(ProjectXOrderError, match="max_order_size"):
             await order_manager.place_order("MGC", 2, 0, 5)
+
+    @pytest.mark.asyncio
+    async def test_place_order_auto_risk_failure_skips_http(
+        self, order_manager, make_order_response
+    ):
+        """When auto_risk_management is on, invalid validation must not POST."""
+        order_manager.auto_risk_management = True
+        risk_manager = MagicMock()
+        risk_manager.validate_trade = AsyncMock(
+            return_value={
+                "is_valid": False,
+                "reasons": ["Daily loss limit reached ($1000)"],
+                "warnings": [],
+            }
+        )
+        order_manager.risk_manager = risk_manager
+        order_manager.project_x._make_request = AsyncMock(
+            return_value=make_order_response(99)
+        )
+
+        with pytest.raises(ProjectXOrderError, match="Daily loss"):
+            await order_manager.place_market_order("MGC", 0, 1)
+
+        order_manager.project_x._make_request.assert_not_called()
+        risk_manager.validate_trade.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_place_stop_order_skips_auto_risk_gate(
+        self, order_manager, make_order_response
+    ):
+        """Protective types must not be refused because max_positions already includes the live position."""
+        order_manager.auto_risk_management = True
+        risk_manager = MagicMock()
+        risk_manager.validate_trade = AsyncMock(
+            return_value={
+                "is_valid": False,
+                "reasons": ["Maximum positions limit reached (3)"],
+                "warnings": [],
+            }
+        )
+        order_manager.risk_manager = risk_manager
+        order_manager.project_x._make_request = AsyncMock(
+            return_value=make_order_response(7)
+        )
+
+        resp = await order_manager.place_stop_order("MGC", 1, 1, 2040.0)
+
+        assert resp.orderId == 7
+        risk_manager.validate_trade.assert_not_called()
+        order_manager.project_x._make_request.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_reducing_limit_skips_auto_risk_gate(
+        self, order_manager, make_order_response
+    ):
+        """Take-profit LIMIT opposite an open long must not be risk-gated."""
+        order_manager.auto_risk_management = True
+        position = MagicMock()
+        position.contractId = "MGC"
+        position.is_long = True
+        risk_manager = MagicMock()
+        risk_manager.positions = MagicMock()
+        risk_manager.positions.get_all_positions = AsyncMock(return_value=[position])
+        risk_manager.validate_trade = AsyncMock(
+            return_value={
+                "is_valid": False,
+                "reasons": ["Maximum positions limit reached (3)"],
+                "warnings": [],
+            }
+        )
+        order_manager.risk_manager = risk_manager
+        order_manager.project_x._make_request = AsyncMock(
+            return_value=make_order_response(8)
+        )
+
+        resp = await order_manager.place_limit_order("MGC", 1, 1, 2050.0)
+
+        assert resp.orderId == 8
+        risk_manager.validate_trade.assert_not_called()
+        order_manager.project_x._make_request.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_place_order_error_raises(self, order_manager, make_order_response):
@@ -676,3 +756,101 @@ class TestOrderManagerCore:
         assert results["total"] == 1
         assert results["cancelled"] == 1
         order_manager.cancel_order.assert_awaited_with(555, None)
+
+    @pytest.mark.asyncio
+    async def test_place_join_bid_order_posts_type_6_buy_payload(
+        self, order_manager, make_order_response
+    ):
+        """Join bid must POST /Order/place as type 6 buy with no required limitPrice."""
+        order_manager.project_x._make_request = AsyncMock(
+            return_value=make_order_response(61)
+        )
+
+        resp = await order_manager.place_join_bid_order("MGC", 2)
+
+        assert resp.orderId == 61
+        order_manager.project_x._make_request.assert_awaited_once()
+        method, endpoint = order_manager.project_x._make_request.call_args.args
+        payload = order_manager.project_x._make_request.call_args.kwargs["data"]
+        assert method == "POST"
+        assert endpoint == "/Order/place"
+        assert payload["type"] == 6
+        assert payload["side"] == 0
+        assert payload["size"] == 2
+        assert payload["contractId"] == "MGC"
+        assert payload["accountId"] == 12345
+        assert payload.get("limitPrice") is None
+        assert payload.get("stopPrice") is None
+
+    @pytest.mark.asyncio
+    async def test_place_join_ask_order_posts_type_7_sell_payload(
+        self, order_manager, make_order_response
+    ):
+        """Join ask must POST /Order/place as type 7 sell with no required limitPrice."""
+        order_manager.project_x._make_request = AsyncMock(
+            return_value=make_order_response(71)
+        )
+
+        resp = await order_manager.place_join_ask_order("MGC", 3)
+
+        assert resp.orderId == 71
+        payload = order_manager.project_x._make_request.call_args.kwargs["data"]
+        method, endpoint = order_manager.project_x._make_request.call_args.args
+        assert method == "POST"
+        assert endpoint == "/Order/place"
+        assert payload["type"] == 7
+        assert payload["side"] == 1
+        assert payload["size"] == 3
+        assert payload["contractId"] == "MGC"
+        assert payload["accountId"] == 12345
+        assert payload.get("limitPrice") is None
+        assert payload.get("stopPrice") is None
+
+    @pytest.mark.asyncio
+    async def test_place_join_bid_rejects_invalid_size(self, order_manager):
+        """Join bid with size <= 0 must not hit the Gateway."""
+        order_manager.project_x._make_request = AsyncMock()
+
+        with pytest.raises(ProjectXOrderError, match="Invalid order size"):
+            await order_manager.place_join_bid_order("MGC", 0)
+
+        order_manager.project_x._make_request.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_place_join_bid_exchange_reject_raises(
+        self, order_manager, make_order_response
+    ):
+        """Exchange reject of a join bid must surface as ProjectXOrderError."""
+        order_manager.project_x._make_request = AsyncMock(
+            return_value=make_order_response(
+                0, success=False, error_code=1, error_msg="Join rejected"
+            )
+        )
+
+        with pytest.raises(ProjectXOrderError, match="Join rejected"):
+            await order_manager.place_join_bid_order("MGC", 1)
+
+    @pytest.mark.asyncio
+    async def test_place_order_semaphore_value_error_is_uncertain(self, order_manager):
+        """httpx semaphore ValueError after send is uncertain, not a clean failure."""
+        from project_x_py.exceptions import OrderSubmissionUncertainError
+
+        order_manager.project_x._make_request = AsyncMock(
+            side_effect=ValueError("semaphore released too many times")
+        )
+
+        with pytest.raises(OrderSubmissionUncertainError, match="transport error"):
+            await order_manager.place_order("MGC", 2, 0, 1)
+
+    @pytest.mark.asyncio
+    async def test_place_order_other_value_error_is_not_uncertain(self, order_manager):
+        """Non-semaphore ValueError is a clean failure, not OrderSubmissionUncertainError."""
+        from project_x_py.exceptions import OrderSubmissionUncertainError
+
+        order_manager.project_x._make_request = AsyncMock(
+            side_effect=ValueError("bad json")
+        )
+
+        with pytest.raises(ProjectXError, match="bad json") as exc_info:
+            await order_manager.place_order("MGC", 2, 0, 1)
+        assert not isinstance(exc_info.value, OrderSubmissionUncertainError)

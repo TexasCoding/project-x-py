@@ -153,13 +153,21 @@ class InstrumentContext:
 
 
 class Features(str, Enum):
-    """Available feature flags for TradingSuite."""
+    """Available feature flags for TradingSuite.
+
+    Working flags: ``ORDERBOOK``, ``RISK_MANAGER``.
+
+    ``TRADE_JOURNAL`` and ``AUTO_RECONNECT`` are kept for compatibility; they
+    warn and have no effect. Realtime reconnect is independent of
+    ``AUTO_RECONNECT``. ``PERFORMANCE_ANALYTICS`` currently only sets unused
+    config flags (``enable_correlation_analysis``, ``enable_analytics``).
+    """
 
     ORDERBOOK = "orderbook"
     RISK_MANAGER = "risk_manager"
-    TRADE_JOURNAL = "trade_journal"  # Reserved; not implemented in 4.0
-    PERFORMANCE_ANALYTICS = "performance_analytics"
-    AUTO_RECONNECT = "auto_reconnect"  # Reserved; not implemented in 4.0
+    TRADE_JOURNAL = "trade_journal"  # Reserved; warns and has no effect
+    PERFORMANCE_ANALYTICS = "performance_analytics"  # Sets unused config flags
+    AUTO_RECONNECT = "auto_reconnect"  # Reserved; warns and has no effect
 
 
 class TradingSuiteConfig:
@@ -403,6 +411,7 @@ class TradingSuite:
                     position_manager=self._positions,
                     config=config.get_risk_config(),
                 )
+                self._orders.risk_manager = self._risk_manager
                 self._positions.risk_manager = self._risk_manager
                 self._stats_aggregator.risk_manager = self._risk_manager
         else:
@@ -659,6 +668,7 @@ class TradingSuite:
                     position_manager=position_manager,
                     config=config.get_risk_config(),
                 )
+                order_manager.risk_manager = risk_manager
                 position_manager.risk_manager = risk_manager
 
             # Create context
@@ -938,8 +948,7 @@ class TradingSuite:
             if self._single_context.orderbook:
                 self._stats_aggregator.orderbook = self._single_context.orderbook
         else:
-            # Multi-instrument mode - use first context for basic compatibility
-            # TODO: Future enhancement - StatisticsAggregator multi-instrument support
+            # StatisticsAggregator is single-instrument (first symbol) in 4.x.
             if self._instruments:
                 first_context = next(iter(self._instruments.values()))
                 self._stats_aggregator.order_manager = first_context.orders

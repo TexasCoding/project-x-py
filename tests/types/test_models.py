@@ -20,6 +20,14 @@ from project_x_py.models import (
 
 
 class TestOrderStatusValues:
+    def test_order_type_join_bid_ask_enum_values(self):
+        from project_x_py.types.trading import OrderType
+
+        assert OrderType.JOIN_BID == 6
+        assert OrderType.JOIN_ASK == 7
+        assert OrderType.JOIN_BID.value == 6
+        assert OrderType.JOIN_ASK.value == 7
+
     def test_gateway_order_status_includes_suspended(self):
         from project_x_py.types.trading import OrderStatus
 
@@ -131,6 +139,20 @@ class TestOrderModel:
 
         o = self.make_order(status=5)  # REJECTED
         assert o.is_rejected and o.is_terminal
+
+    def test_order_is_buy_and_is_sell(self):
+        buy = self.make_order(side=0)
+        sell = self.make_order(side=1)
+        assert buy.is_buy is True
+        assert buy.is_sell is False
+        assert sell.is_buy is False
+        assert sell.is_sell is True
+
+    def test_join_order_type_strings(self):
+        join_bid = self.make_order(type=6)
+        join_ask = self.make_order(type=7)
+        assert join_bid.type_str == "JOIN_BID"
+        assert join_ask.type_str == "JOIN_ASK"
 
     def test_order_side_type_status_strings(self):
         o = self.make_order(side=0, type=2, status=6)  # BUY, MARKET, PENDING
@@ -338,7 +360,27 @@ class TestTradeModel:
         )
         assert trade.fees == pytest.approx(2.25)
         assert trade.commissions == pytest.approx(2.25)
+        assert trade.profitAndLoss is None
         assert not hasattr(trade, "extraField")
+
+    def test_trade_from_api_half_turn_null_pnl(self):
+        trade = Trade.from_api(
+            {
+                "id": 7,
+                "accountId": 10,
+                "contractId": "CON.F.US.MNQ.H25",
+                "creationTimestamp": "2024-01-01T00:00:00Z",
+                "price": 5000.0,
+                "profitAndLoss": None,
+                "fees": 2.5,
+                "side": 0,
+                "size": 1,
+                "voided": False,
+                "orderId": 123,
+            }
+        )
+        assert trade.profitAndLoss is None
+        assert trade.profitAndLoss != 0.0
 
 
 class TestBracketAndResponses:

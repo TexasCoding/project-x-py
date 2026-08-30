@@ -5,11 +5,11 @@ Author: @TexasCoding
 Date: 2025-08-02
 
 Overview:
-    ProjectX Indicators provides a comprehensive, extensible technical analysis library
-    similar to TA-Lib, built on Polars DataFrames for high-performance financial analysis.
-    It offers both class-based and function-based interfaces for over 60 technical indicators,
-    with seamless integration for vectorized backtesting and strategy development in ProjectX
-    and beyond.
+    ProjectX Indicators provides 64 named indicators as Polars implementations;
+    this is **not** a full TA-Lib port. Hilbert-style names (`HT_TRENDLINE`,
+    `MAMA`, `MAVP`, `SAREXT`) are simplified stubs. Package-level names such as
+    `RSI`, `SMA`, `MACD`, and `ATR` are functions (`RSI(df)`); use
+    `RSIIndicator` / `SMAIndicator` for the class API.
 
 Key Features:
     - Wide range of indicators: trend/overlap, momentum, volatility, volume, and patterns
@@ -29,23 +29,22 @@ Indicator Categories:
 
 Example Usage:
     ```python
-    # Class-based interface
+    # Function interface (package import)
     from project_x_py.indicators import RSI, SMA
 
-    rsi = RSI()
-    data_with_rsi = rsi.calculate(ohlcv_data, period=14)
+    data_with_rsi = RSI(ohlcv_data, period=14)
+    data_with_sma = SMA(ohlcv_data, period=20)
 
-    # Function-based interface (TA-Lib style)
-    from project_x_py.indicators import calculate_rsi, calculate_sma
+    # Class interface
+    from project_x_py.indicators import RSIIndicator, SMAIndicator
 
-    data_with_rsi = calculate_rsi(ohlcv_data, period=14)
-    data_with_sma = calculate_sma(ohlcv_data, period=20)
+    data_with_rsi = RSIIndicator().calculate(ohlcv_data, period=14)
 
-    # Pattern detection
+    # Pattern detection (functions)
     from project_x_py.indicators import FVG, ORDERBLOCK
 
-    fvg_data = FVG().calculate(ohlcv_data, min_gap_size=0.001)
-    order_blocks = ORDERBLOCK().calculate(ohlcv_data, min_volume_percentile=75)
+    fvg_data = FVG(ohlcv_data, min_gap_size=0.001)
+    order_blocks = ORDERBLOCK(ohlcv_data, min_volume_percentile=75)
     ```
 
 Performance Notes:
@@ -207,7 +206,7 @@ from .candlestick import (
 )
 
 # Version info
-__version__ = "4.0.1"
+__version__ = "4.1.0"
 __author__ = "TexasCoding"
 
 
@@ -1122,13 +1121,13 @@ def get_indicator_info(indicator_name: str) -> str:
         "WMA": "Weighted Moving Average - linear weighted moving average",
         "MIDPOINT": "Midpoint over period - average of highest high and lowest low",
         "MIDPRICE": "Midpoint Price over period - average of highest high and lowest low",
-        "HT_TRENDLINE": "Hilbert Transform - Instantaneous Trendline - trendline based on Hilbert transform",
+        "HT_TRENDLINE": "Hilbert Transform stub — slow EMA (alpha=0.0625), not Hilbert",
         "KAMA": "Kaufman Adaptive Moving Average - adaptive moving average that reacts to market volatility",
         "MA": "Moving Average - simple moving average of prices",
-        "MAMA": "MESA Adaptive Moving Average - adaptive moving average using MESA algorithm",
-        "MAVP": "Moving Average with Variable Period - moving average with customizable periods",
+        "MAMA": "MESA Adaptive Moving Average stub — constant alpha, not MESA Hilbert",
+        "MAVP": "Moving Average with Variable Period stub — ignores periods column, SMA(min_period)",
         "SAR": "Parabolic SAR - trend-following indicator",
-        "SAREXT": "Parabolic SAR - Extended - extended version of Parabolic SAR",
+        "SAREXT": "Parabolic SAR Extended stub — SAR renamed; extra params ignored",
         "T3": "Triple Exponential Moving Average (T3) - further reduces lag compared to TEMA",
         "TRIMA": "Triangular Moving Average - weighted moving average of prices",
         # Momentum Indicators
@@ -1234,8 +1233,12 @@ __all__ = [
     # Base classes
     "BaseIndicator",
     "IndicatorError",
+    "ATRIndicator",
     "LORENZIndicator",
+    "MACDIndicator",
     "MomentumIndicator",
+    "RSIIndicator",
+    "SMAIndicator",
     "OverlapIndicator",
     "VolatilityIndicator",
     "VolumeIndicator",

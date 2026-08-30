@@ -484,7 +484,7 @@ class MIDPRICE(OverlapIndicator):
 
 
 class HT_TRENDLINE(OverlapIndicator):
-    """Hilbert Transform - Instantaneous Trendline indicator."""
+    """Hilbert Transform stub: slow EMA (`ewm_mean(alpha=0.0625)`), not Hilbert."""
 
     def __init__(self) -> None:
         super().__init__(
@@ -512,8 +512,7 @@ class HT_TRENDLINE(OverlapIndicator):
 
         self.validate_data(data, [column])
 
-        # Simplified Hilbert Transform implementation
-        # This is a basic implementation - full HT is more complex
+        # Stub: slow EMA, not a Hilbert Transform / MESA implementation.
         return data.with_columns(
             pl.col(column).ewm_mean(alpha=0.0625).alias("ht_trendline")
         )
@@ -650,7 +649,7 @@ class MA(OverlapIndicator):
 
 
 class MAMA(OverlapIndicator):
-    """MESA Adaptive Moving Average indicator."""
+    """MESA Adaptive Moving Average stub: constant alpha, not MESA Hilbert."""
 
     def __init__(self) -> None:
         super().__init__(
@@ -734,7 +733,7 @@ class MAMA(OverlapIndicator):
 
 
 class MAVP(OverlapIndicator):
-    """Moving Average with Variable Period indicator."""
+    """Variable-period MA stub: ignores periods column, SMA(min_period)."""
 
     def __init__(self) -> None:
         super().__init__(
@@ -771,8 +770,7 @@ class MAVP(OverlapIndicator):
             # Use a simple adaptive period based on volatility
             data = data.with_columns(pl.lit(min_period).alias(periods_column))
 
-        # Simplified implementation - use fixed period for now
-        # In practice, this would dynamically adjust the period
+        # Stub: ignores periods_column and uses SMA(min_period).
         return data.with_columns(
             pl.col(column).rolling_mean(window_size=min_period).alias("mavp")
         )
@@ -897,7 +895,7 @@ class SAR(OverlapIndicator):
 
 
 class SAREXT(OverlapIndicator):
-    """Parabolic SAR - Extended indicator."""
+    """Parabolic SAR Extended stub: SAR renamed; extra params ignored."""
 
     def __init__(self) -> None:
         super().__init__(

@@ -1,6 +1,6 @@
-# ProjectX Python SDK Examples (v4.0.0)
+# ProjectX Python SDK Examples (v4.1.0)
 
-This directory contains working examples for the ProjectX Python SDK v4.0.0. All examples use **MNQ (Micro E-mini NASDAQ)** contracts to minimize risk during testing.
+This directory contains working examples for the ProjectX Python SDK v4.1.0. All examples use **MNQ (Micro E-mini NASDAQ)** contracts to minimize risk during testing.
 
 **Note:** v4.0 is the TopstepX Gateway revival. Use `TradingSuite.create()`, `await suite.get_stats()` / `export_stats()`, and see `docs/migration/v3-to-v4.md` for breaking changes.
 
@@ -92,7 +92,7 @@ uv run examples/01_basic_client_connection.py
 
 #### 07. Technical Indicators (`07_technical_indicators.py`)
 **Comprehensive technical analysis**
-- 58+ indicators including pattern recognition
+- 64 named indicators including pattern recognition (not a full TA-Lib port)
 - Fair Value Gap (FVG) detection
 - Order Block identification
 - Multi-timeframe indicator analysis

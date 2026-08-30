@@ -281,6 +281,7 @@ class OrderManagerProtocol(Protocol):
         size: int,
         limit_price: float,
         account_id: int | None = None,
+        linked_order_id: int | None = None,
     ) -> "OrderPlaceResponse": ...
 
     async def place_stop_order(
@@ -290,6 +291,7 @@ class OrderManagerProtocol(Protocol):
         size: int,
         stop_price: float,
         account_id: int | None = None,
+        linked_order_id: int | None = None,
     ) -> "OrderPlaceResponse": ...
 
     async def place_bracket_order(
@@ -428,6 +430,12 @@ class OrderManagerProtocol(Protocol):
     ) -> "OrderPlaceResponse | None": ...
 
     def _get_recovery_manager(self) -> Any: ...
+
+    oco_pairs: dict[str, str]
+
+    async def track_oco_pair(self, order1_id: str, order2_id: str) -> None: ...
+
+    async def _handle_oco_fill(self, order_id: str) -> None: ...
 
 
 class PositionManagerProtocol(Protocol):
@@ -654,7 +662,12 @@ class ProjectXRealtimeClientProtocol(Protocol):
     stale_feed_seconds: float
     stale_feed_check_interval: float
     _stale_feed_task: Any
-    _stale_feed_emitted: bool
+    _stale_feed_emitted: dict[str, bool]
+    _hub_watch_started: dict[str, float]
+    _restore_lock: asyncio.Lock
+    _restore_in_flight: bool
+    _last_market_message: float
+    _last_user_message: float
 
     # Methods required by mixins
     async def setup_connections(self) -> None: ...
@@ -702,6 +715,10 @@ class ProjectXRealtimeClientProtocol(Protocol):
     async def _start_stale_feed_watchdog(self) -> None: ...
     async def _stop_stale_feed_watchdog(self) -> None: ...
     async def _stale_feed_watchdog_loop(self) -> None: ...
+    def _hub_silence_age(self, hub: str) -> float | None: ...
+    async def _serialized_health_reconnect(self) -> bool: ...
+    async def _serialized_subscription_restore(self) -> None: ...
+    def _mark_hubs_fresh(self) -> None: ...
     async def _restore_realtime_subscriptions(self) -> None: ...
     async def _recover_connection_state(
         self,

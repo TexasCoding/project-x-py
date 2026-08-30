@@ -10,7 +10,7 @@ The OrderBook provides complete Level 2 market depth analysis with real-time upd
 
 - **Level 2 Market Depth**: Real-time bid/ask levels with volume
 - **Market Microstructure Analysis**: Spread analysis, depth imbalance, and liquidity metrics
-- **Spoofing Detection**: 6 different spoofing patterns with confidence scoring
+- **Spoofing heuristics**: Experimental volume-change labels (`detect_spoofing`), not order-lifecycle detection
 - **Iceberg Detection**: Identify hidden order algorithms
 - **Volume Profile**: Price-volume distribution analysis
 - **Trade Flow Analysis**: Real-time trade classification and flow
@@ -63,9 +63,9 @@ async def examine_orderbook_structure():
     print("Ask Levels (lowest first):")
     print(asks.head())
 
-    # Full orderbook snapshot
-    full_book = await orderbook.get_full_orderbook()
-    print(f"Full book - Bid levels: {len(full_book['bids'])}, Ask levels: {len(full_book['asks'])}")
+    # Orderbook snapshot (real API)
+    snapshot = await orderbook.get_orderbook_snapshot(levels=10)
+    print(f"Snapshot - Bid levels: {len(snapshot['bids'])}, Ask levels: {len(snapshot['asks'])}")
 ```
 
 ## Market Depth Analysis
@@ -169,20 +169,11 @@ async def analyze_price_impact(orderbook):
 
     print("Price Impact Analysis:")
 
-    for size in test_sizes:
-        # Calculate impact for buying
-        buy_impact = await orderbook.calculate_price_impact(size, 'buy')
-
-        # Calculate impact for selling
-        sell_impact = await orderbook.calculate_price_impact(size, 'sell')
-
-        print(f"  {size} contracts:")
-        print(f"    Buy impact: ${buy_impact:.2f}")
-        print(f"    Sell impact: ${sell_impact:.2f}")
-
-        # Large impact warning
-        if buy_impact > 10 or sell_impact > 10:  # $10+ impact
-            print(f"      High price impact for {size} contracts!")
+    snapshot = await orderbook.get_orderbook_snapshot(levels=20)
+    print(f"Best bid: {snapshot.get('best_bid')}  Best ask: {snapshot.get('best_ask')}")
+    print(f"Spread: {snapshot.get('spread')}  Imbalance: {snapshot.get('imbalance')}")
+    print("Use snapshot bid/ask levels to estimate walk-the-book impact; "
+          "there is no calculate_price_impact() API.")
 ```
 
 ### Order Flow and Trade Analysis
@@ -431,83 +422,25 @@ async def analyze_liquidity_concentration(orderbook):
  Well-distributed liquidity - good market depth")
 ```
 
-## Spoofing Detection
+## Spoofing Heuristics (experimental)
 
-The OrderBook includes sophisticated spoofing detection with 6 different pattern types:
+`detect_spoofing()` is a **heuristic / experimental** volume-change detector.
+There is no `enable_spoofing_detection()` API and no `EventType.SPOOFING_DETECTED`.
+Pattern labels currently emitted: `quote_stuffing`, `layering`,
+`momentum_ignition`, `flashing`, `pinging`, `order_manipulation`.
 
 ```python
 async def spoofing_detection():
     suite = await TradingSuite.create("MNQ", features=["orderbook"])
     orderbook = suite.orderbook
 
-    # Enable spoofing detection with custom parameters
-    await orderbook.enable_spoofing_detection(
-        min_order_size=20,        # Minimum size to consider
-        time_threshold=30,        # Max time for pattern (seconds)
-        confidence_threshold=0.7  # Minimum confidence to alert
-    )
+    # Poll the heuristic detector (no dedicated spoofing event type)
+    alerts = await orderbook.detect_spoofing()
+    for alert in alerts:
+        print(f"Heuristic: {alert}")
 
-    # Spoofing event handler
-    async def on_spoofing_detected(event):
-        """Handle spoofing detection events."""
-        spoof_data = event.data
-
-        pattern_type = spoof_data['pattern_type']
-        confidence = spoof_data['confidence']
-        side = spoof_data['side']  # 'bid' or 'ask'
-        price_level = spoof_data['price_level']
-        size = spoof_data['size']
-
-        print(f"= SPOOFING DETECTED:")
-        print(f"  Pattern: {pattern_type}")
-        print(f"  Confidence: {confidence:.2f}")
-        print(f"  Side: {side}")
-        print(f"  Level: ${price_level:.2f} x {size}")
-        print(f"  Time: {datetime.now()}")
-
-        # High confidence alerts
-        if confidence >= 0.85:
-            print(f"  =% HIGH CONFIDENCE SPOOFING!")
-
-    # Register spoofing event handler
-    await suite.on(EventType.SPOOFING_DETECTED, on_spoofing_detected)
-
-    # Manual spoofing analysis
-    spoofing_analysis = await orderbook.get_spoofing_analysis()
-
-    print("= Current Spoofing Analysis:")
-    print(f"  Patterns detected (last hour): {spoofing_analysis['patterns_detected']}")
-    print(f"  Average confidence: {spoofing_analysis['avg_confidence']:.2f}")
-    print(f"  Most common pattern: {spoofing_analysis['most_common_pattern']}")
-
-    # Pattern breakdown
-    for pattern_type, count in spoofing_analysis['pattern_counts'].items():
-        if count > 0:
-            print(f"    {pattern_type}: {count} occurrences")
-
-    # Monitor for spoofing
-    print("\n=
- Monitoring for spoofing patterns...")
-    await asyncio.sleep(300)  # Monitor for 5 minutes
-
-    # Get updated analysis
-    final_analysis = await orderbook.get_spoofing_analysis()
-    new_patterns = final_analysis['patterns_detected'] - spoofing_analysis['patterns_detected']
-
-    print(f"\n= Spoofing Summary:")
-    print(f"  New patterns detected: {new_patterns}")
-    if new_patterns > 0:
-        print(f"  Detection rate: {new_patterns / 5:.1f} patterns per minute")
-
-# Spoofing pattern types available:
-spoofing_patterns = {
-    'layering': 'Multiple large orders at same level, cancelled before execution',
-    'spoofing': 'Large order opposite to intended direction, cancelled after market moves',
-    'quote_stuffing': 'Rapid placement and cancellation of orders',
-    'momentum_ignition': 'Large orders to trigger momentum, then trade opposite',
-    'liquidity_detection': 'Small orders to detect hidden liquidity',
-    'pinging': 'Rapid small orders testing price levels'
-}
+# Pattern labels currently used by the heuristic:
+# quote_stuffing, layering, momentum_ignition, flashing, pinging, order_manipulation
 ```
 
 ## Iceberg Detection
@@ -767,8 +700,8 @@ async def orderbook_performance_monitoring():
 bids = await orderbook.get_orderbook_bids(levels=10)
 asks = await orderbook.get_orderbook_asks(levels=10)
 
-# Avoid: Getting full book when you only need top levels
-full_book = await orderbook.get_full_orderbook()  # Expensive
+# Avoid: Requesting more levels than you need
+snapshot = await orderbook.get_orderbook_snapshot(levels=5)
 ```
 
 ### 2. Event-Driven Processing
@@ -783,7 +716,7 @@ async def efficient_orderbook_monitoring():
         update_data = event.data
         print(f"Depth updated at level {update_data['level']}")
 
-    await suite.on(EventType.DEPTH_UPDATE, on_depth_update)
+    await suite.on(EventType.MARKET_DEPTH_UPDATE, on_depth_update)
 
     # Avoid: Continuous polling
     # while True:
@@ -880,9 +813,9 @@ async def orderbook_entry_signals():
             signals.append(("FAVORABLE", "Tight spread - good liquidity", best_prices['spread']))
             signal_tracker['liquidity_signals'] += 1
 
-        # Recent spoofing detection
-        spoofing_analysis = await orderbook.get_spoofing_analysis()
-        recent_patterns = spoofing_analysis.get('recent_patterns', 0)
+        # Recent spoofing heuristic (experimental)
+        spoofing_alerts = await orderbook.detect_spoofing()
+        recent_patterns = len(spoofing_alerts) if spoofing_alerts else 0
 
         if recent_patterns > 3:  # Multiple recent spoofing patterns
             signals.append(("CAUTION", "Recent spoofing detected", recent_patterns))

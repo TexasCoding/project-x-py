@@ -103,6 +103,27 @@ class TestEventBus:
         with pytest.raises(TimeoutError):
             await bus.wait_for(EventType.POSITION_CLOSED, timeout=0.5)
 
+    async def test_reentrant_wait_for_is_rejected(self):
+        """Handlers must not call wait_for on the same bus from inside emit."""
+        bus = EventBus()
+        errors: list[BaseException] = []
+
+        async def handler(_event):
+            try:
+                await bus.wait_for(EventType.ORDER_FILLED, timeout=5.0)
+            except Exception as exc:
+                errors.append(exc)
+
+        await bus.on(EventType.NEW_BAR, handler)
+        await asyncio.wait_for(
+            bus.emit(EventType.NEW_BAR, {"bar": 1}),
+            timeout=1.0,
+        )
+
+        assert errors, "re-entrant wait_for must fail fast instead of deadlocking"
+        assert not isinstance(errors[0], TimeoutError)
+        assert "wait_for" in str(errors[0]).lower()
+
     async def test_event_history(self):
         """Test event history functionality."""
         bus = EventBus()

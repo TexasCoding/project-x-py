@@ -1,7 +1,9 @@
 """Managed trade context manager for risk-controlled trading."""
 
 import asyncio
+import inspect
 import logging
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from project_x_py.event_bus import EventType
@@ -107,10 +109,14 @@ class ManagedTrade:
             # Log trade summary
             if self._entry_order:
                 active_stops = (
-                    1 if self._stop_order and self._stop_order.is_working else 0
+                    1
+                    if self._stop_order and self._order_is_working(self._stop_order)
+                    else 0
                 )
                 active_targets = (
-                    1 if self._target_order and self._target_order.is_working else 0
+                    1
+                    if self._target_order and self._order_is_working(self._target_order)
+                    else 0
                 )
                 logger.info(
                     f"Managed trade completed for {self.instrument_id}: "
@@ -119,11 +125,107 @@ class ManagedTrade:
                     f"Active stops: {active_stops}, Active targets: {active_targets}"
                 )
 
+            # Filled position without a working stop is a live-money hole: flatten.
+            if await self._needs_emergency_flatten():
+                logger.error(
+                    "ManagedTrade exiting with a filled position and no working stop; "
+                    f"flattening {self.instrument_id}"
+                )
+                try:
+                    await self._flatten_unprotected_position()
+                except Exception as flatten_error:
+                    logger.error(
+                        f"Failed to flatten unprotected position {self.instrument_id}: "
+                        f"{flatten_error}"
+                    )
+                    if self._positions:
+                        try:
+                            await self.risk.attach_risk_orders(self._positions[0])
+                        except Exception as attach_error:
+                            logger.critical(
+                                "ManagedTrade could not flatten or attach stops for "
+                                f"{self.instrument_id}: {attach_error}"
+                            )
+
         except Exception as e:
             logger.error(f"Error in managed trade cleanup: {e}")
 
         # Don't suppress exceptions
         return False
+
+    @staticmethod
+    def _order_is_working(order: Any) -> bool:
+        is_working = getattr(order, "is_working", None)
+        if is_working is True:
+            return True
+        status = getattr(order, "status", None)
+        return status in (
+            OrderStatus.OPEN.value,
+            OrderStatus.PENDING.value,
+            OrderStatus.PENDING_CANCELLATION.value,
+            OrderStatus.SUSPENDED.value,
+        )
+
+    @staticmethod
+    def _order_is_filled(order: Any) -> bool:
+        if order is None:
+            return False
+        is_filled = getattr(order, "is_filled", None)
+        if is_filled is True:
+            return True
+        status = getattr(order, "status", None)
+        return status == OrderStatus.FILLED.value
+
+    async def _needs_emergency_flatten(self) -> bool:
+        has_position = bool(self._positions)
+        entry_filled = self._order_is_filled(self._entry_order)
+        has_working_stop = self._stop_order is not None and self._order_is_working(
+            self._stop_order
+        )
+        if has_working_stop:
+            return False
+        if not (has_position or entry_filled):
+            return False
+        recovered = await self._recover_working_stop()
+        return not recovered
+
+    async def _recover_working_stop(self) -> bool:
+        """True if a working stop already exists on the exchange for this instrument."""
+        search = getattr(self.orders, "search_open_orders", None)
+        if not callable(search):
+            return False
+        try:
+            open_orders = search()
+            if inspect.isawaitable(open_orders):
+                open_orders = await open_orders
+        except Exception:
+            return False
+        for order in open_orders or []:
+            if getattr(order, "contractId", None) != self.instrument_id:
+                continue
+            order_type = getattr(order, "type", None)
+            if order_type in (
+                OrderType.STOP,
+                OrderType.STOP_LIMIT,
+                OrderType.TRAILING_STOP,
+                3,
+                4,
+                5,
+            ) and self._order_is_working(order):
+                self._stop_order = order
+                return True
+        return False
+
+    async def _flatten_unprotected_position(self) -> None:
+        for attr in ("close_position_direct", "close_position"):
+            closer = getattr(self.positions, attr, None)
+            if not callable(closer):
+                continue
+            result = closer(self.instrument_id)
+            if inspect.isawaitable(result):
+                await result
+            return
+        await self.close_position()
 
     async def enter_long(
         self,
@@ -155,9 +257,38 @@ class ManagedTrade:
                 entry_price = await self._get_market_price()
             if entry_price is None:
                 raise ValueError("Entry price required for stop loss calculation")
-            stop_loss = await self.risk.calculate_stop_loss(
-                entry_price=entry_price, side=OrderSide.BUY
-            )
+            instrument = None
+            try:
+                client = getattr(self.risk, "client", None)
+            except AttributeError:
+                client = None
+            get_instrument = getattr(client, "get_instrument", None)
+            if callable(get_instrument):
+                try:
+                    maybe = get_instrument(self.instrument_id)
+                    maybe_instrument = (
+                        await maybe if inspect.isawaitable(maybe) else maybe
+                    )
+                    tick_raw = getattr(maybe_instrument, "tickSize", None)
+                    if (
+                        isinstance(tick_raw, int | float | Decimal | str)
+                        and float(tick_raw) > 0
+                    ):
+                        instrument = maybe_instrument
+                except (TypeError, ValueError, AttributeError):
+                    instrument = None
+                except Exception:
+                    instrument = None
+            if instrument is not None:
+                stop_loss = await self.risk.calculate_stop_loss(
+                    entry_price=entry_price,
+                    side=OrderSide.BUY,
+                    instrument=instrument,
+                )
+            else:
+                stop_loss = await self.risk.calculate_stop_loss(
+                    entry_price=entry_price, side=OrderSide.BUY
+                )
 
         # Use market price if no entry price
         if entry_price is None and order_type != OrderType.MARKET:
@@ -433,6 +564,16 @@ class ManagedTrade:
         position = self._positions[0]
         is_long = position.is_long
 
+        mock_order = self._create_mock_order(
+            side=OrderSide.BUY if is_long else OrderSide.SELL,
+            size=additional_size,
+            price=None,
+            order_type=OrderType.MARKET,
+        )
+        validation = await self.risk.validate_trade(mock_order)
+        if not validation["is_valid"]:
+            raise ValueError(f"Trade validation failed: {validation['reasons']}")
+
         # Place scale-in order
         order_result = await self.orders.place_market_order(
             contract_id=self.instrument_id,
@@ -504,6 +645,7 @@ class ManagedTrade:
                 size=exit_size,
             )
 
+        remaining = position.size - exit_size
         if order_result.success:
             # Get the actual order object
             orders = await self.orders.search_open_orders()
@@ -512,12 +654,35 @@ class ManagedTrade:
             )
             if scale_order:
                 self._orders.append(scale_order)
+            if remaining > 0:
+                await self._resize_protective_orders(remaining)
+            else:
+                for order in (self._stop_order, self._target_order):
+                    if order and self._order_is_working(order):
+                        try:
+                            await self.orders.cancel_order(order.id)
+                        except Exception as e:
+                            logger.error(f"Error cancelling protective order: {e}")
 
         return {
             "exit_order": order_result,
-            "remaining_size": position.size - exit_size,
+            "remaining_size": remaining,
             "exit_type": "limit" if limit_price else "market",
         }
+
+    async def _resize_protective_orders(self, remaining: int) -> None:
+        """Shrink stop/target size to match the remaining position."""
+        for order in (self._stop_order, self._target_order):
+            if order is None:
+                continue
+            try:
+                await self.orders.modify_order(order_id=order.id, size=remaining)
+                order.size = remaining
+            except Exception as e:
+                logger.error(
+                    f"Failed to resize protective order {getattr(order, 'id', None)} "
+                    f"to {remaining}: {e}"
+                )
 
     async def adjust_stop(self, new_stop_loss: float) -> bool:
         """Adjust stop loss for current position.

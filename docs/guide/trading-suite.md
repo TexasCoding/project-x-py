@@ -530,18 +530,16 @@ async def orderbook_feature():
 
     # Access Level 2 order book
     if suite.orderbook:
-        depth = await suite.orderbook.get_depth()
+        snapshot = await suite.orderbook.get_orderbook_snapshot(levels=5)
         trades = await suite.orderbook.get_recent_trades()
 
         print(f"Order Book:")
-        print(f"  Best Bid: ${depth.best_bid:.2f}")
-        print(f"  Best Ask: ${depth.best_ask:.2f}")
-        print(f"  Spread: ${depth.spread:.2f}")
+        print(f"  Best Bid: {snapshot.get('best_bid')}")
+        print(f"  Best Ask: {snapshot.get('best_ask')}")
+        print(f"  Spread: {snapshot.get('spread')}")
         print(f"  Recent Trades: {len(trades)}")
-
-        # Get market microstructure data
-        microstructure = await suite.orderbook.get_microstructure_analysis()
-        print(f"  Order Flow Imbalance: {microstructure.order_flow_imbalance:.2f}")
+        icebergs = await suite.orderbook.detect_iceberg_orders()
+        print(f"  Iceberg candidates: {icebergs}")
 
     await suite.disconnect()
 ```
@@ -1044,7 +1042,7 @@ except Exception as e:
 
 # Good: Check component availability
 if suite.orderbook:
-    depth = await suite.orderbook.get_depth()
+    snapshot = await suite.orderbook.get_orderbook_snapshot(levels=5)
 else:
     print("OrderBook not enabled")
 ```

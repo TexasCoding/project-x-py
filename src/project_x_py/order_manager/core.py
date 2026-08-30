@@ -57,6 +57,7 @@ See Also:
 """
 
 import asyncio
+import inspect
 import time
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -67,7 +68,7 @@ from project_x_py.models import Order, OrderPlaceResponse
 from project_x_py.statistics import BaseStatisticsTracker
 from project_x_py.types.config_types import OrderManagerConfig
 from project_x_py.types.stats_types import OrderManagerStats
-from project_x_py.types.trading import OrderStatus
+from project_x_py.types.trading import OrderStatus, OrderType
 from project_x_py.utils import (
     ErrorMessages,
     LogContext,
@@ -187,6 +188,7 @@ class OrderManager(
 
         # Store configuration with defaults
         self.config = config or {}
+        self.risk_manager: Any = None
         self._apply_config_defaults()
 
         # Async lock for thread safety
@@ -258,6 +260,31 @@ class OrderManager(
         self._recovery_manager: OperationRecoveryManager = OperationRecoveryManager(
             self
         )
+
+    async def _is_reducing_order(self, contract_id: str, side: int) -> bool:
+        """True when this order exits an existing position (stop/target/scale-out)."""
+        risk_manager = getattr(self, "risk_manager", None)
+        positions_mgr = (
+            getattr(risk_manager, "positions", None) if risk_manager else None
+        )
+        getter = getattr(positions_mgr, "get_all_positions", None)
+        if not callable(getter):
+            return False
+        try:
+            positions = getter()
+            if inspect.isawaitable(positions):
+                positions = await positions
+        except Exception:
+            return False
+        for pos in positions or []:
+            if getattr(pos, "contractId", None) != contract_id:
+                continue
+            is_long = getattr(pos, "is_long", None)
+            if is_long is None:
+                is_long = getattr(pos, "type", 1) == 1
+            if (is_long and side == 1) or (not is_long and side == 0):
+                return True
+        return False
 
     async def initialize(
         self, realtime_client: Optional["ProjectXRealtimeClient"] = None
@@ -475,6 +502,48 @@ class OrderManager(
             if trail_price is not None and trail_price < 0:
                 raise ProjectXOrderError(f"Invalid negative price: {trail_price}")
 
+            # Entry-order backstop when features=["risk_manager"] is enabled.
+            # Skip protective/reducing orders so attaching stops/targets cannot
+            # be refused because max_positions already includes the live position.
+            entry_types = {
+                OrderType.LIMIT,
+                OrderType.MARKET,
+                OrderType.JOIN_BID,
+                OrderType.JOIN_ASK,
+            }
+            skip_risk_gate = (
+                order_type not in entry_types or linked_order_id is not None
+            )
+            if not skip_risk_gate:
+                skip_risk_gate = await self._is_reducing_order(contract_id, side)
+            if (
+                self.auto_risk_management
+                and self.risk_manager is not None
+                and not skip_risk_gate
+            ):
+                pending = Order(
+                    id=0,
+                    accountId=account_id or 0,
+                    contractId=contract_id,
+                    creationTimestamp=datetime.now(UTC).isoformat(),
+                    updateTimestamp=None,
+                    status=OrderStatus.PENDING,
+                    type=order_type,
+                    side=side,
+                    size=size,
+                    limitPrice=limit_price,
+                    stopPrice=stop_price,
+                )
+                validation = await self.risk_manager.validate_trade(pending)
+                if not validation.get("is_valid", False):
+                    reasons = validation.get("reasons") or ["risk validation failed"]
+                    self.stats["risk_violations"] = (
+                        int(self.stats.get("risk_violations", 0)) + 1
+                    )
+                    raise ProjectXOrderError(
+                        f"Risk validation failed: {'; '.join(str(r) for r in reasons)}"
+                    )
+
             # CRITICAL: Align prices to tick size BEFORE any price operations
             if limit_price is not None:
                 aligned_limit = await align_price_to_tick_size(
@@ -627,8 +696,6 @@ class OrderManager(
                     self.stats["largest_order"] = size
 
                 # Update order type specific statistics
-                from project_x_py.types.trading import OrderType
-
                 if order_type == OrderType.LIMIT:
                     self.stats["limit_orders"] += 1
                 elif order_type == OrderType.MARKET:

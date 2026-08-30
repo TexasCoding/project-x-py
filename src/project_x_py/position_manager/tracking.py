@@ -61,6 +61,7 @@ See Also:
 
 import asyncio
 import contextlib
+import inspect
 import logging
 from collections import defaultdict, deque
 from collections.abc import Callable, Coroutine
@@ -68,9 +69,18 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
+from project_x_py.event_bus import EventType
 from project_x_py.models import Position
 from project_x_py.types.trading import PositionType
 from project_x_py.utils.deprecation import deprecated
+
+_POSITION_EVENT_TYPE_MAPPING = {
+    "position_opened": EventType.POSITION_OPENED,
+    "position_closed": EventType.POSITION_CLOSED,
+    "position_update": EventType.POSITION_UPDATED,
+    "position_pnl_update": EventType.POSITION_PNL_UPDATE,
+    "position_alert": EventType.RISK_LIMIT_WARNING,
+}
 
 if TYPE_CHECKING:
     from asyncio import Lock
@@ -375,6 +385,7 @@ class PositionTrackingMixin:
 
             if is_position_closed:
                 # Position is closed - calculate realized P&L and update stats
+                pnl = 0.0
                 if old_position:
                     # Assume the averagePrice in the closing update is the exit price
                     exit_price = actual_position_data.get(
@@ -395,6 +406,21 @@ class PositionTrackingMixin:
                     else:  # SHORT
                         pnl_decimal = (entry_decimal - exit_decimal) * size_decimal
 
+                    point_value = Decimal("1")
+                    getter = getattr(self, "project_x", None)
+                    get_instrument = getattr(getter, "get_instrument", None)
+                    if callable(get_instrument):
+                        try:
+                            instrument = get_instrument(contract_id)
+                            if inspect.isawaitable(instrument):
+                                instrument = await instrument
+                            tick_size = Decimal(str(instrument.tickSize))
+                            tick_value = Decimal(str(instrument.tickValue))
+                            if tick_size > 0:
+                                point_value = tick_value / tick_size
+                        except Exception:
+                            point_value = Decimal("1")
+                    pnl_decimal *= point_value
                     pnl = float(pnl_decimal)  # Convert back for compatibility
                     self.stats["realized_pnl"] += pnl
                     self.stats["closed_positions"] += 1
@@ -428,8 +454,15 @@ class PositionTrackingMixin:
                 if self._order_sync_enabled and self.order_manager:
                     await self.order_manager.on_position_closed(contract_id)
 
-                # Trigger position_closed callbacks with the closure data
-                await self._trigger_callbacks("position_closed", actual_position_data)
+                # Trigger position_closed callbacks with computed PnL so
+                # RiskManager daily counters can move from live Gateway payloads.
+                close_payload = dict(actual_position_data)
+                close_payload["pnl"] = pnl
+                close_payload["contractId"] = contract_id
+                close_payload["contract_id"] = contract_id
+                if "id" not in close_payload and old_position is not None:
+                    close_payload["id"] = old_position.id
+                await self._trigger_callbacks("position_closed", close_payload)
             else:
                 # Position is open/updated - create or update position
                 is_new_position = contract_id not in self.tracked_positions
@@ -534,23 +567,13 @@ class PositionTrackingMixin:
             - Errors in callbacks are logged but don't stop other callbacks
             - Supports both sync and async callback functions
         """
-        # Emit event through EventBus
-        from project_x_py.event_bus import EventType
-
-        # Map position event types to EventType enum
-        event_mapping = {
-            "position_opened": EventType.POSITION_OPENED,
-            "position_closed": EventType.POSITION_CLOSED,
-            "position_update": EventType.POSITION_UPDATED,
-            "position_pnl_update": EventType.POSITION_PNL_UPDATE,
-            "position_alert": EventType.RISK_LIMIT_WARNING,  # Map alerts to risk warnings
-        }
-
-        if event_type in event_mapping:
+        if event_type in _POSITION_EVENT_TYPE_MAPPING:
             emitter = getattr(self.event_bus, "emit", None)
             if emitter is not None:
                 result = emitter(
-                    event_mapping[event_type], data, source="PositionManager"
+                    _POSITION_EVENT_TYPE_MAPPING[event_type],
+                    data,
+                    source="PositionManager",
                 )
                 # Support both sync and async emitters
                 try:
@@ -623,9 +646,10 @@ class PositionTrackingMixin:
             ...     "position_closed", on_position_closed
             ... )
         """
-        self.logger.warning(
-            "add_callback is deprecated. Use TradingSuite.on() with EventType enum instead."
-        )
+        mapped = _POSITION_EVENT_TYPE_MAPPING.get(event_type)
+        if mapped is None:
+            raise ValueError(f"Unknown event type: {event_type}")
+        await self.event_bus.on(mapped, callback)
 
     async def get_position_history_size(self, contract_id: str) -> int:
         """Get the current size of position history for a contract."""

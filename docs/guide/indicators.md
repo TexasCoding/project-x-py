@@ -1,18 +1,20 @@
 # Technical Indicators Guide
 
-This guide covers the comprehensive technical indicators library in ProjectX Python SDK v3.3.4+. The indicators library provides 58+ technical analysis functions built on Polars DataFrames for high-performance financial analysis.
+This guide covers the technical indicators library in ProjectX Python SDK. The library provides 64 named indicators as Polars implementations; it is **not** a full TA-Lib port.
+
+Package-level `RSI`, `SMA`, `MACD`, and `ATR` are **functions** (`RSI(df)`). Use `RSIIndicator` for `RSIIndicator().calculate(df)`. Stubs: `HT_TRENDLINE` is a slow EMA, `MAMA` uses constant alpha, `MAVP` ignores the periods column, `SAREXT` is SAR renamed.
 
 ## Overview
 
-ProjectX includes a complete technical analysis library similar to TA-Lib, optimized for modern Python with Polars DataFrames. All indicators are designed for both real-time analysis and backtesting with vectorized operations for maximum performance.
+ProjectX includes a Polars-based technical analysis library for real-time analysis and backtesting. Named functions follow TA-Lib-style names where convenient; they are not a numerical TA-Lib port.
 
 ### Key Features
 
-- **58+ Technical Indicators**: Complete coverage of momentum, overlap, volatility, and volume indicators
+- **64 named indicators**: Momentum, overlap, volatility, volume, and pattern functions
 - **Pattern Recognition**: Advanced patterns including Fair Value Gaps, Order Blocks, and Waddah Attar Explosion
 - **Dual Interface**: Both class-based and function-based APIs
 - **Polars Integration**: High-performance DataFrame operations with method chaining
-- **TA-Lib Compatibility**: Familiar naming and parameter conventions
+- **TA-Lib-style names**: Familiar function names; not numerical TA-Lib parity
 - **Real-time Updates**: Seamless integration with streaming data
 - **Caching and Validation**: Built-in performance optimizations
 
@@ -1461,7 +1463,7 @@ async def comprehensive_multi_timeframe_analysis():
 
 The ProjectX Indicators library provides comprehensive technical analysis capabilities:
 
-- **58+ Technical Indicators** covering all major categories
+- **64 named indicators** covering major categories (not a full TA-Lib port)
 - **Pattern Recognition** with advanced patterns like FVG, Order Blocks, and WAE
 - **High Performance** with Polars DataFrame optimization and concurrent calculations
 - **Real-time Updates** seamlessly integrated with streaming data

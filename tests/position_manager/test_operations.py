@@ -1,7 +1,7 @@
 """Tests for PositionManager operations module."""
 
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -43,6 +43,11 @@ class TestPositionOperations:
         assert result["orderId"] == 12345
         assert "MGC" not in pm.tracked_positions
         assert pm.stats["closed_positions"] == 1
+        pm.project_x._make_request.assert_awaited_once_with(
+            "POST",
+            "/Position/closeContract",
+            data={"accountId": 12345, "contractId": "MGC"},
+        )
 
     async def test_close_position_direct_failure(self, position_manager):
         """Test handling of failed position closure."""
@@ -196,26 +201,31 @@ class TestPositionOperations:
             "ES": all_positions[2],
         }
 
-        # Mock successful closes
+        # Mock successful closes for MGC and NQ; ES fails
         pm.project_x._make_request = AsyncMock(
             side_effect=[
                 {"success": True, "orderId": 1},
                 {"success": True, "orderId": 2},
-                {"success": False, "errorMessage": "Market closed"},  # One failure
+                {"success": False, "errorMessage": "Market closed"},
             ]
         )
+        pm.get_position = AsyncMock(return_value=None)
 
-        result = await pm.close_all_positions()
+        with patch(
+            "project_x_py.position_manager.operations.asyncio.sleep",
+            new=AsyncMock(),
+        ):
+            result = await pm.close_all_positions()
 
         assert result["total_positions"] == 3
         assert result["closed"] == 2
         assert result["failed"] == 1
         assert len(result["errors"]) == 1
-        assert "ES" in result["errors"][0]  # Error should mention ES
-        # Note: There's a bug in close_position_direct where the loop variable
-        # shadows the parameter, causing all positions to be removed regardless
-        # of success/failure. For now we'll just check that positions were processed.
-        assert pm.stats["closed_positions"] == 2  # Two successful closes
+        assert "ES" in result["errors"][0]
+        assert "MGC" not in pm.tracked_positions
+        assert "NQ" not in pm.tracked_positions
+        assert "ES" in pm.tracked_positions
+        assert pm.stats["closed_positions"] == 2
 
     async def test_close_position_by_contract_with_size(self, position_manager):
         """Test close position by contract with specific size."""
@@ -320,26 +330,28 @@ class TestPositionOperations:
         pm.get_all_positions = AsyncMock(return_value=all_positions)
 
         pm.tracked_positions = {
-            "MGC_1": all_positions[0],
-            "MGC_2": all_positions[1],
+            "MGC": all_positions[0],
             "ES": all_positions[2],
         }
 
-        # Mock to close only MGC positions
+        # Mock to close only MGC positions. Two API rows share contractId MGC.
         pm.project_x._make_request = AsyncMock(
             side_effect=[
-                {"success": True, "orderId": 1},  # First MGC
-                {"success": True, "orderId": 2},  # Second MGC
+                {"success": True, "orderId": 1},
+                {"success": True, "orderId": 2},
             ]
         )
+        pm.get_position = AsyncMock(return_value=None)
 
-        # Close only MGC positions
-        result = await pm.close_all_positions(contract_id="MGC")
+        with patch(
+            "project_x_py.position_manager.operations.asyncio.sleep",
+            new=AsyncMock(),
+        ):
+            result = await pm.close_all_positions(contract_id="MGC")
 
         assert result["total_positions"] == 2  # Only MGC positions
         assert result["closed"] == 2
         assert result["failed"] == 0
-        # Note: There is a bug in close_position_direct where the loop variable
-        # shadows the parameter, causing positions to be removed incorrectly.
-        # For now, just verify the close operation results are correct.
+        assert "MGC" not in pm.tracked_positions
+        assert "ES" in pm.tracked_positions
         assert pm.stats["closed_positions"] == 2

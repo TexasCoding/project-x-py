@@ -203,138 +203,58 @@ class SessionFilterMixin:
         """Filter data for custom session times."""
         return self._filter_rth_hours(data, session_times)
 
+    def _ensure_utc_timestamps(self, data: pl.DataFrame) -> pl.DataFrame:
+        """Ensure the timestamp column is timezone-aware UTC for conversions."""
+        dtype = data["timestamp"].dtype
+        time_zone = getattr(dtype, "time_zone", None)
+        if time_zone is None:
+            return data.with_columns(pl.col("timestamp").dt.replace_time_zone("UTC"))
+        return data
+
+    def _ny_timestamp(self) -> pl.Expr:
+        """Per-bar America/New_York timestamp (handles DST without UTC hour math)."""
+        return pl.col("timestamp").dt.convert_time_zone("America/New_York")
+
     def _filter_rth_hours(
         self, data: pl.DataFrame, session_times: SessionTimes
     ) -> pl.DataFrame:
-        """Filter data to RTH hours only."""
-        # Convert session times from ET to UTC for filtering
-        # This properly handles DST transitions
-        from datetime import UTC
+        """Filter data to RTH hours only using each bar's New York local time."""
+        if data.is_empty():
+            return data
 
-        import pytz
+        data = self._ensure_utc_timestamps(data)
+        ny_ts = self._ny_timestamp()
+        ny_time = ny_ts.dt.time()
 
-        # Get market timezone
-        et_tz = pytz.timezone("America/New_York")
-
-        # Get a sample timestamp from data to determine DST status
-        if not data.is_empty():
-            sample_ts = data["timestamp"][0]
-            if sample_ts.tzinfo is None:
-                # Assume UTC if no timezone
-                sample_ts = sample_ts.replace(tzinfo=UTC)
-
-            # Convert to ET to check DST
-            et_time = sample_ts.astimezone(et_tz)
-            is_dst = bool(et_time.dst())
-
-            # Calculate proper UTC offset
-            et_to_utc_offset = 4 if is_dst else 5  # EDT = UTC-4, EST = UTC-5
-        else:
-            # Default to standard time if no data
-            et_to_utc_offset = 5
-
-        # Convert session times to UTC hours
-        rth_start_hour = session_times.rth_start.hour + et_to_utc_offset
-        rth_start_min = session_times.rth_start.minute
-        rth_end_hour = session_times.rth_end.hour + et_to_utc_offset
-        rth_end_min = session_times.rth_end.minute
-
-        # Filter by time range (inclusive of end time to match test expectations)
-        # Note: Polars weekday: Monday=1, ..., Friday=5, Saturday=6, Sunday=7
-        filtered = data.filter(
-            (pl.col("timestamp").dt.hour() >= rth_start_hour)
-            & (
-                (pl.col("timestamp").dt.hour() < rth_end_hour)
-                | (
-                    (pl.col("timestamp").dt.hour() == rth_end_hour)
-                    & (pl.col("timestamp").dt.minute() <= rth_end_min)
-                )
-            )
-            & (
-                (pl.col("timestamp").dt.hour() > rth_start_hour)
-                | (
-                    (pl.col("timestamp").dt.hour() == rth_start_hour)
-                    & (pl.col("timestamp").dt.minute() >= rth_start_min)
-                )
-            )
-            & (pl.col("timestamp").dt.weekday() <= 5)  # Monday=1 to Friday=5 in Polars
+        # Inclusive of the configured end time (e.g. 16:00:00 ET)
+        return data.filter(
+            (ny_time >= session_times.rth_start)
+            & (ny_time <= session_times.rth_end)
+            & (ny_ts.dt.weekday() <= 5)
         )
-
-        return filtered
 
     def _filter_eth_hours(self, data: pl.DataFrame, product: str) -> pl.DataFrame:
         """Filter data to ETH hours excluding maintenance breaks."""
         # ETH excludes maintenance breaks which vary by product
         # Most US futures: maintenance break 5:00 PM - 6:00 PM ET daily
-        from datetime import UTC
-
-        import pytz
-
-        # Get maintenance break times for product
         maintenance_breaks = self._get_maintenance_breaks(product)
 
-        if not maintenance_breaks:
-            # No maintenance breaks for this product - return all data
+        if not maintenance_breaks or data.is_empty():
             return data
 
-        # Get market timezone
-        et_tz = pytz.timezone("America/New_York")
+        data = self._ensure_utc_timestamps(data)
+        ny_time = self._ny_timestamp().dt.time()
 
-        # Determine DST status from sample timestamp
-        if not data.is_empty():
-            sample_ts = data["timestamp"][0]
-            if sample_ts.tzinfo is None:
-                sample_ts = sample_ts.replace(tzinfo=UTC)
-            et_time = sample_ts.astimezone(et_tz)
-            is_dst = bool(et_time.dst())
-            et_to_utc_offset = 4 if is_dst else 5  # EDT = UTC-4, EST = UTC-5
-        else:
-            et_to_utc_offset = 5  # Default to standard time
-
-        # Start with all data and exclude maintenance periods
-        filtered_conditions = []
-
+        keep = pl.lit(True)
         for break_start, break_end in maintenance_breaks:
-            # Convert ET maintenance times to UTC for filtering
-            break_start_hour = break_start.hour + et_to_utc_offset
-            break_start_min = break_start.minute
-            break_end_hour = break_end.hour + et_to_utc_offset
-            break_end_min = break_end.minute
+            if break_start <= break_end:
+                in_break = (ny_time >= break_start) & (ny_time < break_end)
+            else:
+                # Break crosses midnight in local time
+                in_break = (ny_time >= break_start) | (ny_time < break_end)
+            keep = keep & ~in_break
 
-            # Handle day boundary crossing
-            if break_end_hour >= 24:
-                break_end_hour -= 24
-
-            # Exclude maintenance break period
-            not_in_break = ~(
-                (pl.col("timestamp").dt.hour() >= break_start_hour)
-                & (
-                    (pl.col("timestamp").dt.hour() < break_end_hour)
-                    | (
-                        (pl.col("timestamp").dt.hour() == break_end_hour)
-                        & (pl.col("timestamp").dt.minute() < break_end_min)
-                    )
-                )
-                & (
-                    (pl.col("timestamp").dt.hour() > break_start_hour)
-                    | (
-                        (pl.col("timestamp").dt.hour() == break_start_hour)
-                        & (pl.col("timestamp").dt.minute() >= break_start_min)
-                    )
-                )
-            )
-            filtered_conditions.append(not_in_break)
-
-        # Apply all maintenance break exclusions
-        if filtered_conditions:
-            # Combine all conditions with AND
-            combined_condition = filtered_conditions[0]
-            for condition in filtered_conditions[1:]:
-                combined_condition = combined_condition & condition
-
-            return data.filter(combined_condition)
-
-        return data
+        return data.filter(keep)
 
     def _get_maintenance_breaks(self, product: str) -> list[tuple[time, time]]:
         """Get maintenance break times for product."""

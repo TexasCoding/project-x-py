@@ -100,15 +100,12 @@ class SessionConfig:
 
     def is_market_open(self, timestamp: datetime, product: str) -> bool:
         """Check if market is open at given timestamp for product."""
-        # This is a simplified implementation
-        # Real implementation would check session times, weekends, holidays
         session_times = self.get_session_times(product)
 
         # Return False for non-datetime objects or naive datetimes for safety
         if not hasattr(timestamp, "tzinfo") or timestamp.tzinfo is None:
             return False
 
-        # Convert timestamp to market timezone
         if hasattr(timestamp, "astimezone"):
             market_tz = pytz.timezone(self.market_timezone)
             market_time = timestamp.astimezone(market_tz)
@@ -126,10 +123,30 @@ class SessionConfig:
             if self.session_type == SessionType.RTH:
                 return session_times.rth_start <= current_time < session_times.rth_end
             elif self.session_type == SessionType.ETH:
-                # ETH is more complex - simplified for now
-                return session_times.rth_start <= current_time < session_times.rth_end
+                return self._is_eth_open(current_time, session_times)
 
         return False
+
+    def _is_eth_open(self, current_time: time, session_times: SessionTimes) -> bool:
+        """True when Globex ETH is open (excludes 17:00-18:00 ET maintenance)."""
+        if session_times.eth_start is None or session_times.eth_end is None:
+            return session_times.rth_start <= current_time < session_times.rth_end
+
+        # Equity-index Globex: 18:00 previous day through 17:00 current day.
+        # Overnight 00:00-06:00 is ETH, not BREAK.
+        if session_times.eth_start > session_times.eth_end:
+            # Overnight wrap (e.g. 18:00 → 17:00)
+            in_eth = (
+                current_time >= session_times.eth_start
+                or current_time < session_times.eth_end
+            )
+        else:
+            in_eth = session_times.eth_start <= current_time < session_times.eth_end
+
+        # Explicit maintenance window (CME daily break 17:00-18:00 ET)
+        if time(17, 0) <= current_time < time(18, 0):
+            return False
+        return in_eth
 
     def get_current_session(self, timestamp: datetime, product: str) -> str:
         """Get current session type (RTH, ETH, BREAK) for timestamp."""
@@ -144,29 +161,28 @@ class SessionConfig:
             market_time = timestamp.astimezone(market_tz)
             current_time = market_time.time()
 
-            # Check for maintenance break (5-6 PM ET)
+            # Maintenance 17:00-18:00 ET is BREAK (not overnight ETH)
             if time(17, 0) <= current_time < time(18, 0):
                 return "BREAK"
 
-            # Check RTH hours
+            # RTH 9:30-16:00 (product-specific) is RTH
             if session_times.rth_start <= current_time < session_times.rth_end:
                 return "RTH"
 
-            # Check active ETH hours - more restrictive to exclude quiet periods
-            # Active ETH is typically evening/night hours, excluding very early morning
-            # ETH active from 6 PM to midnight, and early morning before RTH
-            # Exclude quiet periods like 2 AM which should be BREAK
+            # Overnight 00:00-06:00 and evening Globex are ETH, not BREAK
             if (
                 session_times.eth_start is not None
                 and session_times.eth_end is not None
-                and (
-                    time(18, 0) <= current_time <= time(23, 59)
-                    or time(6, 0) <= current_time < session_times.rth_start
-                )
             ):
-                return "ETH"
+                if session_times.eth_start > session_times.eth_end:
+                    if (
+                        current_time >= session_times.eth_start
+                        or current_time < session_times.eth_end
+                    ):
+                        return "ETH"
+                elif session_times.eth_start <= current_time < session_times.eth_end:
+                    return "ETH"
 
-            # If outside all active hours, return BREAK
             return "BREAK"
 
         return "BREAK"

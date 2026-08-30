@@ -90,7 +90,9 @@ class TestRiskRewardTemplate:
             )
         )
 
-        with patch("project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder):
+        with patch(
+            "project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder
+        ):
             result = await template.create_order(suite, side=0, size=10)
 
         assert result.success is True
@@ -135,13 +137,58 @@ class TestRiskRewardTemplate:
             )
         )
 
-        with patch("project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder):
+        with patch(
+            "project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder
+        ):
             result = await template.create_order(suite, side=0, risk_amount=50.0)
 
         assert result.success is True
-        # Size should be calculated as risk_amount / (stop_distance * tick_value)
-        # 50 / (5 * 1) = 10
+        # Size = risk_amount / (ticks * tick_value); tick_size defaults to 1
+        # 50 / (5 / 1 * 1) = 10
         mock_builder.limit_order.assert_called_once_with(size=10, price=100.0, side=0)
+
+    @pytest.mark.asyncio
+    async def test_create_order_mnq_tick_size_sizing(self):
+        """MNQ tick_size=0.25 tick_value=0.50 must not 4x-oversize."""
+        template = RiskRewardTemplate(risk_reward_ratio=2.0, stop_distance=10.0)
+
+        suite = MagicMock()
+        suite.data = AsyncMock()
+        suite.data.get_current_price = AsyncMock(return_value=20500.0)
+
+        instrument = MagicMock(spec=Instrument)
+        instrument.tickValue = 0.50
+        instrument.tickSize = 0.25
+        suite.instrument = instrument
+
+        mock_builder = MagicMock()
+        mock_builder.limit_order = MagicMock(return_value=mock_builder)
+        mock_builder.with_stop_loss = MagicMock(return_value=mock_builder)
+        mock_builder.with_take_profit = MagicMock(return_value=mock_builder)
+        mock_builder.execute = AsyncMock(
+            return_value=BracketOrderResponse(
+                success=True,
+                entry_order_id=124,
+                stop_order_id=125,
+                target_order_id=126,
+                entry_price=20500.0,
+                stop_loss_price=20490.0,
+                take_profit_price=20520.0,
+                entry_response=None,
+                stop_response=None,
+                target_response=None,
+                error_message=None,
+            )
+        )
+
+        with patch(
+            "project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder
+        ):
+            result = await template.create_order(suite, side=0, risk_amount=1000.0)
+
+        assert result.success is True
+        # ticks = 10 / 0.25 = 40; dollar = 40 * 0.50 = 20; size = 1000 / 20 = 50
+        mock_builder.limit_order.assert_called_once_with(size=50, price=20500.0, side=0)
 
     @pytest.mark.asyncio
     async def test_create_order_with_risk_percent(self):
@@ -185,8 +232,12 @@ class TestRiskRewardTemplate:
             )
         )
 
-        with patch("project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder):
-            result = await template.create_order(suite, side=0, risk_percent=0.01)  # 1% risk
+        with patch(
+            "project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder
+        ):
+            result = await template.create_order(
+                suite, side=0, risk_percent=0.01
+            )  # 1% risk
 
         assert result.success is True
         # Size = (balance * risk_percent) / (stop_distance * tick_value)
@@ -222,7 +273,9 @@ class TestRiskRewardTemplate:
             )
         )
 
-        with patch("project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder):
+        with patch(
+            "project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder
+        ):
             result = await template.create_order(suite, side=1, size=5)
 
         assert result.success is True
@@ -257,7 +310,9 @@ class TestRiskRewardTemplate:
             )
         )
 
-        with patch("project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder):
+        with patch(
+            "project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder
+        ):
             # BUY with offset - should subtract from price
             await template.create_order(suite, side=0, size=10, entry_offset=2.0)
             mock_builder.limit_order.assert_called_with(size=10, price=98.0, side=0)
@@ -287,7 +342,9 @@ class TestRiskRewardTemplate:
         suite.data = AsyncMock()
         suite.data.get_current_price = AsyncMock(return_value=100.0)
 
-        with pytest.raises(ValueError, match="Must provide size, risk_amount, or risk_percent"):
+        with pytest.raises(
+            ValueError, match="Must provide size, risk_amount, or risk_percent"
+        ):
             await template.create_order(suite, side=0)
 
     @pytest.mark.asyncio
@@ -333,7 +390,9 @@ class TestRiskRewardTemplate:
             )
         )
 
-        with patch("project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder):
+        with patch(
+            "project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder
+        ):
             await template.create_order(suite, side=0, size=10)
 
         # Default stop distance should be 1% of price = 1.0
@@ -402,7 +461,9 @@ class TestATRStopTemplate:
             )
         )
 
-        with patch("project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder):
+        with patch(
+            "project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder
+        ):
             with patch("project_x_py.order_templates.ATR", return_value=data):
                 result = await template.create_order(suite, side=0, size=10)
 
@@ -463,15 +524,23 @@ class TestATRStopTemplate:
             )
         )
 
-        with patch("project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder):
+        with patch(
+            "project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder
+        ):
             with patch("project_x_py.order_templates.ATR", return_value=data):
                 # BUY with limit and offset
-                await template.create_order(suite, side=0, size=10, use_limit_entry=True, entry_offset=1.0)
+                await template.create_order(
+                    suite, side=0, size=10, use_limit_entry=True, entry_offset=1.0
+                )
                 mock_builder.limit_order.assert_called_with(size=10, price=99.0, side=0)
 
                 # SELL with limit and offset
-                await template.create_order(suite, side=1, size=10, use_limit_entry=True, entry_offset=1.0)
-                mock_builder.limit_order.assert_called_with(size=10, price=101.0, side=1)
+                await template.create_order(
+                    suite, side=1, size=10, use_limit_entry=True, entry_offset=1.0
+                )
+                mock_builder.limit_order.assert_called_with(
+                    size=10, price=101.0, side=1
+                )
 
     @pytest.mark.asyncio
     async def test_create_order_no_size(self):
@@ -535,7 +604,9 @@ class TestBreakoutTemplate:
             )
         )
 
-        with patch("project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder):
+        with patch(
+            "project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder
+        ):
             # BUY breakout
             result = await template.create_order(
                 suite, side=0, size=10, breakout_level=100.0, range_size=5.0
@@ -576,7 +647,9 @@ class TestBreakoutTemplate:
             )
         )
 
-        with patch("project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder):
+        with patch(
+            "project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder
+        ):
             # SELL breakout
             await template.create_order(
                 suite, side=1, size=10, breakout_level=100.0, range_size=5.0
@@ -616,7 +689,9 @@ class TestBreakoutTemplate:
             )
         )
 
-        with patch("project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder):
+        with patch(
+            "project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder
+        ):
             # BUY breakout with stop below level
             await template.create_order(
                 suite, side=0, size=10, breakout_level=100.0, range_size=5.0
@@ -656,7 +731,9 @@ class TestBreakoutTemplate:
             )
         )
 
-        with patch("project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder):
+        with patch(
+            "project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder
+        ):
             # BUY should use high as breakout level
             await template.create_order(suite, side=0, size=10)
 
@@ -683,7 +760,9 @@ class TestBreakoutTemplate:
         suite = MagicMock()
 
         with pytest.raises(ValueError, match="Size is required"):
-            await template.create_order(suite, side=0, breakout_level=100.0, range_size=5.0)
+            await template.create_order(
+                suite, side=0, breakout_level=100.0, range_size=5.0
+            )
 
     @pytest.mark.asyncio
     async def test_create_order_no_range_size(self):
@@ -747,8 +826,12 @@ class TestScalpingTemplate:
             )
         )
 
-        with patch("project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder):
-            result = await template.create_order(suite, side=0, size=10, check_spread=False)
+        with patch(
+            "project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder
+        ):
+            result = await template.create_order(
+                suite, side=0, size=10, check_spread=False
+            )
 
         assert result.success is True
         mock_builder.market_order.assert_called_once_with(size=10, side=0)
@@ -790,7 +873,9 @@ class TestScalpingTemplate:
             )
         )
 
-        with patch("project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder):
+        with patch(
+            "project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder
+        ):
             await template.create_order(suite, side=0, size=10, check_spread=False)
 
         mock_builder.limit_order.assert_called_once_with(size=10, price=100.0, side=0)
@@ -830,8 +915,12 @@ class TestScalpingTemplate:
             )
         )
 
-        with patch("project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder):
-            result = await template.create_order(suite, side=0, size=10, check_spread=True)
+        with patch(
+            "project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder
+        ):
+            result = await template.create_order(
+                suite, side=0, size=10, check_spread=True
+            )
 
         assert result.success is True
         orderbook.get_bid_ask_spread.assert_called_once()
@@ -1068,7 +1157,9 @@ class TestEdgeCases:
             )
         )
 
-        with patch("project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder):
+        with patch(
+            "project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder
+        ):
             await template.create_order(suite, side=0, size=10)
 
         # Default stop distance with very small price should be 1% = 0.0001
@@ -1117,11 +1208,13 @@ class TestEdgeCases:
                 entry_response=None,
                 stop_response=None,
                 target_response=None,
-                error_message="Order rejected"
+                error_message="Order rejected",
             )
         )
 
-        with patch("project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder):
+        with patch(
+            "project_x_py.order_templates.OrderChainBuilder", return_value=mock_builder
+        ):
             result = await template.create_order(suite, side=0, size=10)
 
         assert result.success is False

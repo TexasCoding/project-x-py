@@ -269,7 +269,7 @@ The SDK uses a modular architecture where large components are split into multi-
   - Trading calculations, portfolio analytics, pattern detection
   - Market microstructure, formatting, environment handling
 
-- **Indicators** (`indicators/`): 58+ technical indicators
+- **Indicators** (`indicators/`): 64 named indicators (Polars; not a full TA-Lib port)
   - Organized by category (momentum, overlap, volatility, etc.)
 
 ### Adding New Features

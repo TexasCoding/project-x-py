@@ -256,10 +256,13 @@ async def multi_instrument_sessions():
 from project_x_py import Features
 
 # Enable specific features
+# Working flags: ORDERBOOK, RISK_MANAGER.
+# TRADE_JOURNAL and AUTO_RECONNECT warn and have no effect.
+# PERFORMANCE_ANALYTICS currently only sets unused config flags.
+# Realtime reconnect is independent of AUTO_RECONNECT.
 features = [
     Features.ORDERBOOK,        # Level 2 market depth
     Features.RISK_MANAGER,     # Risk management and position sizing
-    Features.AUTO_RECONNECT,   # Automatic reconnection (future)
 ]
 
 suite = await TradingSuite.create(
@@ -432,7 +435,7 @@ async def data_access():
 
     # OrderBook data (if enabled)
     if mnq_context.orderbook:
-        depth = await mnq_context.orderbook.get_depth()
+        snapshot = await mnq_context.orderbook.get_orderbook_snapshot(levels=5)
         trades = await mnq_context.orderbook.get_recent_trades()
 
     await suite.disconnect()

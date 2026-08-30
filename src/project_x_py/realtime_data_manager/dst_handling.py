@@ -106,6 +106,10 @@ class DSTHandlingMixin:
     # DST transition cache to avoid repeated calculations
     _dst_cache: ClassVar[dict[str, Any]] = {}
     _dst_cache_expiry: ClassVar[dict[str, datetime]] = {}
+    _dst_year_transitions: ClassVar[
+        dict[tuple[str, int], list[tuple[datetime, datetime]]]
+    ] = {}
+    _DST_CACHE_MAX_SIZE: ClassVar[int] = 96
 
     # Type declarations for attributes expected from main class
     if TYPE_CHECKING:
@@ -154,30 +158,50 @@ class DSTHandlingMixin:
 
         tz = self.timezone  # Type checker now knows this is not None
 
-        # Ensure timestamp is timezone-aware
-        if timestamp.tzinfo is None:
-            timestamp = tz.localize(timestamp)
-
-        # Convert to target timezone if needed
-        if timestamp.tzinfo != tz:
-            timestamp = timestamp.astimezone(tz)
-
-        # Check cache first (valid for 1 hour)
-        cache_key = f"{timestamp.date()}_{timestamp.hour}"
+        cache_key = f"{tz}_{timestamp.date()}_{timestamp.hour}"
         cache_expiry = self._dst_cache_expiry.get(cache_key)
-
         if cache_expiry and datetime.now() < cache_expiry:
             cached_result: bool = self._dst_cache.get(cache_key, False)
             return cached_result
 
-        # Perform DST transition check
-        is_transition = self._check_dst_transition(timestamp)
+        # Ensure timestamp is timezone-aware. is_dst=None raises on the 2 AM
+        # spring-forward gap and the fall-back overlap.
+        try:
+            if timestamp.tzinfo is None:
+                timestamp = tz.localize(timestamp, is_dst=None)
+            elif timestamp.tzinfo != tz:
+                timestamp = timestamp.astimezone(tz)
+        except (pytz.AmbiguousTimeError, pytz.NonExistentTimeError):
+            self._store_dst_cache(cache_key, True)
+            return True
 
-        # Cache result for 1 hour
-        self._dst_cache[cache_key] = is_transition
+        is_transition = self._check_dst_transition(timestamp)
+        self._store_dst_cache(cache_key, is_transition)
+        return is_transition
+
+    def _store_dst_cache(self, cache_key: str, value: bool) -> None:
+        """Cache a DST check result with TTL and a hard size cap."""
+        self._prune_dst_cache()
+        self._dst_cache[cache_key] = value
         self._dst_cache_expiry[cache_key] = datetime.now() + timedelta(hours=1)
 
-        return is_transition
+    def _prune_dst_cache(self) -> None:
+        """Drop expired DST cache entries and cap unbounded growth."""
+        now = datetime.now()
+        expired = [
+            key for key, expiry in self._dst_cache_expiry.items() if now >= expiry
+        ]
+        for key in expired:
+            self._dst_cache.pop(key, None)
+            self._dst_cache_expiry.pop(key, None)
+        while (
+            len(self._dst_cache) >= self._DST_CACHE_MAX_SIZE and self._dst_cache_expiry
+        ):
+            oldest = min(
+                self._dst_cache_expiry, key=lambda key: self._dst_cache_expiry[key]
+            )
+            self._dst_cache.pop(oldest, None)
+            self._dst_cache_expiry.pop(oldest, None)
 
     def _check_dst_transition(self, timestamp: datetime) -> bool:
         """
@@ -232,76 +256,62 @@ class DSTHandlingMixin:
         """
         Get DST transition periods for a given year.
 
+        US transitions occur at 2:00 AM local, not midnight. Probe 01:00 and
+        02:00 each day with is_dst=None so NonExistentTimeError / AmbiguousTimeError
+        catch the actual window.
+
         Args:
             year: Year to get transitions for
 
         Returns:
             list: List of (start, end) tuples for transition periods
         """
-        transitions = []
+        if self.timezone is None:
+            return []
 
+        zone_name = getattr(self.timezone, "zone", str(self.timezone))
+        year_key = (str(zone_name), year)
+        cached = self._dst_year_transitions.get(year_key)
+        if cached is not None:
+            return cached
+
+        transitions: list[tuple[datetime, datetime]] = []
         try:
-            # Create datetime objects for the year
-            jan1 = datetime(year, 1, 1)
-            dec31 = datetime(year, 12, 31, 23, 59, 59)
-
-            # Find all DST transitions in the year
-            current = jan1
-            last_offset = None
-
-            while current <= dec31:
-                try:
-                    if self.timezone is None:
-                        continue
-
-                    # Localize to timezone and get UTC offset
-                    localized = self.timezone.localize(current)
-                    current_offset = localized.utcoffset()
-
-                    # Check for offset change (DST transition)
-                    if last_offset is not None and current_offset != last_offset:
-                        # Found a transition - determine the transition window
-                        transition_start = current - timedelta(hours=1)
-                        transition_end = current + timedelta(hours=1)
-                        transitions.append((transition_start, transition_end))
-
-                        if current_offset is None:
-                            continue
-
-                        transition_type = (
-                            "Spring Forward"
-                            if current_offset > last_offset
-                            else "Fall Back"
+            current = datetime(year, 1, 1)
+            end = datetime(year, 12, 31)
+            while current <= end:
+                for hour in (1, 2):
+                    candidate = current.replace(
+                        hour=hour, minute=0, second=0, microsecond=0
+                    )
+                    try:
+                        self.timezone.localize(candidate, is_dst=None)
+                    except pytz.NonExistentTimeError:
+                        transitions.append(
+                            (
+                                candidate - timedelta(hours=1),
+                                candidate + timedelta(hours=1),
+                            )
                         )
                         self.dst_logger.info(
-                            f"DST transition detected: {transition_type} at {current} "
-                            f"(offset change: {last_offset} -> {current_offset})"
+                            f"DST Spring Forward detected at {candidate}"
                         )
-
-                    last_offset = current_offset
-
-                except pytz.AmbiguousTimeError:
-                    # Fall back - time exists twice
-                    transition_start = current - timedelta(hours=1)
-                    transition_end = current + timedelta(hours=2)
-                    transitions.append((transition_start, transition_end))
-
-                    self.dst_logger.info(f"DST Fall Back detected at {current}")
-
-                except pytz.NonExistentTimeError:
-                    # Spring forward - time doesn't exist
-                    transition_start = current - timedelta(hours=1)
-                    transition_end = current + timedelta(hours=1)
-                    transitions.append((transition_start, transition_end))
-
-                    self.dst_logger.info(f"DST Spring Forward detected at {current}")
-
-                # Move to next day
+                    except pytz.AmbiguousTimeError:
+                        transitions.append(
+                            (
+                                candidate - timedelta(hours=1),
+                                candidate + timedelta(hours=2),
+                            )
+                        )
+                        self.dst_logger.info(f"DST Fall Back detected at {candidate}")
                 current += timedelta(days=1)
-
         except Exception as e:
             self.dst_logger.error(f"Error getting DST transitions for {year}: {e}")
 
+        if len(self._dst_year_transitions) >= 8:
+            oldest = next(iter(self._dst_year_transitions))
+            self._dst_year_transitions.pop(oldest, None)
+        self._dst_year_transitions[year_key] = transitions
         return transitions
 
     def handle_dst_bar_time(
@@ -470,6 +480,7 @@ class DSTHandlingMixin:
         """Clear DST transition cache (useful for testing or timezone changes)."""
         self._dst_cache.clear()
         self._dst_cache_expiry.clear()
+        self._dst_year_transitions.clear()
         self.dst_logger.info("DST cache cleared")
 
     def predict_next_dst_transition(self) -> tuple[datetime, str] | None:

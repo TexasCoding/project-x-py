@@ -135,21 +135,26 @@ class RiskRewardTemplate(OrderTemplate):
         # Calculate position size if needed
         if size is None:
             if risk_amount:
-                # Size = Risk Amount / Stop Distance
-                # suite.instrument is already an Instrument object after initialization
                 instrument = suite.instrument
                 tick_value = instrument.tickValue if instrument else 1.0
-                size = int(risk_amount / (stop_dist * tick_value))
+                tick_size = getattr(instrument, "tickSize", 1.0) if instrument else 1.0
+                if not isinstance(tick_size, int | float) or tick_size <= 0:
+                    tick_size = 1.0
+                ticks = stop_dist / tick_size
+                size = int(risk_amount / (ticks * tick_value))
             elif risk_percent:
                 # Get account balance
                 account = suite.client.account_info
                 if not account:
                     raise ValueError("No account information available")
                 risk_amount = float(account.balance) * risk_percent
-                # suite.instrument is already an Instrument object after initialization
                 instrument = suite.instrument
                 tick_value = instrument.tickValue if instrument else 1.0
-                size = int(risk_amount / (stop_dist * tick_value))
+                tick_size = getattr(instrument, "tickSize", 1.0) if instrument else 1.0
+                if not isinstance(tick_size, int | float) or tick_size <= 0:
+                    tick_size = 1.0
+                ticks = stop_dist / tick_size
+                size = int(risk_amount / (ticks * tick_value))
             else:
                 raise ValueError("Must provide size, risk_amount, or risk_percent")
 

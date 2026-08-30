@@ -84,6 +84,60 @@ class TestMarketData:
         )
 
     @pytest.mark.asyncio
+    async def test_get_instrument_search_payload_and_endpoint(self, initialized_client):
+        """Symbol lookup posts /Contract/search with searchText and live."""
+        from unittest.mock import AsyncMock
+
+        initialized_client._ensure_authenticated = AsyncMock(return_value=None)
+        initialized_client.get_cached_instrument = lambda _symbol: None
+        initialized_client.cache_instrument = lambda *_args, **_kwargs: None
+        initialized_client._make_request = AsyncMock(
+            return_value={
+                "success": True,
+                "contracts": [
+                    {
+                        "id": "CON.F.US.MNQ.U25",
+                        "name": "MNQU25",
+                        "description": "Micro Nasdaq",
+                        "tickSize": 0.25,
+                        "tickValue": 0.5,
+                        "activeContract": True,
+                        "symbolId": "F.US.MNQ",
+                    }
+                ],
+            }
+        )
+
+        instrument = await initialized_client.get_instrument("MNQ")
+
+        assert instrument.id == "CON.F.US.MNQ.U25"
+        method, endpoint = initialized_client._make_request.await_args.args
+        payload = initialized_client._make_request.await_args.kwargs["data"]
+        assert method == "POST"
+        assert endpoint == "/Contract/search"
+        assert payload["searchText"] == "MNQ"
+        assert payload["live"] is False
+
+    @pytest.mark.asyncio
+    async def test_search_instruments_live_only(self, initialized_client):
+        """search_instruments forwards live=True on /Contract/search."""
+        from unittest.mock import AsyncMock
+
+        initialized_client._ensure_authenticated = AsyncMock(return_value=None)
+        initialized_client._make_request = AsyncMock(
+            return_value={"success": True, "contracts": []}
+        )
+
+        instruments = await initialized_client.search_instruments("MNQ", live=True)
+
+        assert instruments == []
+        method, endpoint = initialized_client._make_request.await_args.args
+        payload = initialized_client._make_request.await_args.kwargs["data"]
+        assert method == "POST"
+        assert endpoint == "/Contract/search"
+        assert payload == {"searchText": "MNQ", "live": True}
+
+    @pytest.mark.asyncio
     async def test_get_instrument_from_cache(
         self, mock_httpx_client, mock_auth_response, mock_instrument
     ):

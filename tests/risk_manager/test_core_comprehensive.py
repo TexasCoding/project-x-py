@@ -650,18 +650,19 @@ class TestStopLossManagement:
 
         result = await rm.calculate_stop_loss(entry_price=15000.0, side=OrderSide.BUY)
 
-        assert result == 14950.0  # Entry - stop distance
+        # No instrument → tick_size defaults to 1.0, so 50 ticks = 50 points
+        assert result == 14950.0  # Entry - (ticks * tick_size)
 
     @pytest.mark.asyncio
     async def test_calculate_stop_loss_percentage(self, risk_manager):
         """Test percentage stop-loss calculation."""
         rm = risk_manager
         rm.config.stop_loss_type = "percentage"
-        rm.config.default_stop_distance = Decimal("0.01")  # 1%
+        rm.config.default_stop_distance = Decimal("1")  # 1 percent of entry
 
         result = await rm.calculate_stop_loss(entry_price=15000.0, side=OrderSide.BUY)
 
-        assert result == 14850.0  # Entry * (1 - 0.01)
+        assert result == 14850.0  # Entry * (1 - pct/100)
 
     @pytest.mark.asyncio
     async def test_calculate_stop_loss_atr(self, risk_manager, mock_data_manager):

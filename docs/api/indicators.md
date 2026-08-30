@@ -1,10 +1,19 @@
 # Technical Indicators
 
-Comprehensive technical analysis library with 58+ TA-Lib compatible indicators built specifically for Polars DataFrames, including advanced pattern recognition indicators.
+64 named indicators, Polars implementations; **not** a full TA-Lib port.
+
+Package-level names such as `RSI`, `SMA`, `MACD`, and `ATR` are **functions** (`RSI(df, period=14)`). Use `RSIIndicator` / `SMAIndicator` / `MACDIndicator` / `ATRIndicator` for the class API.
+
+Stubs (not Hilbert / MESA / TA-Lib numerical ports):
+
+- `HT_TRENDLINE` — slow EMA (`ewm_mean(alpha=0.0625)`), not Hilbert
+- `MAMA` — constant alpha, not MESA Hilbert
+- `MAVP` — ignores periods column, SMA(min_period)
+- `SAREXT` — SAR renamed; extra params ignored
 
 ## Overview
 
-The indicators module provides both class-based and function-based interfaces for technical analysis, similar to TA-Lib but optimized for Polars DataFrames.
+The indicators module provides both class-based and function-based interfaces for technical analysis, optimized for Polars DataFrames.
 
 
 ## Quick Start
@@ -20,9 +29,12 @@ async def analyze_market():
         await client.authenticate()
         data = await client.get_bars('MNQ', days=30, interval=60)
 
-    # Class-based interface
-    rsi = RSI()
-    data_with_rsi = rsi.calculate(data, period=14)
+    # Function interface (package import)
+    data = RSI(data, period=14)
+
+    # Class interface
+    from project_x_py.indicators import RSIIndicator
+    data_with_rsi = RSIIndicator().calculate(data, period=14)
 
     # TA-Lib style functions (direct usage)
     data = RSI(data, period=14)        # Add RSI

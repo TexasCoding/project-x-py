@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The canonical changelog is the repository root [CHANGELOG.md](https://github.com/TexasCoding/project-x-py/blob/main/CHANGELOG.md). This page is a docs-site copy.
 
+## [4.1.0] - 2026-08-30
+
+Gateway coverage, live-trading risk OCO and entry-order gating, realtime stale-feed/batching/DST fixes, and honest indicator/docs claims. See the root CHANGELOG for the full list.
+
 ## [4.0.1] - 2026-08-30
 
 Live-order safety: mutating POSTs are not retried, stale-feed reconnect restores subscriptions, and native brackets fall back when children cannot be uniquely resolved. See the root CHANGELOG for the full list.

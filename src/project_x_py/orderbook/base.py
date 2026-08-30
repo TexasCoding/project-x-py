@@ -74,6 +74,7 @@ import pytz
 if TYPE_CHECKING:
     from project_x_py.client import ProjectXBase
 
+from project_x_py.event_bus import EventType
 from project_x_py.exceptions import ProjectXError
 from project_x_py.orderbook.memory import MemoryManager
 from project_x_py.statistics.base import BaseStatisticsTracker
@@ -96,6 +97,18 @@ from project_x_py.utils import (
 from project_x_py.utils.deprecation import deprecated
 
 logger = ProjectXLogger.get_logger(__name__)
+
+_ORDERBOOK_EVENT_TYPE_MAPPING = {
+    "orderbook_update": EventType.ORDERBOOK_UPDATE,
+    "market_depth": EventType.MARKET_DEPTH_UPDATE,
+    "depth_update": EventType.MARKET_DEPTH_UPDATE,
+    "quote_update": EventType.QUOTE_UPDATE,
+    "trade": EventType.TRADE_TICK,
+    "best_bid_change": EventType.QUOTE_UPDATE,
+    "best_ask_change": EventType.QUOTE_UPDATE,
+    "spread_change": EventType.MARKET_DEPTH_UPDATE,
+    "reset": EventType.ORDERBOOK_UPDATE,
+}
 
 
 class OrderBookBase(BaseStatisticsTracker):
@@ -715,7 +728,6 @@ class OrderBookBase(BaseStatisticsTracker):
         removal_version="5.0.0",
         replacement="TradingSuite.on(EventType.MARKET_DEPTH_UPDATE, callback)",
     )
-    @handle_errors("add callback", reraise=False)
     async def add_callback(self, event_type: str, callback: CallbackType) -> None:
         """
         Register a callback for orderbook events.
@@ -758,8 +770,11 @@ class OrderBookBase(BaseStatisticsTracker):
             ...     )
             >>> # Events automatically flow through EventBus
         """
+        mapped = _ORDERBOOK_EVENT_TYPE_MAPPING.get(event_type)
+        if mapped is None:
+            raise ValueError(f"Unknown event type: {event_type}")
         async with self._callback_lock:
-            # Deprecation warning handled by decorator
+            await self.event_bus.on(mapped, callback)
             logger.debug(
                 LogMessages.CALLBACK_REGISTERED,
                 extra={"event_type": event_type, "component": "orderbook"},
@@ -771,11 +786,13 @@ class OrderBookBase(BaseStatisticsTracker):
         removal_version="5.0.0",
         replacement="TradingSuite.off(EventType.MARKET_DEPTH_UPDATE, callback)",
     )
-    @handle_errors("remove callback", reraise=False)
     async def remove_callback(self, event_type: str, callback: CallbackType) -> None:
         """Remove a registered callback."""
+        mapped = _ORDERBOOK_EVENT_TYPE_MAPPING.get(event_type)
+        if mapped is None:
+            raise ValueError(f"Unknown event type: {event_type}")
         async with self._callback_lock:
-            # Deprecation warning handled by decorator
+            await self.event_bus.off(mapped, callback)
             logger.debug(
                 LogMessages.CALLBACK_REMOVED,
                 extra={"event_type": event_type, "component": "orderbook"},
@@ -798,21 +815,9 @@ class OrderBookBase(BaseStatisticsTracker):
             Callback errors are logged but do not raise exceptions to prevent
             disrupting the orderbook's operation.
         """
-        # Emit event through EventBus
-        from project_x_py.event_bus import EventType
-
-        # Map orderbook event types to EventType enum
-        event_mapping = {
-            "orderbook_update": EventType.ORDERBOOK_UPDATE,
-            "market_depth": EventType.MARKET_DEPTH_UPDATE,
-            "depth_update": EventType.MARKET_DEPTH_UPDATE,
-            "quote_update": EventType.QUOTE_UPDATE,
-            "trade": EventType.TRADE_TICK,
-        }
-
-        if event_type in event_mapping:
+        if event_type in _ORDERBOOK_EVENT_TYPE_MAPPING:
             await self.event_bus.emit(
-                event_mapping[event_type], data, source="OrderBook"
+                _ORDERBOOK_EVENT_TYPE_MAPPING[event_type], data, source="OrderBook"
             )
 
         # Legacy callbacks have been removed - use EventBus

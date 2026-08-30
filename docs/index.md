@@ -5,10 +5,10 @@
 [![License](https://img.shields.io/github/license/TexasCoding/project-x-py.svg)](https://github.com/TexasCoding/project-x-py/blob/main/LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://texascoding.github.io/project-x-py/)
 
-**project-x-py** is a high-performance **async Python SDK** for the [ProjectX Trading Platform](https://www.projectx.com/) Gateway API. This library enables developers to build sophisticated trading strategies and applications by providing comprehensive async access to futures trading operations, real-time market data, Level 2 orderbook analysis, and a complete technical analysis suite with 59+ TA-Lib compatible indicators including pattern recognition and chaos theory analysis.
+**project-x-py** is a high-performance **async Python SDK** for the [ProjectX Trading Platform](https://www.projectx.com/) Gateway API. This library enables developers to build sophisticated trading strategies and applications by providing comprehensive async access to futures trading operations, real-time market data, Level 2 orderbook analysis, and 64 named indicators (Polars implementations; **not** a full TA-Lib port).
 
-!!! note "Version 4.0.0 - TopstepX Gateway Revival"
-    **Latest Release**: The SDK is TopstepX-only, with official `api.topstepx.com` / `rtc.topstepx.com` defaults, native Gateway brackets, pysignalr realtime hubs, `OrderSubmissionUncertainError`, `EventType.FEED_STALE`, and `TradingSuite.export_stats()`. See the [v3 → v4 migration guide](migration/v3-to-v4.md).
+!!! note "Version 4.1.0"
+    **Latest Release**: TopstepX-only Gateway SDK (`api.topstepx.com` / `rtc.topstepx.com`) with native brackets, risk OCO and entry-order gating, stale-feed watchdog, `OrderSubmissionUncertainError`, and 64 named Polars indicators (not a full TA-Lib port). See the [v3 → v4 migration guide](migration/v3-to-v4.md).
 
 !!! note "Stable Production Release"
     This project maintains strict semantic versioning. v4.0.0 is a major release with documented breaking changes. Deprecation warnings are provided for at least 2 minor versions before removal.
@@ -93,9 +93,9 @@ asyncio.run(main())
 - Async historical OHLCV data with multiple timeframes
 - Real-time market data feeds via async WebSocket
 - **Level 2 orderbook analysis** with institutional-grade features
-- **59+ Technical Indicators** with TA-Lib compatibility (RSI, MACD, Bollinger Bands, Pattern Recognition, Lorenz Formula, etc.)
-- **Advanced market microstructure** analysis (iceberg detection, order flow, volume profile)
-- **Market Manipulation Detection**: 6 spoofing pattern types with regulatory compliance features
+- **64 named indicators** (Polars implementations; **not** a full TA-Lib port: RSI, MACD, Bollinger Bands, FVG, Order Block, Lorenz, etc.)
+- **Advanced market microstructure** analysis (`get_orderbook_snapshot`, iceberg detection, order flow, volume profile)
+- **Experimental spoofing heuristics** via `detect_spoofing()` (volume-change labels: `quote_stuffing`, `layering`, `momentum_ignition`, `flashing`, `pinging`, `order_manipulation`)
 - **100% Async Statistics System**: Health monitoring, multi-format export, component tracking
 - **Cross-Market Analysis**: Correlation matrices, spread calculations, sector rotation signals
 
@@ -120,7 +120,7 @@ asyncio.run(main())
 - Automatic retry with exponential backoff
 - Rate limit management
 - Comprehensive type safety (mypy compliant)
-- **Financial Precision**: Decimal type for exact calculations
+- **Financial Precision**: Order prices and risk sizing use `Decimal`; orderbook analytics still use float
 - **Advanced Memory Management**: Bounded buffers, automatic cleanup
 - **Performance Optimized**: 80% faster algorithms, O(N log N) complexity
 
@@ -157,13 +157,13 @@ mnq_context = suite["MNQ"]  # Access specific instrument
 
 **Real-time Data Processing**
 - **RealtimeDataManager**: Async WebSocket data processing
-- **OrderBook**: Level 2 market depth with spoofing detection
+- **OrderBook**: Level 2 market depth with iceberg detection and experimental spoofing heuristics
 - **Event System**: Unified EventBus for cross-component communication
 
 **Technical Analysis**
-- **59+ Indicators**: TA-Lib compatible with Polars DataFrames
+- **64 named indicators**: Polars implementations; not a full TA-Lib port
 - **Pattern Recognition**: Fair Value Gaps, Order Blocks, Waddah Attar, Lorenz Formula
-- **Advanced Patterns**: Iceberg detection, market manipulation
+- **Advanced Patterns**: Iceberg detection and experimental volume-change spoofing heuristics
 
 **Statistics & Monitoring (v3.3.0)**
 - **100% Async Architecture**: All statistics methods use async/await
@@ -184,7 +184,7 @@ mnq_context = suite["MNQ"]  # Access specific instrument
 - [Order Management](guide/orders.md) - Placing and managing orders
 - [Position Tracking](guide/positions.md) - Portfolio management
 - [Real-time Data](guide/realtime.md) - WebSocket streaming
-- [Technical Indicators](guide/indicators.md) - 59+ analysis tools
+- [Technical Indicators](guide/indicators.md) - 64 named indicators
 - [Risk Management](guide/risk.md) - Position sizing and limits
 - [Order Book](guide/orderbook.md) - Level 2 market depth
 
@@ -271,7 +271,7 @@ mnq_context = suite["MNQ"]  # Access specific instrument
 - **Fixed**: Order Manager module complete overhaul with protocol compliance
 - **Fixed**: TradingSuite duplicate subscription issues
 - **Added**: 100+ new comprehensive tests for edge cases
-- **Improved**: Complete test coverage with all 1,300+ tests passing
+- **Improved**: Complete test coverage with 3,000+ tests passing
 
 See the complete [changelog](changelog.md) for all version history.
 
