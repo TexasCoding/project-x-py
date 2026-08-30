@@ -38,7 +38,7 @@ async def test_suite_receives_events_from_all_instruments():
         mock_client.get_bars.return_value = MagicMock(is_empty=lambda: True)
 
         # Mock realtime client connection
-        mock_realtime.connect.return_value = None
+        mock_realtime.connect.return_value = True
         mock_realtime.is_connected.return_value = True
 
         suite = await TradingSuite.create(["MNQ", "NQ"], timeframes=["1min"])
@@ -91,7 +91,7 @@ async def test_instrument_context_has_event_methods():
         mock_client.get_bars.return_value = MagicMock(is_empty=lambda: True)
 
         # Mock realtime client connection
-        mock_realtime.connect.return_value = None
+        mock_realtime.connect.return_value = True
         mock_realtime.is_connected.return_value = True
 
         suite = await TradingSuite.create("MNQ", timeframes=["1min"])
@@ -147,7 +147,7 @@ async def test_wait_for_works_at_suite_level():
         mock_client.get_bars.return_value = MagicMock(is_empty=lambda: True)
 
         # Mock realtime client connection
-        mock_realtime.connect.return_value = None
+        mock_realtime.connect.return_value = True
         mock_realtime.is_connected.return_value = True
 
         suite = await TradingSuite.create(["MNQ", "NQ"], timeframes=["1min"])
@@ -198,7 +198,7 @@ async def test_wait_for_works_at_instrument_level():
         mock_client.get_bars.return_value = MagicMock(is_empty=lambda: True)
 
         # Mock realtime client connection
-        mock_realtime.connect.return_value = None
+        mock_realtime.connect.return_value = True
         mock_realtime.is_connected.return_value = True
 
         suite = await TradingSuite.create("MNQ", timeframes=["1min"])
@@ -251,7 +251,7 @@ async def test_event_filtering_by_instrument():
         mock_client.get_bars.return_value = MagicMock(is_empty=lambda: True)
 
         # Mock realtime client connection
-        mock_realtime.connect.return_value = None
+        mock_realtime.connect.return_value = True
         mock_realtime.is_connected.return_value = True
 
         suite = await TradingSuite.create(["MNQ", "NQ"], timeframes=["1min"])
@@ -311,7 +311,7 @@ async def test_suite_level_handler_receives_all_instruments():
         mock_client.get_bars.return_value = MagicMock(is_empty=lambda: True)
 
         # Mock realtime client connection
-        mock_realtime.connect.return_value = None
+        mock_realtime.connect.return_value = True
         mock_realtime.is_connected.return_value = True
 
         suite = await TradingSuite.create(["MNQ", "NQ", "ES"], timeframes=["1min"])

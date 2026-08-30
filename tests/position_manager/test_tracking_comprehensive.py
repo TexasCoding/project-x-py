@@ -296,7 +296,7 @@ class TestPositionDataProcessing:
             mock_pos.contractId = "MNQ"
             mock_pos.size = 2
             mock_pos.averagePrice = 18000.0
-            MockPosition.return_value = mock_pos
+            MockPosition.from_api.return_value = mock_pos
 
             await tracking_mixin._process_position_data(mock_position_data)
 
@@ -317,7 +317,7 @@ class TestPositionDataProcessing:
         with patch("project_x_py.position_manager.tracking.Position") as MockPosition:
             mock_pos = Mock()
             mock_pos.contractId = "MNQ"
-            MockPosition.return_value = mock_pos
+            MockPosition.from_api.return_value = mock_pos
 
             await tracking_mixin._process_position_data(wrapped)
 
@@ -342,7 +342,7 @@ class TestPositionDataProcessing:
             mock_pos.type = mock_position.type
             mock_pos.size = 5
             mock_pos.averagePrice = 18000.0
-            MockPosition.return_value = mock_pos
+            MockPosition.from_api.return_value = mock_pos
 
             await tracking_mixin._process_position_data(update_data)
 
@@ -492,7 +492,7 @@ class TestOrderSynchronization:
             mock_pos.type = 1
             mock_pos.size = 2
             mock_pos.averagePrice = 18000.0
-            MockPosition.return_value = mock_pos
+            MockPosition.from_api.return_value = mock_pos
 
             await tracking_mixin._process_position_data(mock_position_data)
 
@@ -510,7 +510,7 @@ class TestOrderSynchronization:
         with patch("project_x_py.position_manager.tracking.Position") as MockPosition:
             mock_pos = Mock()
             mock_pos.contractId = "MNQ"
-            MockPosition.return_value = mock_pos
+            MockPosition.from_api.return_value = mock_pos
 
             await tracking_mixin._process_position_data(mock_position_data)
 
@@ -549,7 +549,7 @@ class TestAlertIntegration:
             mock_pos.type = mock_position.type
             mock_pos.size = 5
             mock_pos.averagePrice = mock_position.averagePrice
-            MockPosition.return_value = mock_pos
+            MockPosition.from_api.return_value = mock_pos
 
             await tracking_mixin._process_position_data(update_data)
 
@@ -576,7 +576,7 @@ class TestEventBusIntegration:
             mock_pos.type = 1
             mock_pos.size = 2
             mock_pos.averagePrice = 18000.0
-            MockPosition.return_value = mock_pos
+            MockPosition.from_api.return_value = mock_pos
 
             await tracking_mixin._process_position_data(mock_position_data)
 
