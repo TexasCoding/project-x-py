@@ -104,6 +104,11 @@ class TestPositionOperations:
 
         assert result["success"] is True
         assert result["orderId"] == 54321
+        pm.project_x._make_request.assert_awaited_once_with(
+            "POST",
+            "/Position/partialCloseContract",
+            data={"accountId": 12345, "contractId": "NQ", "size": 3},
+        )
         # Position should still be tracked with reduced size
         assert pm.tracked_positions["NQ"].size == 7
         # Verify refresh_positions was called

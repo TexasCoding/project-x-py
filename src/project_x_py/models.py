@@ -228,7 +228,8 @@ class Order:
         creationTimestamp (str): When the order was created (ISO format)
         updateTimestamp (Optional[str]): When the order was last updated
         status (int): Order status code (OrderStatus enum):
-            0=None, 1=Open, 2=Filled, 3=Cancelled, 4=Expired, 5=Rejected, 6=Pending
+            0=None, 1=Open, 2=Filled, 3=Cancelled, 4=Expired, 5=Rejected,
+            6=Pending, 7=PendingCancellation, 8=Suspended
         type (int): Order type (OrderType enum):
             0=Unknown, 1=Limit, 2=Market, 3=StopLimit, 4=Stop, 5=TrailingStop, 6=JoinBid, 7=JoinAsk
         side (int): Order side (OrderSide enum): 0=Bid, 1=Ask
@@ -288,7 +289,12 @@ class Order:
     @property
     def is_working(self) -> bool:
         """Check if order is working (open or pending)."""
-        return self.status in (1, 6)  # OPEN or PENDING
+        return self.status in (
+            1,
+            6,
+            7,
+            8,
+        )  # OPEN, PENDING, PENDING_CANCELLATION, SUSPENDED
 
     @property
     def is_terminal(self) -> bool:
@@ -335,6 +341,8 @@ class Order:
             4: "EXPIRED",
             5: "REJECTED",
             6: "PENDING",
+            7: "PENDING_CANCELLATION",
+            8: "SUSPENDED",
         }
         return status_map.get(self.status, "UNKNOWN")
 

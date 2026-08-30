@@ -33,8 +33,8 @@ Example Usage:
             positions = await client.search_open_positions()
             for pos in positions:
                 print(f"Position: {pos.contractId}")
-                print(f"  Size: {pos.netPos}")
-                print(f"  Avg Price: ${pos.buyAvgPrice:.2f}")
+                print(f"  Size: {pos.size}")
+                print(f"  Avg Price: ${pos.averagePrice:.2f}")
                 print(f"  Unrealized P&L: ${pos.unrealizedPnl:.2f}")
 
             # Get recent trades (last 7 days)
@@ -49,7 +49,7 @@ Example Usage:
                 contracts[trade.contractId].append(trade)
 
             for contract_id, contract_trades in contracts.items():
-                total_volume = sum(abs(t.filledQty) for t in contract_trades)
+                total_volume = sum(abs(t.size) for t in contract_trades)
                 print(
                     f"{contract_id}: {len(contract_trades)} trades, volume: {total_volume}"
                 )
@@ -219,12 +219,12 @@ class TradingMixin:
             >>> for trade in trades:
             >>>     print(f"Trade ID: {trade.id}")
             >>>     print(f"  Contract: {trade.contractId}")
-            >>>     print(f"  Side: {'BUY' if trade.filledQty > 0 else 'SELL'}")
-            >>>     print(f"  Quantity: {abs(trade.filledQty)}")
+            >>>     print(f"  Side: {'BUY' if trade.side == 0 else 'SELL'}")
+            >>>     print(f"  Quantity: {abs(trade.size)}")
             >>>     print(f"  Price: ${trade.fillPrice:.2f}")
             >>>     print(f"  Commission: ${trade.commission:.2f}")
             >>>     print(f"  Time: {trade.fillTime}")
-            >>>     total_volume += abs(trade.filledQty)
+            >>>     total_volume += abs(trade.size)
             >>>     total_commission += trade.commission
             >>> print(f"\nSummary:")
             >>> print(f"Total trades: {len(trades)}")

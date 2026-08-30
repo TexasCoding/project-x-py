@@ -19,6 +19,31 @@ from project_x_py.models import (
 )
 
 
+class TestOrderStatusValues:
+    def test_gateway_order_status_includes_suspended(self):
+        from project_x_py.types.trading import OrderStatus
+
+        assert OrderStatus.EXPIRED == 4
+        assert OrderStatus.REJECTED == 5
+        assert OrderStatus.PENDING_CANCELLATION == 7
+        assert OrderStatus.SUSPENDED == 8
+        order = Order.from_api(
+            {
+                "id": 1,
+                "accountId": 1,
+                "contractId": "MNQ",
+                "creationTimestamp": "2024-01-01T00:00:00Z",
+                "updateTimestamp": None,
+                "status": 8,
+                "type": 4,
+                "side": 1,
+                "size": 1,
+            }
+        )
+        assert order.is_working is True
+        assert order.status_str == "SUSPENDED"
+
+
 class TestInstrumentAndAccount:
     def test_instrument_creation_defaults(self):
         inst = Instrument(

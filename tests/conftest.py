@@ -14,6 +14,14 @@ from project_x_py.models import Instrument, ProjectXConfig
 from project_x_py.utils.async_rate_limiter import RateLimiter
 
 
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Treat unmarked tests as unit tests so the quality-gate marker works."""
+    classified = {"unit", "integration", "slow", "realtime", "performance"}
+    for item in items:
+        if not classified.intersection(item.keywords):
+            item.add_marker(pytest.mark.unit)
+
+
 @pytest.fixture
 def mock_response():
     """Create a configurable mock response for API testing."""

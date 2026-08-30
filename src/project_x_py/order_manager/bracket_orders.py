@@ -83,7 +83,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
-from project_x_py.exceptions import ProjectXOrderError
+from project_x_py.exceptions import OrderSubmissionUncertainError, ProjectXOrderError
 from project_x_py.models import BracketOrderResponse, OrderPlaceResponse
 from project_x_py.utils.error_handler import retry_on_network_error
 
@@ -279,15 +279,17 @@ class BracketOrderMixin:
                     target_id = None
                 if stop_id is not None and target_id is not None:
                     break
-                await asyncio.sleep(0)
+                await asyncio.sleep(0.1)
 
             if stop_id is None or target_id is None:
                 logger.info(
                     "Native Gateway brackets placed but child orders were not "
-                    "uniquely resolved; falling back to client-side protection"
+                    "uniquely resolved; keeping the live entry without a "
+                    "second client-side place"
                 )
-                return None
 
+            # Gateway already accepted the entry. Never return None after
+            # a successful place — that caused a duplicate client-side entry.
             return BracketOrderResponse(
                 success=True,
                 entry_order_id=response.orderId,
@@ -301,6 +303,8 @@ class BracketOrderMixin:
                 target_response=None,
                 error_message=None,
             )
+        except OrderSubmissionUncertainError:
+            raise
         except Exception as e:
             logger.info(f"Native Gateway brackets unavailable, using client-side: {e}")
             return None

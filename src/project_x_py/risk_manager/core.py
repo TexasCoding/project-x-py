@@ -205,8 +205,19 @@ class RiskManager(BaseStatisticsTracker):
                     "Entry and stop loss prices cannot be equal"
                 )
 
-            # Basic position size calculation
-            position_size = int(risk_amount / price_diff)
+            # Dollar risk per contract. Futures tickValue is not $1/point.
+            if instrument is not None and float(instrument.tickSize) > 0:
+                ticks = Decimal(str(price_diff)) / Decimal(str(instrument.tickSize))
+                dollar_risk_per_contract = ticks * Decimal(str(instrument.tickValue))
+                if dollar_risk_per_contract <= 0:
+                    raise InvalidOrderParameters(
+                        "Instrument tickValue must be positive for position sizing"
+                    )
+                position_size = int(
+                    Decimal(str(risk_amount)) / dollar_risk_per_contract
+                )
+            else:
+                position_size = int(risk_amount / price_diff)
 
             # Apply Kelly criterion if enabled
             if (
@@ -942,15 +953,20 @@ class RiskManager(BaseStatisticsTracker):
                 )
 
                 if profit >= float(self.config.trailing_stop_trigger):
-                    # Adjust stop to trail
+                    # Adjust stop to trail — never move it against the position
                     new_stop = (
                         current_price - float(self.config.trailing_stop_distance)
                         if is_long
                         else current_price + float(self.config.trailing_stop_distance)
                     )
-
-                    await self.increment("trailing_stop_adjustments")
-                    await self.adjust_stops(current_pos, new_stop)
+                    current_stop = getattr(current_pos, "_trailing_stop_price", None)
+                    improves = current_stop is None or (
+                        new_stop > current_stop if is_long else new_stop < current_stop
+                    )
+                    if improves:
+                        current_pos._trailing_stop_price = new_stop  # type: ignore[attr-defined]
+                        await self.increment("trailing_stop_adjustments")
+                        await self.adjust_stops(current_pos, new_stop)
 
                 await asyncio.sleep(5)  # Check every 5 seconds
 

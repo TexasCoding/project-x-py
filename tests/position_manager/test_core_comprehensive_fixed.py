@@ -146,7 +146,9 @@ class TestPositionInitialization:
         assert manager.order_manager == mock_order_manager
 
     @pytest.mark.asyncio
-    async def test_initialize_loads_initial_positions(self, mock_client, sample_positions):
+    async def test_initialize_loads_initial_positions(
+        self, mock_client, sample_positions
+    ):
         """Test that initialization loads positions from API."""
         mock_client.search_open_positions.return_value = sample_positions
 
@@ -178,7 +180,9 @@ class TestPositionCaching:
     """Test position caching mechanisms."""
 
     @pytest.mark.asyncio
-    async def test_cache_used_in_realtime_mode(self, realtime_position_manager, sample_positions):
+    async def test_cache_used_in_realtime_mode(
+        self, realtime_position_manager, sample_positions
+    ):
         """Test that cache is used when realtime is enabled."""
         manager = realtime_position_manager
         manager.tracked_positions = {p.contractId: p for p in sample_positions}
@@ -193,7 +197,9 @@ class TestPositionCaching:
         assert position.contractId == "MNQ"
 
     @pytest.mark.asyncio
-    async def test_api_used_in_polling_mode(self, basic_position_manager, sample_positions):
+    async def test_api_used_in_polling_mode(
+        self, basic_position_manager, sample_positions
+    ):
         """Test that API is called when realtime is disabled."""
         manager = basic_position_manager
         manager.project_x.search_open_positions.return_value = sample_positions
@@ -211,21 +217,25 @@ class TestPositionCaching:
 
         # Add position to cache
         old_position = Position(
-            id=1, accountId=12345, contractId="MNQ",
+            id=1,
+            accountId=12345,
+            contractId="MNQ",
             type=1,  # PositionType.LONG
             size=1,
             averagePrice=18000.0,
-            creationTimestamp=datetime.now(UTC).isoformat()
+            creationTimestamp=datetime.now(UTC).isoformat(),
         )
         manager.tracked_positions["MNQ"] = old_position
 
         # Update with new position
         new_position = Position(
-            id=1, accountId=12345, contractId="MNQ",
+            id=1,
+            accountId=12345,
+            contractId="MNQ",
             type=1,  # PositionType.LONG
             size=2,  # Size changed
             averagePrice=18100.0,
-            creationTimestamp=datetime.now(UTC).isoformat()
+            creationTimestamp=datetime.now(UTC).isoformat(),
         )
 
         await manager.track_position_update(new_position)
@@ -235,16 +245,20 @@ class TestPositionCaching:
         assert manager.tracked_positions["MNQ"].averagePrice == 18100.0
 
     @pytest.mark.asyncio
-    async def test_cache_invalidation_on_position_close(self, realtime_position_manager):
+    async def test_cache_invalidation_on_position_close(
+        self, realtime_position_manager
+    ):
         """Test cache is properly invalidated when position closes."""
         manager = realtime_position_manager
 
         position = Position(
-            id=1, accountId=12345, contractId="MNQ",
+            id=1,
+            accountId=12345,
+            contractId="MNQ",
             type=1,  # PositionType.LONG
             size=2,
             averagePrice=18000.0,
-            creationTimestamp=datetime.now(UTC).isoformat()
+            creationTimestamp=datetime.now(UTC).isoformat(),
         )
         manager.tracked_positions["MNQ"] = position
 
@@ -266,18 +280,22 @@ class TestPositionFiltering:
 
         positions = [
             Position(
-                id=1, accountId=12345, contractId="MNQ",
+                id=1,
+                accountId=12345,
+                contractId="MNQ",
                 type=1,  # PositionType.LONG
                 size=1,
                 averagePrice=18000.0,
-                creationTimestamp=datetime.now(UTC).isoformat()
+                creationTimestamp=datetime.now(UTC).isoformat(),
             ),
             Position(
-                id=2, accountId=67890, contractId="ES",  # Different account
+                id=2,
+                accountId=67890,
+                contractId="ES",  # Different account
                 type=1,  # PositionType.LONG
                 size=1,
                 averagePrice=4500.0,
-                creationTimestamp=datetime.now(UTC).isoformat()
+                creationTimestamp=datetime.now(UTC).isoformat(),
             ),
         ]
         manager.project_x.search_open_positions.return_value = positions
@@ -295,18 +313,22 @@ class TestPositionFiltering:
 
         positions = [
             Position(
-                id=1, accountId=12345, contractId="MNQ",
+                id=1,
+                accountId=12345,
+                contractId="MNQ",
                 type=1,  # PositionType.LONG
                 size=2,
                 averagePrice=18000.0,
-                creationTimestamp=datetime.now(UTC).isoformat()
+                creationTimestamp=datetime.now(UTC).isoformat(),
             ),
             Position(
-                id=2, accountId=12345, contractId="ES",
+                id=2,
+                accountId=12345,
+                contractId="ES",
                 type=0,  # PositionType.UNDEFINED
                 size=0,  # Zero size
                 averagePrice=0.0,
-                creationTimestamp=datetime.now(UTC).isoformat()
+                creationTimestamp=datetime.now(UTC).isoformat(),
             ),
         ]
         manager.project_x.search_open_positions.return_value = positions
@@ -324,18 +346,22 @@ class TestPositionFiltering:
 
         positions = [
             Position(
-                id=1, accountId=12345, contractId="LONG_POS",
+                id=1,
+                accountId=12345,
+                contractId="LONG_POS",
                 type=0,  # Type not set
                 size=5,  # Positive = LONG
                 averagePrice=100.0,
-                creationTimestamp=datetime.now(UTC).isoformat()
+                creationTimestamp=datetime.now(UTC).isoformat(),
             ),
             Position(
-                id=2, accountId=12345, contractId="SHORT_POS",
+                id=2,
+                accountId=12345,
+                contractId="SHORT_POS",
                 type=0,  # Type not set
                 size=3,  # Size is always positive
                 averagePrice=200.0,
-                creationTimestamp=datetime.now(UTC).isoformat()
+                creationTimestamp=datetime.now(UTC).isoformat(),
             ),
         ]
 
@@ -359,7 +385,9 @@ class TestErrorRecovery:
         manager = basic_position_manager
 
         # Simulate connection error
-        manager.project_x.search_open_positions.side_effect = ProjectXConnectionError("Connection lost")
+        manager.project_x.search_open_positions.side_effect = ProjectXConnectionError(
+            "Connection lost"
+        )
 
         result = await manager.refresh_positions()
 
@@ -372,12 +400,13 @@ class TestErrorRecovery:
         """Test handling of authentication errors."""
         manager = basic_position_manager
 
-        manager.project_x.search_open_positions.side_effect = ProjectXAuthenticationError("Token expired")
+        manager.project_x.search_open_positions.side_effect = (
+            ProjectXAuthenticationError("Token expired")
+        )
 
-        result = await manager.get_all_positions()
+        with pytest.raises(ProjectXAuthenticationError):
+            await manager.get_all_positions()
 
-        # Should return empty list on auth error
-        assert result == []
         assert manager.stats["errors"] > 0
 
     @pytest.mark.asyncio
@@ -405,22 +434,26 @@ class TestErrorRecovery:
 
         # Add initial position
         position = Position(
-            id=1, accountId=12345, contractId="MNQ",
+            id=1,
+            accountId=12345,
+            contractId="MNQ",
             type=1,  # PositionType.LONG
             size=1,
             averagePrice=18000.0,
-            creationTimestamp=datetime.now(UTC).isoformat()
+            creationTimestamp=datetime.now(UTC).isoformat(),
         )
         manager.tracked_positions["MNQ"] = position
 
         # Simulate concurrent updates
         async def update_position():
             new_pos = Position(
-                id=1, accountId=12345, contractId="MNQ",
+                id=1,
+                accountId=12345,
+                contractId="MNQ",
                 type=1,  # PositionType.LONG
                 size=2,
                 averagePrice=18100.0,
-                creationTimestamp=datetime.now(UTC).isoformat()
+                creationTimestamp=datetime.now(UTC).isoformat(),
             )
             await manager.track_position_update(new_pos)
 
@@ -453,23 +486,26 @@ class TestRiskCalculations:
         size = await manager.calculate_position_size(
             risk_amount=1000.0,  # $1000 risk
             entry_price=18000.0,
-            stop_price=17900.0  # $100 stop distance
+            stop_price=17900.0,  # $100 stop distance
         )
 
         # Should calculate correct size: risk / stop_distance
         assert size == 10  # $1000 / $100 = 10 contracts
 
     @pytest.mark.asyncio
-    async def test_risk_metrics_calculation(self, basic_position_manager, sample_positions):
+    async def test_risk_metrics_calculation(
+        self, basic_position_manager, sample_positions
+    ):
         """Test calculation of risk metrics."""
         manager = basic_position_manager
         manager.tracked_positions = {p.contractId: p for p in sample_positions}
 
         # Mock current prices
-        with patch.object(manager, "_calculate_current_prices", return_value={
-            "MNQ": 18100.0,
-            "ES": 4480.0
-        }):
+        with patch.object(
+            manager,
+            "_calculate_current_prices",
+            return_value={"MNQ": 18100.0, "ES": 4480.0},
+        ):
             metrics = await manager.get_risk_metrics()
 
         assert isinstance(metrics, dict)  # RiskAnalysisResponse is a TypedDict
@@ -490,7 +526,7 @@ class TestRiskCalculations:
         size = await manager.calculate_position_size(
             risk_amount=1000.0,
             entry_price=18000.0,
-            stop_price=18000.0  # Same as entry
+            stop_price=18000.0,  # Same as entry
         )
 
         # Should return 0 or handle gracefully
@@ -507,11 +543,13 @@ class TestStatisticsTracking:
 
         # Track position lifecycle
         position = Position(
-            id=1, accountId=12345, contractId="MNQ",
+            id=1,
+            accountId=12345,
+            contractId="MNQ",
             type=1,  # PositionType.LONG
             size=2,
             averagePrice=18000.0,
-            creationTimestamp=datetime.now(UTC).isoformat()
+            creationTimestamp=datetime.now(UTC).isoformat(),
         )
 
         await manager.track_position_opened(position)
@@ -523,7 +561,9 @@ class TestStatisticsTracking:
         assert manager.stats["total_pnl"] == 200.0
 
     @pytest.mark.asyncio
-    async def test_memory_stats_reporting(self, basic_position_manager, sample_positions):
+    async def test_memory_stats_reporting(
+        self, basic_position_manager, sample_positions
+    ):
         """Test memory statistics reporting."""
         manager = basic_position_manager
         manager.tracked_positions = {p.contractId: p for p in sample_positions}
@@ -577,11 +617,13 @@ class TestIntegrationScenarios:
         await manager.initialize(order_manager=mock_order_manager)
 
         position = Position(
-            id=1, accountId=12345, contractId="MNQ",
+            id=1,
+            accountId=12345,
+            contractId="MNQ",
             type=1,  # PositionType.LONG
             size=2,
             averagePrice=18000.0,
-            creationTimestamp=datetime.now(UTC).isoformat()
+            creationTimestamp=datetime.now(UTC).isoformat(),
         )
 
         await manager.track_position_opened(position)
@@ -591,7 +633,9 @@ class TestIntegrationScenarios:
             mock_order_manager.sync_orders_with_position.assert_called()
 
     @pytest.mark.asyncio
-    async def test_realtime_callback_registration(self, mock_client, mock_realtime_client):
+    async def test_realtime_callback_registration(
+        self, mock_client, mock_realtime_client
+    ):
         """Test proper registration of realtime callbacks."""
         event_bus = EventBus()
         manager = PositionManager(mock_client, event_bus)
@@ -606,13 +650,14 @@ class TestIntegrationScenarios:
         assert len(calls) > 0
 
     @pytest.mark.asyncio
-    async def test_cleanup_releases_resources(self, mock_client, mock_realtime_client, mock_order_manager):
+    async def test_cleanup_releases_resources(
+        self, mock_client, mock_realtime_client, mock_order_manager
+    ):
         """Test cleanup properly releases all resources."""
         event_bus = EventBus()
         manager = PositionManager(mock_client, event_bus)
         await manager.initialize(
-            realtime_client=mock_realtime_client,
-            order_manager=mock_order_manager
+            realtime_client=mock_realtime_client, order_manager=mock_order_manager
         )
 
         # Add some data
@@ -637,11 +682,13 @@ class TestEdgeCases:
         manager = basic_position_manager
 
         position = Position(
-            id=1, accountId=12345, contractId="MNQ",
+            id=1,
+            accountId=12345,
+            contractId="MNQ",
             type=1,  # PositionType.LONG
             size=1,
             averagePrice=18000.0,
-            creationTimestamp=datetime.now(UTC).isoformat()
+            creationTimestamp=datetime.now(UTC).isoformat(),
         )
 
         # Track same position twice
@@ -658,11 +705,13 @@ class TestEdgeCases:
         manager = basic_position_manager
 
         position = Position(
-            id=1, accountId=12345, contractId="MNQ",
+            id=1,
+            accountId=12345,
+            contractId="MNQ",
             type=1,  # PositionType.LONG
             size=2,
             averagePrice=18000.0,
-            creationTimestamp=datetime.now(UTC).isoformat()
+            creationTimestamp=datetime.now(UTC).isoformat(),
         )
 
         await manager.track_position_closed(position, pnl=-500.0)
@@ -696,7 +745,7 @@ class TestEdgeCases:
             type=1,  # PositionType.LONG
             size=100000,  # Very large size
             averagePrice=999999.99,  # Very high price
-            creationTimestamp=datetime.now(UTC).isoformat()
+            creationTimestamp=datetime.now(UTC).isoformat(),
         )
 
         await manager.track_position_opened(position)
@@ -716,7 +765,7 @@ class TestEdgeCases:
             type=1,  # PositionType.LONG
             size=1,
             averagePrice=18000.0,
-            creationTimestamp=None  # No timestamp
+            creationTimestamp=None,  # No timestamp
         )
 
         # Should handle gracefully

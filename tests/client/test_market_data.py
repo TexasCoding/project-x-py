@@ -52,6 +52,38 @@ class TestMarketData:
                 assert "MGC" in client._opt_instrument_cache
 
     @pytest.mark.asyncio
+    async def test_get_instrument_uses_search_by_id(self, initialized_client):
+        """Full contract IDs must call POST /Contract/searchById."""
+        from unittest.mock import AsyncMock
+
+        initialized_client._authenticated = True
+        initialized_client.token_expiry = datetime.datetime.now(
+            pytz.UTC
+        ) + datetime.timedelta(hours=1)
+        initialized_client._ensure_authenticated = AsyncMock(return_value=None)
+        initialized_client.get_cached_instrument = lambda _symbol: None
+        initialized_client._make_request = AsyncMock(
+            return_value={
+                "success": True,
+                "contract": {
+                    "id": "CON.F.US.MNQ.U25",
+                    "name": "MNQU25",
+                    "description": "Micro Nasdaq",
+                    "tickSize": 0.25,
+                    "tickValue": 0.5,
+                    "activeContract": True,
+                    "symbolId": "F.US.MNQ",
+                },
+            }
+        )
+        instrument = await initialized_client.get_instrument("CON.F.US.MNQ.U25")
+        assert instrument.id == "CON.F.US.MNQ.U25"
+        assert (
+            initialized_client._make_request.await_args.args[1]
+            == "/Contract/searchById"
+        )
+
+    @pytest.mark.asyncio
     async def test_get_instrument_from_cache(
         self, mock_httpx_client, mock_auth_response, mock_instrument
     ):
@@ -276,7 +308,7 @@ class TestMarketData:
                 assert bars["timestamp"].dtype.time_zone == "America/Chicago"
 
                 # Should cache the result
-                cache_key = "MGC_5_5_2_True"
+                cache_key = "MGC_5_5_2_True_False"
                 assert cache_key in client._opt_market_data_cache
 
     @pytest.mark.asyncio
@@ -378,7 +410,7 @@ class TestMarketData:
                     }
                 )
 
-                cache_key = "MGC_5_5_2_True"
+                cache_key = "MGC_5_5_2_True_False"
                 client.cache_market_data(cache_key, test_bars)
 
                 # Should get from cache without API call
@@ -551,8 +583,8 @@ class TestMarketData:
                 assert not hourly_bars.is_empty()
 
                 # Different cache keys should be used
-                assert "MGC_30_1_4_True" in client._opt_market_data_cache
-                assert "MGC_7_1_3_True" in client._opt_market_data_cache
+                assert "MGC_30_1_4_True_False" in client._opt_market_data_cache
+                assert "MGC_7_1_3_True_False" in client._opt_market_data_cache
 
     @pytest.mark.asyncio
     async def test_get_bars_with_start_and_end_time(
@@ -603,7 +635,9 @@ class TestMarketData:
                 market_tz = pytz.timezone("America/Chicago")
                 start_tz = market_tz.localize(start)
                 end_tz = market_tz.localize(end)
-                cache_key = f"MGC_{start_tz.isoformat()}_{end_tz.isoformat()}_15_2_True"
+                cache_key = (
+                    f"MGC_{start_tz.isoformat()}_{end_tz.isoformat()}_15_2_True_False"
+                )
                 assert cache_key in client._opt_market_data_cache
 
     @pytest.mark.asyncio
@@ -736,7 +770,7 @@ class TestMarketData:
                 assert "timestamp" in bars.columns
 
                 # Cache key should use the same timezone as provided (Chicago)
-                cache_key = f"MGC_{start.isoformat()}_{end.isoformat()}_30_2_True"
+                cache_key = f"MGC_{start.isoformat()}_{end.isoformat()}_30_2_True_False"
                 assert cache_key in client._opt_market_data_cache
 
     @pytest.mark.asyncio
@@ -788,9 +822,9 @@ class TestMarketData:
                 start_tz = market_tz.localize(start)
                 end_tz = market_tz.localize(end)
                 time_based_key = (
-                    f"MGC_{start_tz.isoformat()}_{end_tz.isoformat()}_15_2_True"
+                    f"MGC_{start_tz.isoformat()}_{end_tz.isoformat()}_15_2_True_False"
                 )
-                days_based_key = "MGC_100_15_2_True"
+                days_based_key = "MGC_100_15_2_True_False"
 
                 assert time_based_key in client._opt_market_data_cache
                 assert days_based_key not in client._opt_market_data_cache

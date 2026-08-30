@@ -84,7 +84,7 @@ class TestClientIntegration:
         assert "open" in bars.columns
 
         # Step 4: Verify cache is populated
-        cache_key = "MGC_5_5_2_True"
+        cache_key = "MGC_5_5_2_True_False"
         assert cache_key in client._opt_market_data_cache
 
     @pytest.mark.asyncio

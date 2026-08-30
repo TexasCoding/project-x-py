@@ -107,6 +107,8 @@ class AuthenticationMixin:
         when a token is within 5 minutes of expiration).
         """
         if self._should_refresh_token():
+            if await self.validate_session():
+                return
             await self.authenticate()
 
     def _should_refresh_token(self: "ProjectXClientProtocol") -> bool:
@@ -129,6 +131,54 @@ class AuthenticationMixin:
         # Refresh if token expires in less than 5 minutes
         buffer_time = timedelta(minutes=5)
         return datetime.datetime.now(pytz.UTC) >= (self.token_expiry - buffer_time)
+
+    async def validate_session(self: "ProjectXClientProtocol") -> bool:
+        """Refresh the JWT via POST /Auth/validate when the current session is valid.
+
+        Returns:
+            True if the session is valid (and ``newToken`` was applied when present).
+        """
+        if not self.session_token:
+            return False
+        try:
+            response = await self._make_request("POST", "/Auth/validate")
+        except Exception as e:
+            logger.debug("Auth/validate failed: %s", e)
+            return False
+        if not isinstance(response, dict) or not response.get("success"):
+            return False
+        new_token = response.get("newToken") or response.get("token")
+        if isinstance(new_token, str) and new_token:
+            self.session_token = new_token
+            self.headers["Authorization"] = f"Bearer {self.session_token}"
+            try:
+                token_parts = self.session_token.split(".")
+                if len(token_parts) >= 2:
+                    token_payload = token_parts[1]
+                    token_payload += "=" * (4 - len(token_payload) % 4)
+                    decoded = base64.urlsafe_b64decode(token_payload)
+                    token_data = orjson.loads(decoded)
+                    self.token_expiry = datetime.datetime.fromtimestamp(
+                        token_data["exp"], tz=pytz.UTC
+                    )
+            except Exception as e:
+                logger.debug("Could not parse refreshed JWT expiry: %s", e)
+        return True
+
+    async def logout(self: "ProjectXClientProtocol") -> bool:
+        """End the Gateway session via POST /Auth/logout."""
+        try:
+            if self.session_token:
+                await self._make_request("POST", "/Auth/logout")
+        except Exception as e:
+            logger.debug("Auth/logout failed: %s", e)
+            return False
+        finally:
+            self.session_token = ""
+            self._authenticated = False
+            self.token_expiry = None
+            self.headers.pop("Authorization", None)
+        return True
 
     @handle_errors("authenticate")
     async def authenticate(self: "ProjectXClientProtocol") -> None:
@@ -300,4 +350,4 @@ class AuthenticationMixin:
             return []
 
         accounts_data = response.get("accounts", [])
-        return [Account(**acc) for acc in accounts_data]
+        return [Account.from_api(acc) for acc in accounts_data]

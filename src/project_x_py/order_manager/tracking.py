@@ -1544,19 +1544,10 @@ class OrderTrackingMixin:
             is_filled = False
         finally:
             # Clean up the event handlers
-            if hasattr(self.event_bus, "remove_callback"):
-                await self.event_bus.remove_callback(
-                    EventType.ORDER_FILLED, fill_handler
-                )
-                await self.event_bus.remove_callback(
-                    EventType.ORDER_CANCELLED, terminal_handler
-                )
-                await self.event_bus.remove_callback(
-                    EventType.ORDER_REJECTED, terminal_handler
-                )
-                await self.event_bus.remove_callback(
-                    EventType.ORDER_EXPIRED, terminal_handler
-                )
+            await self.event_bus.off(EventType.ORDER_FILLED, fill_handler)
+            await self.event_bus.off(EventType.ORDER_CANCELLED, terminal_handler)
+            await self.event_bus.off(EventType.ORDER_REJECTED, terminal_handler)
+            await self.event_bus.off(EventType.ORDER_EXPIRED, terminal_handler)
 
         return is_filled
 

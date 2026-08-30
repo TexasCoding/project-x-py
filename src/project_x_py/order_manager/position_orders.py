@@ -80,7 +80,7 @@ See Also:
 """
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from project_x_py.exceptions import ProjectXOrderError
 from project_x_py.models import OrderPlaceResponse
@@ -90,6 +90,40 @@ if TYPE_CHECKING:
     from project_x_py.types import OrderManagerProtocol
 
 logger = logging.getLogger(__name__)
+
+_NESTED_ORDER_KEYS = ("entry_orders", "stop_orders", "target_orders")
+
+
+def _iter_tracked_position_orders(
+    position_orders: dict[str, Any],
+) -> list[tuple[Any, dict[str, Any]]]:
+    """Yield (order_id, info) from nested production tracking or the flat test map."""
+    if any(key in position_orders for key in _NESTED_ORDER_KEYS):
+        items: list[tuple[Any, dict[str, Any]]] = []
+        for list_key, order_type in (
+            ("entry_orders", "entry"),
+            ("stop_orders", "stop"),
+            ("target_orders", "target"),
+        ):
+            for oid in position_orders.get(list_key, []) or []:
+                items.append((oid, {"type": order_type, "status": OrderStatus.OPEN}))
+        return items
+    return [
+        (order_id, order_info)
+        for order_id, order_info in position_orders.items()
+        if isinstance(order_info, dict)
+    ]
+
+
+def _remove_tracked_order(position_orders: dict[str, Any], order_id: Any) -> None:
+    """Remove an order id from nested lists or a flat tracking map."""
+    if any(key in position_orders for key in _NESTED_ORDER_KEYS):
+        for list_key in _NESTED_ORDER_KEYS:
+            orders = position_orders.get(list_key)
+            if isinstance(orders, list) and order_id in orders:
+                orders.remove(order_id)
+        return
+    position_orders.pop(order_id, None)
 
 
 class PositionOrderMixin:
@@ -510,22 +544,16 @@ class PositionOrderMixin:
 
         cancelled_orders: list[str] = []
 
-        # The test sets up position_orders as a flat dict of order_id -> order_info
-        for order_id, order_info in list(position_orders.items()):
+        for order_id, order_info in list(
+            _iter_tracked_position_orders(position_orders)
+        ):
             # Skip if filtering by type and this doesn't match
             if normalized_types is not None:
-                # Check if order_info is a dict (defensive for tests)
-                if not isinstance(order_info, dict):  # type: ignore[unreachable]
-                    continue
-                order_type = order_info.get("type")  # type: ignore[unreachable]
+                order_type = order_info.get("type")
                 if order_type not in normalized_types:
                     continue
 
-            # Skip already filled or cancelled orders
-            # Defensive check for tests that might pass non-dict values
-            if not isinstance(order_info, dict):  # type: ignore[unreachable]
-                continue
-            status = order_info.get("status")  # type: ignore[unreachable]
+            status = order_info.get("status")
             if status in [OrderStatus.FILLED, OrderStatus.CANCELLED]:
                 continue
 
@@ -538,8 +566,7 @@ class PositionOrderMixin:
                 success = await self.cancel_order(oid, account_id)
                 if success:
                     cancelled_orders.append(order_id)
-                    # Remove from position_orders
-                    del position_orders[order_id]
+                    _remove_tracked_order(position_orders, order_id)
                     logger.debug(f"Successfully cancelled order {order_id}")
                 else:
                     logger.warning(
@@ -590,12 +617,8 @@ class PositionOrderMixin:
         updated_orders: list[str] = []
 
         # Update all open orders to new size
-        for order_id, order_info in position_orders.items():
-            # Defensive check for tests that might pass non-dict values
-            if not isinstance(order_info, dict):  # type: ignore[unreachable]
-                continue
-            # Skip non-open orders
-            if order_info.get("status") != OrderStatus.OPEN:  # type: ignore[unreachable]
+        for order_id, order_info in _iter_tracked_position_orders(position_orders):
+            if order_info.get("status") != OrderStatus.OPEN:
                 continue
 
             try:
@@ -610,11 +633,7 @@ class PositionOrderMixin:
                 )
                 if success:
                     updated_orders.append(order_id)
-                    # Update the stored order info if it's a dict
-                    if isinstance(order_info, dict):
-                        # Type assertion for type checker
-                        order_dict = cast(dict[str, Any], order_info)
-                        order_dict["size"] = new_size
+                    order_info["size"] = new_size
                     logger.debug(f"Updated order {order_id} size to {new_size}")
             except Exception as e:
                 logger.error(f"Error updating order {order_id}: {e}")

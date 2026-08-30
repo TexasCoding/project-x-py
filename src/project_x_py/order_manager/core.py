@@ -549,10 +549,12 @@ class OrderManager(
                 "trailPrice": float(aligned_trail_price)
                 if aligned_trail_price is not None
                 else None,
-                "linkedOrderId": linked_order_id,
             }
 
-            # Only include customTag if it's provided and not None/empty
+            # Only include unofficial/optional fields when set. PlaceOrderRequest
+            # does not list linkedOrderId; sending null can be rejected.
+            if linked_order_id is not None:
+                payload["linkedOrderId"] = linked_order_id
             if custom_tag:
                 payload["customTag"] = custom_tag
             if stop_loss_bracket:
@@ -651,34 +653,34 @@ class OrderManager(
                 if size > self.stats.get("largest_order", 0):
                     await self.set_gauge("largest_order", size)
 
-                self.logger.info(
-                    LogMessages.ORDER_PLACED,
-                    extra={
-                        "order_id": result.orderId,
-                        "contract_id": contract_id,
-                        "side": side,
-                        "size": size,
-                    },
-                )
+            self.logger.info(
+                LogMessages.ORDER_PLACED,
+                extra={
+                    "order_id": result.orderId,
+                    "contract_id": contract_id,
+                    "side": side,
+                    "size": size,
+                },
+            )
 
-                # Emit order placed event
-                await self._trigger_callbacks(
-                    "order_placed",
-                    {
-                        "order_id": result.orderId,
-                        "contract_id": contract_id,
-                        "order_type": order_type,
-                        "side": side,
-                        "size": size,
-                        "limit_price": aligned_limit_price,
-                        "stop_price": aligned_stop_price,
-                        "trail_price": aligned_trail_price,
-                        "custom_tag": custom_tag,
-                        "response": result,
-                    },
-                )
+            # Emit after releasing order_lock so handlers can search/cancel.
+            await self._trigger_callbacks(
+                "order_placed",
+                {
+                    "order_id": result.orderId,
+                    "contract_id": contract_id,
+                    "order_type": order_type,
+                    "side": side,
+                    "size": size,
+                    "limit_price": aligned_limit_price,
+                    "stop_price": aligned_stop_price,
+                    "trail_price": aligned_trail_price,
+                    "custom_tag": custom_tag,
+                    "response": result,
+                },
+            )
 
-                return result
+            return result
 
     @handle_errors("search open orders")
     async def search_open_orders(
@@ -700,20 +702,20 @@ class OrderManager(
         if not self.project_x.account_info:
             raise ProjectXOrderError(ErrorMessages.ORDER_NO_ACCOUNT)
 
-        # Use provided account_id or default to current account
+        # Use provided account_id or default to current account.
+        # Official SearchOpenOrderRequest is accountId only — filter locally.
         if account_id is not None:
             params = {"accountId": account_id}
         else:
             params = {"accountId": self.project_x.account_info.id}
 
+        filter_contract_id: str | None = None
         if contract_id:
-            # Resolve contract
             resolved = await resolve_contract_id(contract_id, self.project_x)
             if resolved and resolved.get("id"):
-                params["contractId"] = resolved["id"]
-
-        if side is not None:
-            params["side"] = side
+                filter_contract_id = resolved["id"]
+            else:
+                filter_contract_id = contract_id
 
         # Retry logic for network failures
         max_retries = 3
@@ -762,6 +764,13 @@ class OrderManager(
                 )
                 continue
 
+        if filter_contract_id is not None:
+            open_orders = [
+                order for order in open_orders if order.contractId == filter_contract_id
+            ]
+        if side is not None:
+            open_orders = [order for order in open_orders if order.side == side]
+
         return open_orders
 
     @handle_errors("search orders")
@@ -796,10 +805,13 @@ class OrderManager(
             "endTimestamp": end_timestamp.isoformat(),
         }
 
+        filter_contract_id: str | None = None
         if contract_id:
             resolved = await resolve_contract_id(contract_id, self.project_x)
             if resolved and resolved.get("id"):
-                payload["contractId"] = resolved["id"]
+                filter_contract_id = resolved["id"]
+            else:
+                filter_contract_id = contract_id
 
         response = await self.project_x._make_request(
             "POST", "/Order/search", data=payload
@@ -828,6 +840,65 @@ class OrderManager(
                 )
                 continue
 
+        if filter_contract_id is not None:
+            orders = [
+                order for order in orders if order.contractId == filter_contract_id
+            ]
+
+        return orders
+
+    async def query_orders(
+        self,
+        statuses: list[int] | None = None,
+        contract_id: str | None = None,
+        page_size: int = 50,
+        page_offset: int = 0,
+        include_total_count: bool = False,
+        account_id: int | None = None,
+    ) -> list[Order]:
+        """Paginated order search via POST /Order/v2/query.
+
+        Use this to include Suspended bracket children that ``search_open_orders``
+        omits (Gateway searchOpen is Open status only).
+        """
+        if account_id is None:
+            if not self.project_x.account_info:
+                await self.project_x.authenticate()
+            if not self.project_x.account_info:
+                raise ProjectXOrderError(ErrorMessages.ORDER_NO_ACCOUNT)
+            account_id = self.project_x.account_info.id
+
+        order_filter: dict[str, Any] = {"accountId": account_id}
+        if statuses:
+            order_filter["statuses"] = statuses
+        if contract_id:
+            order_filter["contractId"] = contract_id
+
+        payload: dict[str, Any] = {
+            "filter": order_filter,
+            "pageSize": page_size,
+            "pageOffset": page_offset,
+            "includeTotalCount": include_total_count,
+        }
+        response = await self.project_x._make_request(
+            "POST", "/Order/v2/query", data=payload
+        )
+        if not isinstance(response, dict) or not response.get("success", False):
+            error_msg = (
+                response.get("errorMessage", ErrorMessages.ORDER_SEARCH_FAILED)
+                if isinstance(response, dict)
+                else ErrorMessages.ORDER_SEARCH_FAILED
+            )
+            raise ProjectXOrderError(error_msg)
+        orders: list[Order] = []
+        for order_data in response.get("orders", []) or []:
+            try:
+                orders.append(Order.from_api(order_data))
+            except Exception as e:
+                self.logger.warning(
+                    "Failed to parse order",
+                    extra={"error": str(e), "order_data": order_data},
+                )
         return orders
 
     async def _check_circuit_breaker(self) -> bool:
@@ -1015,6 +1086,28 @@ class OrderManager(
                 except Exception as e:
                     self.logger.debug(f"Failed to parse cached order data: {e}")
 
+        # Official single-order lookup
+        try:
+            if self.project_x.account_info:
+                response = await self.project_x._make_request(
+                    "POST",
+                    "/Order/searchById",
+                    data={
+                        "accountId": self.project_x.account_info.id,
+                        "orderId": order_id,
+                    },
+                )
+                if isinstance(response, dict) and response.get("success"):
+                    order_data = response.get("order")
+                    if isinstance(order_data, dict):
+                        order = Order.from_api(order_data)
+                        async with self.order_lock:
+                            self.tracked_orders[order_id_str] = order_data
+                            self.order_status_cache[order_id_str] = order.status
+                        return order
+        except Exception as e:
+            self.logger.debug(f"Failed Order/searchById for {order_id}: {e}")
+
         # Fallback to open order search
         try:
             orders = await self.search_open_orders()
@@ -1139,6 +1232,7 @@ class OrderManager(
         limit_price: float | None = None,
         stop_price: float | None = None,
         size: int | None = None,
+        trail_price: float | None = None,
     ) -> bool:
         """
         Modify an existing order.
@@ -1148,6 +1242,7 @@ class OrderManager(
             limit_price: New limit price (optional)
             stop_price: New stop price (optional)
             size: New order size (optional)
+            trail_price: New trail price for trailing stops (optional)
 
         Returns:
             True if modification successful
@@ -1194,6 +1289,16 @@ class OrderManager(
                     )
                     stop_price = aligned_stop
 
+            if trail_price is not None:
+                aligned_trail = await align_price_to_tick_size(
+                    trail_price, contract_id, self.project_x
+                )
+                if aligned_trail is not None and aligned_trail != trail_price:
+                    self.logger.info(
+                        f"Trail price aligned from {trail_price} to {aligned_trail}"
+                    )
+                    trail_price = aligned_trail
+
             # Convert prices to Decimal for precision, then align to tick size
             decimal_limit = (
                 Decimal(str(limit_price)) if limit_price is not None else None
@@ -1227,6 +1332,8 @@ class OrderManager(
                 payload["stopPrice"] = aligned_stop
             if size is not None:
                 payload["size"] = size
+            if trail_price is not None:
+                payload["trailPrice"] = trail_price
 
             if len(payload) <= 2:  # Only accountId and orderId
                 self.logger.info("No changes specified for order modification")
@@ -1345,8 +1452,6 @@ class OrderManager(
                     return set()
                 account_id = self.project_x.account_info.id
             payload: dict[str, Any] = {"accountId": account_id}
-            if contract_id:
-                payload["contractId"] = contract_id
             response = await self.project_x._make_request(
                 "POST", "/Order/searchOpen", data=payload
             )
@@ -1354,11 +1459,14 @@ class OrderManager(
                 return set()
             ids: set[int] = set()
             for order_data in response.get("orders", []):
-                if isinstance(order_data, dict) and order_data.get("id") is not None:
-                    try:
-                        ids.add(int(order_data["id"]))
-                    except (TypeError, ValueError):
-                        continue
+                if not isinstance(order_data, dict) or order_data.get("id") is None:
+                    continue
+                if contract_id and order_data.get("contractId") != contract_id:
+                    continue
+                try:
+                    ids.add(int(order_data["id"]))
+                except (TypeError, ValueError):
+                    continue
             return ids
         except Exception as e:
             self.logger.debug(f"Failed to collect raw open order ids: {e}")

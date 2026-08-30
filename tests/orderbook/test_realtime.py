@@ -26,6 +26,7 @@ def mock_orderbook_base():
     ob = MagicMock(spec=OrderBookBase)
     # Create a timezone object that works with both datetime.now() and has .zone for Polars
     import datetime
+
     class UTCTimezone(datetime.tzinfo):
         def __init__(self):
             self.zone = "UTC"
@@ -44,39 +45,47 @@ def mock_orderbook_base():
     ob.instrument = "MNQ"
 
     # Initialize empty orderbook DataFrames
-    ob.orderbook_bids = pl.DataFrame({
-        "price": [],
-        "volume": [],
-        "timestamp": [],
-    }).cast({"price": pl.Float64, "volume": pl.Int64})
+    ob.orderbook_bids = pl.DataFrame(
+        {
+            "price": [],
+            "volume": [],
+            "timestamp": [],
+        }
+    ).cast({"price": pl.Float64, "volume": pl.Int64})
 
-    ob.orderbook_asks = pl.DataFrame({
-        "price": [],
-        "volume": [],
-        "timestamp": [],
-    }).cast({"price": pl.Float64, "volume": pl.Int64})
+    ob.orderbook_asks = pl.DataFrame(
+        {
+            "price": [],
+            "volume": [],
+            "timestamp": [],
+        }
+    ).cast({"price": pl.Float64, "volume": pl.Int64})
 
-    ob.recent_trades = pl.DataFrame({
-        "price": [],
-        "volume": [],
-        "timestamp": [],
-        "side": [],
-        "spread_at_trade": [],
-        "mid_price_at_trade": [],
-        "best_bid_at_trade": [],
-        "best_ask_at_trade": [],
-        "order_type": [],
-    }).cast({
-        "price": pl.Float64,
-        "volume": pl.Int64,
-        "timestamp": pl.Datetime(time_zone="UTC"),
-        "side": pl.Utf8,
-        "spread_at_trade": pl.Float64,
-        "mid_price_at_trade": pl.Float64,
-        "best_bid_at_trade": pl.Float64,
-        "best_ask_at_trade": pl.Float64,
-        "order_type": pl.Utf8,
-    })
+    ob.recent_trades = pl.DataFrame(
+        {
+            "price": [],
+            "volume": [],
+            "timestamp": [],
+            "side": [],
+            "spread_at_trade": [],
+            "mid_price_at_trade": [],
+            "best_bid_at_trade": [],
+            "best_ask_at_trade": [],
+            "order_type": [],
+        }
+    ).cast(
+        {
+            "price": pl.Float64,
+            "volume": pl.Int64,
+            "timestamp": pl.Datetime(time_zone="UTC"),
+            "side": pl.Utf8,
+            "spread_at_trade": pl.Float64,
+            "mid_price_at_trade": pl.Float64,
+            "best_bid_at_trade": pl.Float64,
+            "best_ask_at_trade": pl.Float64,
+            "order_type": pl.Utf8,
+        }
+    )
 
     # Mock orderbook statistics and callbacks
     ob.total_trades = 0
@@ -100,6 +109,7 @@ def mock_orderbook_base():
 
     # Mock order type statistics - initialize with defaultdict behavior
     from collections import defaultdict
+
     ob.order_type_stats = defaultdict(int)
 
     # Mock memory manager with memory_stats
@@ -119,6 +129,7 @@ def mock_orderbook_base():
     ob.vwap_numerator = 0.0
     ob.vwap_denominator = 0.0
     from collections import deque
+
     # Mock price_level_history as defaultdict of deques (as expected by detection.py tests)
     ob.price_level_history = defaultdict(deque)
     ob.max_price_levels_tracked = 1000
@@ -131,7 +142,9 @@ def mock_orderbook_base():
     ob._update_statistics = AsyncMock()
     ob._cleanup_old_data = AsyncMock()
     ob._map_trade_type = MagicMock(return_value="market")
-    ob._get_best_bid_ask_unlocked = MagicMock(return_value={"bid": 21000.0, "ask": 21001.0})
+    ob._get_best_bid_ask_unlocked = MagicMock(
+        return_value={"bid": 21000.0, "ask": 21001.0}
+    )
 
     return ob
 
@@ -169,12 +182,12 @@ class TestRealtimeHandlerInitialization:
         assert len(realtime_handler.subscribed_contracts) == 0
 
     @pytest.mark.asyncio
-    async def test_initialize_with_realtime_client(self, realtime_handler, mock_realtime_client):
+    async def test_initialize_with_realtime_client(
+        self, realtime_handler, mock_realtime_client
+    ):
         """Test initialization with realtime client."""
         result = await realtime_handler.initialize(
-            mock_realtime_client,
-            subscribe_to_depth=True,
-            subscribe_to_quotes=True
+            mock_realtime_client, subscribe_to_depth=True, subscribe_to_quotes=True
         )
 
         assert result is True
@@ -257,7 +270,9 @@ class TestMarketDepthProcessing:
     """Test market depth update processing."""
 
     @pytest.mark.asyncio
-    async def test_process_market_depth_add_bid(self, realtime_handler, mock_orderbook_base):
+    async def test_process_market_depth_add_bid(
+        self, realtime_handler, mock_orderbook_base
+    ):
         """Test processing market depth add operations for bids."""
         depth_data = {
             "contract_id": "CON.F.US.MNQ.U25",
@@ -270,7 +285,7 @@ class TestMarketDepthProcessing:
                     "side": "Bid",
                     "timestamp": datetime.now(UTC).isoformat(),
                 }
-            ]
+            ],
         }
 
         # Call the higher-level callback method that includes callback triggers
@@ -283,7 +298,28 @@ class TestMarketDepthProcessing:
         assert mock_orderbook_base.level2_update_count == 1
 
     @pytest.mark.asyncio
-    async def test_process_market_depth_add_ask(self, realtime_handler, mock_orderbook_base):
+    async def test_process_market_depth_accepts_gateway_dict(
+        self, realtime_handler, mock_orderbook_base
+    ):
+        """Official GatewayDepth is a single object with volume, not a list of size."""
+        depth_data = {
+            "contract_id": "CON.F.US.MNQ.U25",
+            "data": {
+                "type": DomType.BID.value,
+                "price": 21000.0,
+                "volume": 10,
+                "currentVolume": 10,
+            },
+        }
+
+        await realtime_handler._on_market_depth_update(depth_data)
+
+        assert mock_orderbook_base.level2_update_count == 1
+
+    @pytest.mark.asyncio
+    async def test_process_market_depth_add_ask(
+        self, realtime_handler, mock_orderbook_base
+    ):
         """Test processing market depth add operations for asks."""
         depth_data = {
             "contract_id": "CON.F.US.MNQ.U25",
@@ -296,7 +332,7 @@ class TestMarketDepthProcessing:
                     "side": "Ask",
                     "timestamp": datetime.now(UTC).isoformat(),
                 }
-            ]
+            ],
         }
 
         await realtime_handler._on_market_depth_update(depth_data)
@@ -304,7 +340,9 @@ class TestMarketDepthProcessing:
         assert mock_orderbook_base._trigger_callbacks.called
 
     @pytest.mark.asyncio
-    async def test_process_market_depth_remove(self, realtime_handler, mock_orderbook_base):
+    async def test_process_market_depth_remove(
+        self, realtime_handler, mock_orderbook_base
+    ):
         """Test processing market depth remove operations."""
         depth_data = {
             "contract_id": "CON.F.US.MNQ.U25",
@@ -317,7 +355,7 @@ class TestMarketDepthProcessing:
                     "side": "Bid",
                     "timestamp": datetime.now(UTC).isoformat(),
                 }
-            ]
+            ],
         }
 
         await realtime_handler._on_market_depth_update(depth_data)
@@ -325,7 +363,9 @@ class TestMarketDepthProcessing:
         assert mock_orderbook_base._trigger_callbacks.called
 
     @pytest.mark.asyncio
-    async def test_process_market_depth_reset(self, realtime_handler, mock_orderbook_base):
+    async def test_process_market_depth_reset(
+        self, realtime_handler, mock_orderbook_base
+    ):
         """Test processing market depth reset operations."""
         depth_data = {
             "contract_id": "CON.F.US.MNQ.U25",
@@ -335,7 +375,7 @@ class TestMarketDepthProcessing:
                     "type": DomType.RESET.value,
                     "timestamp": datetime.now(UTC).isoformat(),
                 }
-            ]
+            ],
         }
 
         await realtime_handler._on_market_depth_update(depth_data)
@@ -344,7 +384,9 @@ class TestMarketDepthProcessing:
         assert mock_orderbook_base._trigger_callbacks.called
 
     @pytest.mark.asyncio
-    async def test_process_market_depth_irrelevant_contract(self, realtime_handler, mock_orderbook_base):
+    async def test_process_market_depth_irrelevant_contract(
+        self, realtime_handler, mock_orderbook_base
+    ):
         """Test that irrelevant contracts are ignored."""
         depth_data = {
             "contract_id": "CON.F.US.ES.U25",  # Different contract
@@ -357,7 +399,7 @@ class TestMarketDepthProcessing:
                     "side": "Bid",
                     "timestamp": datetime.now(UTC).isoformat(),
                 }
-            ]
+            ],
         }
 
         await realtime_handler._on_market_depth_update(depth_data)
@@ -385,10 +427,12 @@ class TestTradeProcessing:
         await realtime_handler._process_trade(
             price=trade_data["price"],
             volume=trade_data["volume"],
-            timestamp=datetime.fromisoformat(trade_data["timestamp"].replace('Z', '+00:00')),
+            timestamp=datetime.fromisoformat(
+                trade_data["timestamp"].replace("Z", "+00:00")
+            ),
             pre_bid=21000.0,
             pre_ask=21001.0,
-            order_type="market"
+            order_type="market",
         )
 
         # Verify trade was processed
@@ -411,10 +455,12 @@ class TestTradeProcessing:
         await realtime_handler._process_trade(
             price=trade_data["price"],
             volume=8,  # Use the size from the comment
-            timestamp=datetime.fromisoformat(trade_data["timestamp"].replace('Z', '+00:00')),
+            timestamp=datetime.fromisoformat(
+                trade_data["timestamp"].replace("Z", "+00:00")
+            ),
             pre_bid=20999.0,
             pre_ask=21000.0,
-            order_type="market"
+            order_type="market",
         )
 
         assert mock_orderbook_base._trigger_callbacks.called
@@ -448,7 +494,9 @@ class TestQuoteUpdates:
         # The callback triggering depends on internal logic we can't easily test without more complex mocking
 
     @pytest.mark.asyncio
-    async def test_process_quote_update_irrelevant_contract(self, realtime_handler, mock_orderbook_base):
+    async def test_process_quote_update_irrelevant_contract(
+        self, realtime_handler, mock_orderbook_base
+    ):
         """Test that quote updates for irrelevant contracts are ignored."""
         quote_data = {
             "contractId": "CON.F.US.ES.U25",  # Different contract
@@ -469,14 +517,18 @@ class TestCallbackSetup:
     """Test callback setup and registration."""
 
     @pytest.mark.asyncio
-    async def test_setup_realtime_callbacks(self, realtime_handler, mock_realtime_client):
+    async def test_setup_realtime_callbacks(
+        self, realtime_handler, mock_realtime_client
+    ):
         """Test that callbacks are properly registered."""
         realtime_handler.realtime_client = mock_realtime_client
 
         await realtime_handler._setup_realtime_callbacks()
 
         # Verify callbacks were added
-        assert mock_realtime_client.add_callback.call_count >= 2  # At least depth and quote callbacks
+        assert (
+            mock_realtime_client.add_callback.call_count >= 2
+        )  # At least depth and quote callbacks
 
         # Check that correct callback names were registered
         call_args_list = mock_realtime_client.add_callback.call_args_list
@@ -490,13 +542,15 @@ class TestErrorHandling:
     """Test error handling in realtime processing."""
 
     @pytest.mark.asyncio
-    async def test_handle_malformed_depth_data(self, realtime_handler, mock_orderbook_base):
+    async def test_handle_malformed_depth_data(
+        self, realtime_handler, mock_orderbook_base
+    ):
         """Test handling of malformed market depth data."""
         malformed_data = {
             "contractId": "CON.F.US.MNQ.U25",
             "type": "InvalidType",  # Invalid type
-            "price": "not_a_number",   # Invalid price
-            "size": -5,                # Negative size
+            "price": "not_a_number",  # Invalid price
+            "size": -5,  # Negative size
         }
 
         # Should not raise exception
@@ -506,7 +560,9 @@ class TestErrorHandling:
         # The main expectation is that it doesn't crash
 
     @pytest.mark.asyncio
-    async def test_handle_missing_required_fields(self, realtime_handler, mock_orderbook_base):
+    async def test_handle_missing_required_fields(
+        self, realtime_handler, mock_orderbook_base
+    ):
         """Test handling of data with missing required fields."""
         incomplete_data = {
             "contractId": "CON.F.US.MNQ.U25",
@@ -525,7 +581,9 @@ class TestErrorHandling:
         assert realtime_handler._is_relevant_contract(None) is False
 
     @pytest.mark.asyncio
-    async def test_handle_none_depth_entries(self, realtime_handler, mock_orderbook_base):
+    async def test_handle_none_depth_entries(
+        self, realtime_handler, mock_orderbook_base
+    ):
         """None entries inside market depth data are ignored."""
         depth_data = {
             "contract_id": "CON.F.US.MNQ.U25",
@@ -551,7 +609,9 @@ class TestThreadSafety:
     """Test thread safety of realtime operations."""
 
     @pytest.mark.asyncio
-    async def test_concurrent_depth_updates(self, realtime_handler, mock_orderbook_base):
+    async def test_concurrent_depth_updates(
+        self, realtime_handler, mock_orderbook_base
+    ):
         """Test that concurrent depth updates are handled safely."""
         depth_data_list = [
             {
@@ -570,8 +630,7 @@ class TestThreadSafety:
         ]
 
         tasks = [
-            realtime_handler._process_market_depth(data)
-            for data in depth_data_list
+            realtime_handler._process_market_depth(data) for data in depth_data_list
         ]
 
         # All should complete without deadlock or exception
@@ -582,7 +641,9 @@ class TestThreadSafety:
             assert not isinstance(result, Exception)
 
     @pytest.mark.asyncio
-    async def test_concurrent_trade_processing(self, realtime_handler, mock_orderbook_base):
+    async def test_concurrent_trade_processing(
+        self, realtime_handler, mock_orderbook_base
+    ):
         """Test concurrent trade processing."""
         trade_tasks = [
             realtime_handler._process_trade(
@@ -591,7 +652,7 @@ class TestThreadSafety:
                 timestamp=datetime.now(UTC),
                 pre_bid=21000.0,
                 pre_ask=21001.0,
-                order_type="market"
+                order_type="market",
             )
             for i in range(3)
         ]
@@ -661,4 +722,11 @@ class TestDataValidation:
 
 # Run tests with coverage reporting
 if __name__ == "__main__":
-    pytest.main([__file__, "-v", "--cov=src/project_x_py/orderbook/realtime", "--cov-report=term-missing"])
+    pytest.main(
+        [
+            __file__,
+            "-v",
+            "--cov=src/project_x_py/orderbook/realtime",
+            "--cov-report=term-missing",
+        ]
+    )

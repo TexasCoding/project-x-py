@@ -108,9 +108,9 @@ if TYPE_CHECKING:
 
 
 class ProjectXRealtimeClient(
+    HealthMonitoringMixin,
     ConnectionManagementMixin,
     EventHandlingMixin,
-    HealthMonitoringMixin,
     SubscriptionsMixin,
     TaskManagerMixin,
 ):
@@ -210,7 +210,7 @@ class ProjectXRealtimeClient(
         >>> from project_x_py import EventType
         >>> async def handle_position(event):
         ...     data = event.data
-        ...     print(f"Position: {data.get('contractId')} - {data.get('netPos')}")
+        ...     print(f"Position: {data.get('contractId')} - {data.get('size')}")
         >>> await suite.on(EventType.POSITION_UPDATE, handle_position)
         >>>
         >>> # V3.3.1: Safe token refresh with deadlock prevention
@@ -390,3 +390,11 @@ class ProjectXRealtimeClient(
         # Async events for connection readiness
         self.user_hub_ready = asyncio.Event()
         self.market_hub_ready = asyncio.Event()
+
+    async def connect(self) -> bool:
+        """Connect both hubs and start health monitoring."""
+        return await super().connect()  # type: ignore[misc]
+
+    async def disconnect(self) -> None:
+        """Stop health monitoring and disconnect both hubs."""
+        await super().disconnect()  # type: ignore[misc]

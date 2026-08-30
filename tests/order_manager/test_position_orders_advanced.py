@@ -44,10 +44,14 @@ def mock_order_manager():
     event_bus = EventBus()
 
     # Patch price alignment functions to return input price
-    with patch('project_x_py.order_manager.utils.align_price_to_tick_size',
-               new=AsyncMock(side_effect=lambda price, *args, **kwargs: price)):
-        with patch('project_x_py.order_manager.core.align_price_to_tick_size',
-                   new=AsyncMock(side_effect=lambda price, *args, **kwargs: price)):
+    with patch(
+        "project_x_py.order_manager.utils.align_price_to_tick_size",
+        new=AsyncMock(side_effect=lambda price, *args, **kwargs: price),
+    ):
+        with patch(
+            "project_x_py.order_manager.core.align_price_to_tick_size",
+            new=AsyncMock(side_effect=lambda price, *args, **kwargs: price),
+        ):
             # Create OrderManager with mocked client
             om = OrderManager(mock_client, event_bus)
 
@@ -78,13 +82,17 @@ class TestPositionOrderMixinCore:
             creationTimestamp="2024-01-01T00:00:00Z",
             type=1,  # LONG
             size=3,  # 3 contracts
-            averagePrice=17000.0
+            averagePrice=17000.0,
         )
 
         # Mock search_open_positions to return our test position
-        mock_order_manager.project_x.search_open_positions = AsyncMock(return_value=[position])
+        mock_order_manager.project_x.search_open_positions = AsyncMock(
+            return_value=[position]
+        )
         mock_order_manager.place_market_order = AsyncMock(
-            return_value=OrderPlaceResponse(orderId=100, success=True, errorCode=0, errorMessage=None)
+            return_value=OrderPlaceResponse(
+                orderId=100, success=True, errorCode=0, errorMessage=None
+            )
         )
 
         result = await mock_order_manager.close_position("MNQ", method="market")
@@ -105,12 +113,16 @@ class TestPositionOrderMixinCore:
             creationTimestamp="2024-01-01T00:00:00Z",
             type=2,  # SHORT
             size=2,
-            averagePrice=17000.0
+            averagePrice=17000.0,
         )
 
-        mock_order_manager.project_x.search_open_positions = AsyncMock(return_value=[position])
+        mock_order_manager.project_x.search_open_positions = AsyncMock(
+            return_value=[position]
+        )
         mock_order_manager.place_limit_order = AsyncMock(
-            return_value=OrderPlaceResponse(orderId=200, success=True, errorCode=0, errorMessage=None)
+            return_value=OrderPlaceResponse(
+                orderId=200, success=True, errorCode=0, errorMessage=None
+            )
         )
 
         result = await mock_order_manager.close_position(
@@ -143,15 +155,20 @@ class TestPositionOrderMixinCore:
             creationTimestamp="2024-01-01T00:00:00Z",
             type=0,  # UNDEFINED
             size=0,
-            averagePrice=0
+            averagePrice=0,
         )
 
-        mock_order_manager.project_x.search_open_positions = AsyncMock(return_value=[position])
+        mock_order_manager.project_x.search_open_positions = AsyncMock(
+            return_value=[position]
+        )
 
         with pytest.raises(ProjectXOrderError) as exc_info:
             await mock_order_manager.close_position("MNQ")
 
-        assert "already flat" in str(exc_info.value).lower() or "no position" in str(exc_info.value).lower()
+        assert (
+            "already flat" in str(exc_info.value).lower()
+            or "no position" in str(exc_info.value).lower()
+        )
 
     @pytest.mark.asyncio
     async def test_close_position_with_invalid_method(self, mock_order_manager):
@@ -163,15 +180,20 @@ class TestPositionOrderMixinCore:
             creationTimestamp="2024-01-01T00:00:00Z",
             type=1,  # LONG
             size=1,
-            averagePrice=17000.0
+            averagePrice=17000.0,
         )
 
-        mock_order_manager.project_x.search_open_positions = AsyncMock(return_value=[position])
+        mock_order_manager.project_x.search_open_positions = AsyncMock(
+            return_value=[position]
+        )
 
         with pytest.raises(ProjectXOrderError) as exc_info:
             await mock_order_manager.close_position("MNQ", method="invalid_method")
 
-        assert "invalid" in str(exc_info.value).lower() or "method" in str(exc_info.value).lower()
+        assert (
+            "invalid" in str(exc_info.value).lower()
+            or "method" in str(exc_info.value).lower()
+        )
 
 
 class TestProtectiveOrders:
@@ -187,12 +209,16 @@ class TestProtectiveOrders:
             creationTimestamp="2024-01-01T00:00:00Z",
             type=1,  # LONG
             size=5,
-            averagePrice=17000.0
+            averagePrice=17000.0,
         )
 
-        mock_order_manager.project_x.search_open_positions = AsyncMock(return_value=[position])
+        mock_order_manager.project_x.search_open_positions = AsyncMock(
+            return_value=[position]
+        )
         mock_order_manager.place_stop_order = AsyncMock(
-            return_value=OrderPlaceResponse(orderId=300, success=True, errorCode=0, errorMessage=None)
+            return_value=OrderPlaceResponse(
+                orderId=300, success=True, errorCode=0, errorMessage=None
+            )
         )
 
         result = await mock_order_manager.add_stop_loss("MNQ", stop_price=16900.0)
@@ -213,15 +239,21 @@ class TestProtectiveOrders:
             creationTimestamp="2024-01-01T00:00:00Z",
             type=2,  # SHORT
             size=3,
-            averagePrice=17000.0
+            averagePrice=17000.0,
         )
 
-        mock_order_manager.project_x.search_open_positions = AsyncMock(return_value=[position])
+        mock_order_manager.project_x.search_open_positions = AsyncMock(
+            return_value=[position]
+        )
         mock_order_manager.place_stop_order = AsyncMock(
-            return_value=OrderPlaceResponse(orderId=400, success=True, errorCode=0, errorMessage=None)
+            return_value=OrderPlaceResponse(
+                orderId=400, success=True, errorCode=0, errorMessage=None
+            )
         )
 
-        result = await mock_order_manager.add_stop_loss("MNQ", stop_price=17100.0, size=2)
+        result = await mock_order_manager.add_stop_loss(
+            "MNQ", stop_price=17100.0, size=2
+        )
 
         assert result.orderId == 400
         # Should place stop buy for short position, with custom size
@@ -249,10 +281,12 @@ class TestProtectiveOrders:
             creationTimestamp="2024-01-01T00:00:00Z",
             type=1,  # LONG
             size=1,
-            averagePrice=17000.0
+            averagePrice=17000.0,
         )
 
-        mock_order_manager.project_x.search_open_positions = AsyncMock(return_value=[position])
+        mock_order_manager.project_x.search_open_positions = AsyncMock(
+            return_value=[position]
+        )
 
         # Stop price above entry for long position is invalid
         with pytest.raises(ProjectXOrderError) as exc_info:
@@ -270,12 +304,16 @@ class TestProtectiveOrders:
             creationTimestamp="2024-01-01T00:00:00Z",
             type=1,  # LONG
             size=2,
-            averagePrice=17000.0
+            averagePrice=17000.0,
         )
 
-        mock_order_manager.project_x.search_open_positions = AsyncMock(return_value=[position])
+        mock_order_manager.project_x.search_open_positions = AsyncMock(
+            return_value=[position]
+        )
         mock_order_manager.place_limit_order = AsyncMock(
-            return_value=OrderPlaceResponse(orderId=500, success=True, errorCode=0, errorMessage=None)
+            return_value=OrderPlaceResponse(
+                orderId=500, success=True, errorCode=0, errorMessage=None
+            )
         )
 
         result = await mock_order_manager.add_take_profit("MNQ", limit_price=17100.0)
@@ -296,15 +334,21 @@ class TestProtectiveOrders:
             creationTimestamp="2024-01-01T00:00:00Z",
             type=2,  # SHORT
             size=4,
-            averagePrice=17000.0
+            averagePrice=17000.0,
         )
 
-        mock_order_manager.project_x.search_open_positions = AsyncMock(return_value=[position])
+        mock_order_manager.project_x.search_open_positions = AsyncMock(
+            return_value=[position]
+        )
         mock_order_manager.place_limit_order = AsyncMock(
-            return_value=OrderPlaceResponse(orderId=600, success=True, errorCode=0, errorMessage=None)
+            return_value=OrderPlaceResponse(
+                orderId=600, success=True, errorCode=0, errorMessage=None
+            )
         )
 
-        result = await mock_order_manager.add_take_profit("MNQ", limit_price=16900.0, size=2)
+        result = await mock_order_manager.add_take_profit(
+            "MNQ", limit_price=16900.0, size=2
+        )
 
         assert result.orderId == 600
         # Should place limit buy for short position with custom size
@@ -322,16 +366,21 @@ class TestProtectiveOrders:
             creationTimestamp="2024-01-01T00:00:00Z",
             type=1,  # LONG
             size=1,
-            averagePrice=17000.0
+            averagePrice=17000.0,
         )
 
-        mock_order_manager.project_x.search_open_positions = AsyncMock(return_value=[position])
+        mock_order_manager.project_x.search_open_positions = AsyncMock(
+            return_value=[position]
+        )
 
         # Target price below entry for long position is invalid
         with pytest.raises(ProjectXOrderError) as exc_info:
             await mock_order_manager.add_take_profit("MNQ", limit_price=16900.0)
 
-        assert "profit" in str(exc_info.value).lower() or "target" in str(exc_info.value).lower()
+        assert (
+            "profit" in str(exc_info.value).lower()
+            or "target" in str(exc_info.value).lower()
+        )
 
 
 class TestPositionOrderTracking:
@@ -341,7 +390,7 @@ class TestPositionOrderTracking:
     async def test_track_order_for_position(self, mock_order_manager):
         """track_order_for_position should associate orders with positions."""
         # Initialize position orders dict
-        if not hasattr(mock_order_manager, 'position_orders'):
+        if not hasattr(mock_order_manager, "position_orders"):
             mock_order_manager.position_orders = {}
 
         await mock_order_manager.track_order_for_position(
@@ -357,11 +406,13 @@ class TestPositionOrderTracking:
     @pytest.mark.asyncio
     async def test_track_multiple_orders_for_position(self, mock_order_manager):
         """Should track multiple orders for same position."""
-        if not hasattr(mock_order_manager, 'position_orders'):
+        if not hasattr(mock_order_manager, "position_orders"):
             mock_order_manager.position_orders = {}
 
         await mock_order_manager.track_order_for_position("MNQ", "2001", OrderType.STOP)
-        await mock_order_manager.track_order_for_position("MNQ", "2002", OrderType.LIMIT)
+        await mock_order_manager.track_order_for_position(
+            "MNQ", "2002", OrderType.LIMIT
+        )
         await mock_order_manager.track_order_for_position("MNQ", "2003", OrderType.STOP)
 
         assert "stop_orders" in mock_order_manager.position_orders["MNQ"]
@@ -375,14 +426,14 @@ class TestPositionOrderTracking:
     @pytest.mark.asyncio
     async def test_get_position_orders(self, mock_order_manager):
         """get_position_orders should return orders for a position."""
-        if not hasattr(mock_order_manager, 'position_orders'):
+        if not hasattr(mock_order_manager, "position_orders"):
             mock_order_manager.position_orders = {}
 
         # Track some orders using the list-based structure
         mock_order_manager.position_orders["MNQ"] = {
             "stop_orders": ["3001", "3003"],
             "target_orders": ["3002"],
-            "entry_orders": []
+            "entry_orders": [],
         }
 
         # Get all orders
@@ -406,7 +457,7 @@ class TestPositionOrderTracking:
     @pytest.mark.asyncio
     async def test_get_position_orders_no_orders(self, mock_order_manager):
         """get_position_orders should return empty dict when no orders exist."""
-        if not hasattr(mock_order_manager, 'position_orders'):
+        if not hasattr(mock_order_manager, "position_orders"):
             mock_order_manager.position_orders = {}
 
         orders = await mock_order_manager.get_position_orders("NONEXISTENT")
@@ -419,13 +470,13 @@ class TestPositionOrderCancellation:
     @pytest.mark.asyncio
     async def test_cancel_position_orders_all(self, mock_order_manager):
         """cancel_position_orders should cancel all orders for position."""
-        if not hasattr(mock_order_manager, 'position_orders'):
+        if not hasattr(mock_order_manager, "position_orders"):
             mock_order_manager.position_orders = {}
 
         mock_order_manager.position_orders["MNQ"] = {
             "4001": {"type": OrderType.STOP, "status": OrderStatus.OPEN},
             "4002": {"type": OrderType.LIMIT, "status": OrderStatus.OPEN},
-            "4003": {"type": OrderType.STOP, "status": OrderStatus.OPEN}
+            "4003": {"type": OrderType.STOP, "status": OrderStatus.OPEN},
         }
 
         mock_order_manager.cancel_order = AsyncMock(return_value=True)
@@ -437,15 +488,34 @@ class TestPositionOrderCancellation:
         assert mock_order_manager.cancel_order.call_count == 3
 
     @pytest.mark.asyncio
+    async def test_cancel_position_orders_nested_tracking(self, mock_order_manager):
+        """Production nested lists must cancel stop/target/entry ids."""
+        mock_order_manager.position_orders = {
+            "MNQ": {
+                "entry_orders": [11],
+                "stop_orders": [12],
+                "target_orders": [13],
+            }
+        }
+        mock_order_manager.cancel_order = AsyncMock(return_value=True)
+
+        result = await mock_order_manager.cancel_position_orders("MNQ")
+
+        assert result["cancelled_count"] == 3
+        cancelled = {int(oid) for oid in result["cancelled_orders"]}
+        assert cancelled == {11, 12, 13}
+        assert mock_order_manager.position_orders["MNQ"]["stop_orders"] == []
+
+    @pytest.mark.asyncio
     async def test_cancel_position_orders_by_type(self, mock_order_manager):
         """cancel_position_orders should cancel only specified order types."""
-        if not hasattr(mock_order_manager, 'position_orders'):
+        if not hasattr(mock_order_manager, "position_orders"):
             mock_order_manager.position_orders = {}
 
         mock_order_manager.position_orders["MNQ"] = {
             "5001": {"type": OrderType.STOP, "status": OrderStatus.OPEN},
             "5002": {"type": OrderType.LIMIT, "status": OrderStatus.OPEN},
-            "5003": {"type": OrderType.STOP, "status": OrderStatus.OPEN}
+            "5003": {"type": OrderType.STOP, "status": OrderStatus.OPEN},
         }
 
         mock_order_manager.cancel_order = AsyncMock(return_value=True)
@@ -461,13 +531,13 @@ class TestPositionOrderCancellation:
     @pytest.mark.asyncio
     async def test_cancel_position_orders_handles_failures(self, mock_order_manager):
         """cancel_position_orders should handle individual cancellation failures."""
-        if not hasattr(mock_order_manager, 'position_orders'):
+        if not hasattr(mock_order_manager, "position_orders"):
             mock_order_manager.position_orders = {}
 
         mock_order_manager.position_orders["MNQ"] = {
             "6001": {"type": OrderType.STOP, "status": OrderStatus.OPEN},
             "6002": {"type": OrderType.LIMIT, "status": OrderStatus.OPEN},
-            "6003": {"type": OrderType.STOP, "status": OrderStatus.OPEN}
+            "6003": {"type": OrderType.STOP, "status": OrderStatus.OPEN},
         }
 
         # First and third succeed, second fails
@@ -483,13 +553,13 @@ class TestPositionOrderCancellation:
     @pytest.mark.asyncio
     async def test_cancel_position_orders_skips_filled(self, mock_order_manager):
         """cancel_position_orders should skip already filled orders."""
-        if not hasattr(mock_order_manager, 'position_orders'):
+        if not hasattr(mock_order_manager, "position_orders"):
             mock_order_manager.position_orders = {}
 
         mock_order_manager.position_orders["MNQ"] = {
             "7001": {"type": OrderType.STOP, "status": OrderStatus.FILLED},
             "7002": {"type": OrderType.LIMIT, "status": OrderStatus.OPEN},
-            "7003": {"type": OrderType.STOP, "status": OrderStatus.CANCELLED}
+            "7003": {"type": OrderType.STOP, "status": OrderStatus.CANCELLED},
         }
 
         mock_order_manager.cancel_order = AsyncMock(return_value=True)
@@ -508,12 +578,12 @@ class TestPositionSynchronization:
     @pytest.mark.asyncio
     async def test_update_position_order_sizes(self, mock_order_manager):
         """update_position_order_sizes should modify order sizes to match position."""
-        if not hasattr(mock_order_manager, 'position_orders'):
+        if not hasattr(mock_order_manager, "position_orders"):
             mock_order_manager.position_orders = {}
 
         mock_order_manager.position_orders["MNQ"] = {
             "8001": {"type": OrderType.STOP, "status": OrderStatus.OPEN, "size": 5},
-            "8002": {"type": OrderType.LIMIT, "status": OrderStatus.OPEN, "size": 5}
+            "8002": {"type": OrderType.LIMIT, "status": OrderStatus.OPEN, "size": 5},
         }
 
         mock_order_manager.modify_order = AsyncMock(return_value=True)
@@ -537,18 +607,20 @@ class TestPositionSynchronization:
             creationTimestamp="2024-01-01T00:00:00Z",
             type=1,  # LONG
             size=2,
-            averagePrice=17000.0
+            averagePrice=17000.0,
         )
 
-        if not hasattr(mock_order_manager, 'position_orders'):
+        if not hasattr(mock_order_manager, "position_orders"):
             mock_order_manager.position_orders = {}
 
         mock_order_manager.position_orders["MNQ"] = {
             "9001": {"type": OrderType.STOP, "status": OrderStatus.OPEN, "size": 5},
-            "9002": {"type": OrderType.LIMIT, "status": OrderStatus.OPEN, "size": 5}
+            "9002": {"type": OrderType.LIMIT, "status": OrderStatus.OPEN, "size": 5},
         }
 
-        mock_order_manager.project_x.search_open_positions = AsyncMock(return_value=[position])
+        mock_order_manager.project_x.search_open_positions = AsyncMock(
+            return_value=[position]
+        )
         mock_order_manager.modify_order = AsyncMock(return_value=True)
         mock_order_manager.cancel_order = AsyncMock(return_value=True)
 
@@ -567,12 +639,12 @@ class TestPositionSynchronization:
         # No position (flat)
         mock_order_manager.project_x.search_open_positions = AsyncMock(return_value=[])
 
-        if not hasattr(mock_order_manager, 'position_orders'):
+        if not hasattr(mock_order_manager, "position_orders"):
             mock_order_manager.position_orders = {}
 
         mock_order_manager.position_orders["MNQ"] = {
             "10001": {"type": OrderType.STOP, "status": OrderStatus.OPEN},
-            "10002": {"type": OrderType.LIMIT, "status": OrderStatus.OPEN}
+            "10002": {"type": OrderType.LIMIT, "status": OrderStatus.OPEN},
         }
 
         mock_order_manager.cancel_order = AsyncMock(return_value=True)
@@ -594,7 +666,7 @@ class TestPositionEventHandlers:
     @pytest.mark.asyncio
     async def test_on_position_changed(self, mock_order_manager):
         """on_position_changed should sync orders when position size changes."""
-        if not hasattr(mock_order_manager, 'position_orders'):
+        if not hasattr(mock_order_manager, "position_orders"):
             mock_order_manager.position_orders = {}
 
         mock_order_manager.position_orders["MNQ"] = {
@@ -607,9 +679,7 @@ class TestPositionEventHandlers:
 
         # Call with separate parameters instead of event dict
         await mock_order_manager.on_position_changed(
-            contract_id="MNQ",
-            old_size=5,
-            new_size=3
+            contract_id="MNQ", old_size=5, new_size=3
         )
 
         mock_order_manager.sync_orders_with_position.assert_called_once_with(
@@ -619,12 +689,12 @@ class TestPositionEventHandlers:
     @pytest.mark.asyncio
     async def test_on_position_closed(self, mock_order_manager):
         """on_position_closed should cancel all position orders."""
-        if not hasattr(mock_order_manager, 'position_orders'):
+        if not hasattr(mock_order_manager, "position_orders"):
             mock_order_manager.position_orders = {}
 
         mock_order_manager.position_orders["MNQ"] = {
             "12001": {"type": OrderType.STOP, "status": OrderStatus.OPEN},
-            "12002": {"type": OrderType.LIMIT, "status": OrderStatus.OPEN}
+            "12002": {"type": OrderType.LIMIT, "status": OrderStatus.OPEN},
         }
 
         mock_order_manager.cancel_position_orders = AsyncMock(
@@ -639,7 +709,7 @@ class TestPositionEventHandlers:
     @pytest.mark.asyncio
     async def test_on_position_closed_cleanup(self, mock_order_manager):
         """on_position_closed should clean up position tracking data."""
-        if not hasattr(mock_order_manager, 'position_orders'):
+        if not hasattr(mock_order_manager, "position_orders"):
             mock_order_manager.position_orders = {}
 
         mock_order_manager.position_orders["MNQ"] = {
@@ -652,8 +722,10 @@ class TestPositionEventHandlers:
         await mock_order_manager.on_position_closed(contract_id="MNQ")
 
         # Position orders should be cleared
-        assert "MNQ" not in mock_order_manager.position_orders or \
-               mock_order_manager.position_orders["MNQ"] == {}
+        assert (
+            "MNQ" not in mock_order_manager.position_orders
+            or mock_order_manager.position_orders["MNQ"] == {}
+        )
 
 
 class TestPositionOrdersEdgeCases:
@@ -669,7 +741,10 @@ class TestPositionOrdersEdgeCases:
         with pytest.raises(ProjectXOrderError) as exc_info:
             await mock_order_manager.close_position("MNQ")
 
-        assert "api" in str(exc_info.value).lower() or "error" in str(exc_info.value).lower()
+        assert (
+            "api" in str(exc_info.value).lower()
+            or "error" in str(exc_info.value).lower()
+        )
 
     @pytest.mark.asyncio
     async def test_add_protective_orders_concurrent(self, mock_order_manager):
@@ -681,21 +756,27 @@ class TestPositionOrdersEdgeCases:
             creationTimestamp="2024-01-01T00:00:00Z",
             type=1,  # LONG
             size=1,
-            averagePrice=17000.0
+            averagePrice=17000.0,
         )
 
-        mock_order_manager.project_x.search_open_positions = AsyncMock(return_value=[position])
+        mock_order_manager.project_x.search_open_positions = AsyncMock(
+            return_value=[position]
+        )
         mock_order_manager.place_stop_order = AsyncMock(
-            return_value=OrderPlaceResponse(orderId=14001, success=True, errorCode=0, errorMessage=None)
+            return_value=OrderPlaceResponse(
+                orderId=14001, success=True, errorCode=0, errorMessage=None
+            )
         )
         mock_order_manager.place_limit_order = AsyncMock(
-            return_value=OrderPlaceResponse(orderId=14002, success=True, errorCode=0, errorMessage=None)
+            return_value=OrderPlaceResponse(
+                orderId=14002, success=True, errorCode=0, errorMessage=None
+            )
         )
 
         # Place stop and take profit concurrently
         tasks = [
             mock_order_manager.add_stop_loss("MNQ", stop_price=16950.0),
-            mock_order_manager.add_take_profit("MNQ", limit_price=17050.0)
+            mock_order_manager.add_take_profit("MNQ", limit_price=17050.0),
         ]
 
         results = await asyncio.gather(*tasks)
@@ -714,20 +795,24 @@ class TestPositionOrdersEdgeCases:
             creationTimestamp="2024-01-01T00:00:00Z",
             type=1,  # LONG
             size=3,
-            averagePrice=17000.0
+            averagePrice=17000.0,
         )
 
-        if not hasattr(mock_order_manager, 'position_orders'):
+        if not hasattr(mock_order_manager, "position_orders"):
             mock_order_manager.position_orders = {}
 
         mock_order_manager.position_orders["MNQ"] = {
             "15001": {"type": OrderType.STOP, "status": OrderStatus.OPEN, "size": 5}
         }
 
-        mock_order_manager.project_x.search_open_positions = AsyncMock(return_value=[position])
+        mock_order_manager.project_x.search_open_positions = AsyncMock(
+            return_value=[position]
+        )
         mock_order_manager.modify_order = AsyncMock(return_value=True)
 
-        result = await mock_order_manager.sync_orders_with_position("MNQ", target_size=3)
+        result = await mock_order_manager.sync_orders_with_position(
+            "MNQ", target_size=3
+        )
 
         # Should update order to match new position size
         assert result["updated"] == ["15001"]
@@ -743,7 +828,7 @@ class TestPositionOrdersEdgeCases:
             creationTimestamp="2024-01-01T00:00:00Z",
             type=1,  # LONG
             size=2,
-            averagePrice=17000.0
+            averagePrice=17000.0,
         )
 
         position_account2 = Position(
@@ -753,7 +838,7 @@ class TestPositionOrdersEdgeCases:
             creationTimestamp="2024-01-01T00:00:00Z",
             type=2,  # SHORT
             size=3,
-            averagePrice=17000.0
+            averagePrice=17000.0,
         )
 
         # Mock to return different positions based on account_id
@@ -766,7 +851,9 @@ class TestPositionOrdersEdgeCases:
 
         mock_order_manager.project_x.search_open_positions = search_positions_mock
         mock_order_manager.place_market_order = AsyncMock(
-            return_value=OrderPlaceResponse(orderId=16001, success=True, errorCode=0, errorMessage=None)
+            return_value=OrderPlaceResponse(
+                orderId=16001, success=True, errorCode=0, errorMessage=None
+            )
         )
 
         # Close position for specific account
