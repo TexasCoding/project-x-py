@@ -403,6 +403,10 @@ class ConnectionManagementMixin:
                     await invoke_maybe(self.market_connection.stop)
                     self.market_connected = False
 
+                live = getattr(self, "_live_market_subscriptions", None)
+                if isinstance(live, set):
+                    live.clear()
+
                 logger.debug(LogMessages.WS_DISCONNECTED)
 
     # Connection event handlers

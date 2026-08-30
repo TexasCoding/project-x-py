@@ -618,6 +618,7 @@ class ProjectXRealtimeClientProtocol(Protocol):
 
     # Subscriptions
     _subscribed_contracts: list[str]
+    _live_market_subscriptions: set[str]
     _user_updates_subscribed: bool
 
     # Logging
@@ -626,6 +627,7 @@ class ProjectXRealtimeClientProtocol(Protocol):
     # Async locks and events
     _callback_lock: asyncio.Lock
     _connection_lock: asyncio.Lock
+    _subscription_lock: asyncio.Lock
     user_hub_ready: asyncio.Event
     market_hub_ready: asyncio.Event
 

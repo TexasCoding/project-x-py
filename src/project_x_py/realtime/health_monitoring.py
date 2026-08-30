@@ -110,6 +110,7 @@ from collections import deque
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from project_x_py.realtime.async_hub import invoke_maybe
 from project_x_py.utils import (
     LogContext,
     ProjectXLogger,
@@ -440,25 +441,16 @@ class HealthMonitoringMixin:
             self._total_heartbeats_sent += 1
 
             # Send ping - SignalR connections typically have a ping method
-            # If not available, we'll use a custom heartbeat message
-            try:
-                # Try SignalR's built-in ping method
-                ping_method = getattr(connection, "ping", None)
-                if ping_method:
-                    await asyncio.get_event_loop().run_in_executor(None, ping_method)
-                else:
-                    # Send custom heartbeat message
-                    await asyncio.get_event_loop().run_in_executor(
-                        None,
-                        lambda: connection.send(
-                            "Heartbeat", {"timestamp": time.time()}
-                        ),
-                    )
-            except AttributeError:
-                # Fallback to custom heartbeat
-                await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: connection.send("Heartbeat", {"timestamp": time.time()}),
+            # If not available, we'll use a custom heartbeat message.
+            # AsyncHubConnection.send is async; always await it (#126).
+            ping_method = getattr(connection, "ping", None)
+            if callable(ping_method):
+                await invoke_maybe(ping_method)
+            else:
+                await invoke_maybe(
+                    connection.send,
+                    "Heartbeat",
+                    [{"timestamp": time.time()}],
                 )
 
             # Calculate latency

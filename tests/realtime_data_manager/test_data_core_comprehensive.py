@@ -519,6 +519,64 @@ class TestRealtimeDataManagerWebSocketOperations:
             await manager.start_realtime_feed()
 
     @pytest.mark.asyncio
+    async def test_start_realtime_feed_skips_resubscribe_when_live_on_hub(
+        self,
+    ):
+        """Issue #126: skip re-subscribe only after a successful hub send."""
+        project_x = Mock(spec=ProjectXBase)
+        realtime_client = AsyncMock(spec=ProjectXRealtimeClient)
+
+        realtime_client.is_connected.return_value = True
+        realtime_client.subscribe_market_data.return_value = True
+        realtime_client._subscribed_contracts = ["test-contract-id"]
+        realtime_client._live_market_subscriptions = {"test-contract-id"}
+
+        manager = RealtimeDataManager("MNQ", project_x, realtime_client)
+        manager.contract_id = "test-contract-id"
+        manager._initialized = True
+
+        with (
+            patch.object(manager, "start_cleanup_task"),
+            patch.object(manager, "_start_bar_timer_task"),
+            patch.object(manager, "start_resource_monitoring"),
+        ):
+            result = await manager.start_realtime_feed()
+
+        assert result is True
+        assert manager.is_running is True
+        realtime_client.subscribe_market_data.assert_not_called()
+        realtime_client.add_callback.assert_any_call(
+            "quote_update", manager._on_quote_update
+        )
+
+    @pytest.mark.asyncio
+    async def test_start_realtime_feed_retries_after_failed_subscribe(self):
+        """Desired-set membership must not hide a failed hub send."""
+        project_x = Mock(spec=ProjectXBase)
+        realtime_client = AsyncMock(spec=ProjectXRealtimeClient)
+
+        realtime_client.is_connected.return_value = True
+        realtime_client.subscribe_market_data.return_value = True
+        realtime_client._subscribed_contracts = ["test-contract-id"]
+        realtime_client._live_market_subscriptions = set()
+
+        manager = RealtimeDataManager("MNQ", project_x, realtime_client)
+        manager.contract_id = "test-contract-id"
+        manager._initialized = True
+
+        with (
+            patch.object(manager, "start_cleanup_task"),
+            patch.object(manager, "_start_bar_timer_task"),
+            patch.object(manager, "start_resource_monitoring"),
+        ):
+            result = await manager.start_realtime_feed()
+
+        assert result is True
+        realtime_client.subscribe_market_data.assert_called_once_with(
+            ["test-contract-id"]
+        )
+
+    @pytest.mark.asyncio
     async def test_stop_realtime_feed_successful(self):
         """Test successful stop of realtime feed."""
         project_x = Mock(spec=ProjectXBase)

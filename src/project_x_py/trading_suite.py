@@ -900,29 +900,40 @@ class TradingSuite:
             raise
 
     async def _initialize_instrument_contexts(self) -> None:
-        """Initialize all instrument contexts in parallel."""
+        """Initialize all instrument contexts.
 
-        async def _initialize_single_context(context: InstrumentContext) -> None:
-            """Initialize a single instrument context."""
-            # Initialize order manager with realtime client for order tracking
+        Historical data and manager setup can run in parallel. Market-hub
+        subscribe is a single call for every contract so concurrent
+        ``send()`` on the shared SignalR client cannot race (#126).
+        """
+
+        async def _prepare_context(context: InstrumentContext) -> None:
+            """Initialize managers and historical data for one instrument."""
             await context.orders.initialize(realtime_client=self.realtime)
-
-            # Initialize position manager with order manager for cleanup
             await context.positions.initialize(
                 realtime_client=self.realtime,
                 order_manager=context.orders,
             )
-
-            # Load historical data
             await context.data.initialize(initial_days=self.config.initial_days)
 
-            # Subscribe to market data
-            await self.realtime.subscribe_market_data([context.instrument_info.id])
+        await asyncio.gather(
+            *[_prepare_context(context) for context in self._instruments.values()]
+        )
 
-            # Start realtime data feed
+        contract_ids = [
+            context.instrument_info.id for context in self._instruments.values()
+        ]
+        subscribed = await self.realtime.subscribe_market_data(contract_ids)
+        if not subscribed:
+            from project_x_py.exceptions import ProjectXError
+
+            raise ProjectXError(
+                "Failed to subscribe to market data: Subscription returned False"
+            )
+
+        async def _start_context_feed(context: InstrumentContext) -> None:
+            """Start the realtime feed and optional orderbook after subscribe."""
             await context.data.start_realtime_feed()
-
-            # Initialize optional components
             if context.orderbook:
                 await context.orderbook.initialize(
                     realtime_client=self.realtime,
@@ -930,12 +941,9 @@ class TradingSuite:
                     subscribe_to_quotes=True,
                 )
 
-        # Initialize all contexts in parallel
-        tasks = [
-            _initialize_single_context(context)
-            for context in self._instruments.values()
-        ]
-        await asyncio.gather(*tasks)
+        await asyncio.gather(
+            *[_start_context_feed(context) for context in self._instruments.values()]
+        )
 
         # Update statistics aggregator with components
         if self._is_single_instrument and self._single_context:

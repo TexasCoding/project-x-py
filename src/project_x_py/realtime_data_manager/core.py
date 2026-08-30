@@ -1041,13 +1041,22 @@ class RealtimeDataManager(
                 self._on_trade_update,  # Use market_trade event name
             )
 
-            # Subscribe to market data using the contract ID
+            # Subscribe to market data using the contract ID.
+            # Skip a second hub send only after a successful SubscribeContract*
+            # on this session (#126). Desired-set membership is not enough.
             self.logger.debug(
                 LogMessages.DATA_SUBSCRIBE, extra={"contract_id": self.contract_id}
             )
-            subscription_success = await self.realtime_client.subscribe_market_data(
-                [self.contract_id]
+            live = getattr(self.realtime_client, "_live_market_subscriptions", None)
+            already_subscribed = isinstance(live, set | list | tuple) and (
+                self.contract_id in live
             )
+            if already_subscribed:
+                subscription_success = True
+            else:
+                subscription_success = await self.realtime_client.subscribe_market_data(
+                    [self.contract_id]
+                )
 
             if not subscription_success:
                 raise ProjectXError(

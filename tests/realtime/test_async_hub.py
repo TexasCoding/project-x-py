@@ -1,7 +1,11 @@
 """Tests for the pysignalr hub adapter."""
 
+import asyncio
+
+import pytest
+
 from project_x_py.realtime import async_hub
-from project_x_py.realtime.async_hub import HubConnectionBuilder
+from project_x_py.realtime.async_hub import AsyncHubConnection, HubConnectionBuilder
 
 
 def test_hub_receive_buffer_is_capped() -> None:
@@ -55,3 +59,36 @@ def test_hub_task_name_does_not_include_access_token() -> None:
     assert connection.hub_name == "user"
     assert "access_token" not in f"hub:{connection.hub_name}"
     assert connection.url.startswith("https://rtc.topstepx.com/hubs/user")
+
+
+@pytest.mark.asyncio
+async def test_send_serializes_concurrent_calls() -> None:
+    """Issue #126: overlapping send() on one hub must not race pysignalr."""
+    connection = AsyncHubConnection(
+        "https://example.test/hubs/market", hub_name="market"
+    )
+    in_flight = 0
+    max_in_flight = 0
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    class FakeClient:
+        async def send(self, method: str, arguments: list) -> None:
+            nonlocal in_flight, max_in_flight
+            in_flight += 1
+            max_in_flight = max(max_in_flight, in_flight)
+            started.set()
+            await release.wait()
+            in_flight -= 1
+
+    connection._client = FakeClient()
+
+    first = asyncio.create_task(connection.send("SubscribeContractQuotes", ["MNQ"]))
+    await started.wait()
+    second = asyncio.create_task(connection.send("SubscribeContractQuotes", ["MES"]))
+    # Give the second send a chance to overlap if there is no lock.
+    await asyncio.sleep(0.02)
+    assert max_in_flight == 1
+    release.set()
+    await asyncio.gather(first, second)
+    assert max_in_flight == 1

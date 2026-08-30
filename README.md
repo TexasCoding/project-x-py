@@ -27,9 +27,9 @@ A **high-performance async Python SDK** for the [ProjectX Trading Platform](http
 
 This Python SDK acts as a bridge between your trading strategies and the ProjectX platform, handling all the complex API interactions, data processing, and real-time connectivity.
 
-## 🚀 v4.1.0 - Gateway coverage and live-trading hardening
+## 🚀 v4.1.1 - Multi-instrument market-hub subscribe race
 
-**Latest Version**: v4.1.0 — TopstepX-only, aligned with the current Gateway HTTP and SignalR APIs, with risk OCO, entry-order risk gating, and honest indicator/docs claims.
+**Latest Version**: v4.1.1 — TopstepX-only Gateway SDK. v4.1.1 fixes `TradingSuite.create(["MNQ", "MES"])` racing the shared SignalR market hub (`Subscription returned False` / un-awaited `send()`). v4.1.0 added risk OCO, entry-order risk gating, and honest indicator/docs claims.
 
 **Key changes**:
 - Official defaults: `https://api.topstepx.com` and `https://rtc.topstepx.com`

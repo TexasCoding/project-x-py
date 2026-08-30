@@ -212,33 +212,22 @@ class TestHeartbeatMechanism:
 
     async def test_send_heartbeat_with_ping_method(self, health_client):
         """Test heartbeat using SignalR ping method when available."""
-        # Mock ping method
         health_client.user_connection.ping = MagicMock()
 
-        with patch("asyncio.get_event_loop") as mock_loop:
-            mock_loop.return_value.run_in_executor = AsyncMock()
+        await health_client._send_heartbeat("user")
 
-            await health_client._send_heartbeat("user")
-
-            # Should use ping method
-            mock_loop.return_value.run_in_executor.assert_called()
+        health_client.user_connection.ping.assert_called()
+        assert health_client._total_heartbeats_sent == 1
 
     async def test_send_heartbeat_failure(self, health_client):
         """Test heartbeat failure handling."""
-        # Make send method raise exception
-        health_client.user_connection.send = MagicMock(
+        health_client.user_connection.ping = MagicMock(
             side_effect=Exception("Connection failed")
         )
 
-        with patch("asyncio.get_event_loop") as mock_loop:
-            mock_loop.return_value.run_in_executor = AsyncMock(
-                side_effect=Exception("Connection failed")
-            )
+        await health_client._send_heartbeat("user")
 
-            await health_client._send_heartbeat("user")
-
-            # Should record failure
-            assert health_client._user_heartbeats_failed == 1
+        assert health_client._user_heartbeats_failed == 1
 
     async def test_send_heartbeat_when_disconnected(self, health_client):
         """Test heartbeat skipped when hub is disconnected."""
@@ -248,6 +237,24 @@ class TestHeartbeatMechanism:
 
         # Should not increment heartbeat counter
         assert health_client._total_heartbeats_sent == 0
+
+    async def test_send_heartbeat_awaits_async_send(self, health_client):
+        """Issue #126: AsyncHubConnection.send must be awaited, not dropped."""
+        sent: list[tuple[str, object]] = []
+
+        async def async_send(method: str, arguments=None) -> None:
+            sent.append((method, arguments))
+            await asyncio.sleep(0)
+
+        health_client.user_connection = Mock(spec=["send"])
+        health_client.user_connection.send = async_send
+
+        await health_client._send_heartbeat("user")
+
+        assert sent, "async send() was never awaited"
+        assert sent[0][0] == "Heartbeat"
+        assert health_client._total_heartbeats_sent == 1
+        assert len(health_client._user_latencies) == 1
 
     async def test_heartbeat_high_latency_warning(self, health_client):
         """Test warning logged for high latency heartbeats."""
