@@ -79,6 +79,15 @@ if TYPE_CHECKING:
 logger = ProjectXLogger.get_logger(__name__)
 
 
+def _live_market_subscriptions(client: "ProjectXRealtimeClientProtocol") -> set[str]:
+    """Contracts whose SubscribeContract* sends completed on this hub session."""
+    live = getattr(client, "_live_market_subscriptions", None)
+    if not isinstance(live, set):
+        live = set()
+        client._live_market_subscriptions = live
+    return live
+
+
 class SubscriptionsMixin:
     """Mixin for subscription management functionality."""
 
@@ -293,6 +302,7 @@ class SubscriptionsMixin:
                             "SubscribeContractMarketDepth",
                             [contract_id],
                         )
+                        _live_market_subscriptions(self).add(contract_id)
                     except Exception as e:
                         logger.error(
                             LogMessages.WS_ERROR,
@@ -442,9 +452,11 @@ class SubscriptionsMixin:
 
             async with lock:
                 # Remove from stored contracts
+                live = _live_market_subscriptions(self)
                 for contract_id in contract_ids:
                     if contract_id in self._subscribed_contracts:
                         self._subscribed_contracts.remove(contract_id)
+                    live.discard(contract_id)
 
                 if self.market_connection is None:
                     logger.error(

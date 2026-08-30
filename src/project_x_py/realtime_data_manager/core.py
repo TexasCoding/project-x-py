@@ -1042,14 +1042,14 @@ class RealtimeDataManager(
             )
 
             # Subscribe to market data using the contract ID.
-            # TradingSuite already subscribes once for all instruments; skip the
-            # second hub send when this contract is already tracked (#126).
+            # Skip a second hub send only after a successful SubscribeContract*
+            # on this session (#126). Desired-set membership is not enough.
             self.logger.debug(
                 LogMessages.DATA_SUBSCRIBE, extra={"contract_id": self.contract_id}
             )
-            subscribed = getattr(self.realtime_client, "_subscribed_contracts", None)
-            already_subscribed = isinstance(subscribed, list | tuple | set) and (
-                self.contract_id in subscribed
+            live = getattr(self.realtime_client, "_live_market_subscriptions", None)
+            already_subscribed = isinstance(live, set | list | tuple) and (
+                self.contract_id in live
             )
             if already_subscribed:
                 subscription_success = True

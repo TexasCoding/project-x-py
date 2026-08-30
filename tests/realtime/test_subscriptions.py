@@ -270,6 +270,17 @@ class TestMarketSubscriptions:
         assert "NQ" in subscription_handler._subscribed_contracts
         assert "YM" in subscription_handler._subscribed_contracts
 
+        # Restore/reconnect still needs hub send for already-tracked ids (#126)
+        subscription_handler.market_connection.send.assert_any_call(
+            "SubscribeContractQuotes", ["ES"]
+        )
+        subscription_handler.market_connection.send.assert_any_call(
+            "SubscribeContractTrades", ["ES"]
+        )
+        subscription_handler.market_connection.send.assert_any_call(
+            "SubscribeContractMarketDepth", ["ES"]
+        )
+
     @pytest.mark.asyncio
     async def test_subscribe_market_data_market_not_connected(
         self, subscription_handler

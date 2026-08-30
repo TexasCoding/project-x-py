@@ -618,6 +618,7 @@ class ProjectXRealtimeClientProtocol(Protocol):
 
     # Subscriptions
     _subscribed_contracts: list[str]
+    _live_market_subscriptions: set[str]
     _user_updates_subscribed: bool
 
     # Logging
