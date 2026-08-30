@@ -114,6 +114,7 @@ class OrderTypesMixin:
         size: int,
         limit_price: float,
         account_id: int | None = None,
+        linked_order_id: int | None = None,
     ) -> OrderPlaceResponse:
         """
         Place a limit order (execute only at specified price or better).
@@ -124,6 +125,7 @@ class OrderTypesMixin:
             size: Number of contracts to trade
             limit_price: Maximum price for buy orders, minimum price for sell orders
             account_id: Account ID. Uses default account if None.
+            linked_order_id: Optional OCO sibling order ID.
 
         Returns:
             OrderPlaceResponse: Response containing order ID and status
@@ -141,6 +143,7 @@ class OrderTypesMixin:
             size=size,
             order_type=OrderType.LIMIT,
             limit_price=limit_price,
+            linked_order_id=linked_order_id,
             account_id=account_id,
         )
 
@@ -151,6 +154,7 @@ class OrderTypesMixin:
         size: int,
         stop_price: float,
         account_id: int | None = None,
+        linked_order_id: int | None = None,
     ) -> OrderPlaceResponse:
         """
         Place a stop order (market order triggered at stop price).
@@ -161,6 +165,7 @@ class OrderTypesMixin:
             size: Number of contracts to trade
             stop_price: Price level that triggers the market order
             account_id: Account ID. Uses default account if None.
+            linked_order_id: Optional OCO sibling order ID.
 
         Returns:
             OrderPlaceResponse: Response containing order ID and status
@@ -178,6 +183,7 @@ class OrderTypesMixin:
             size=size,
             order_type=OrderType.STOP,
             stop_price=stop_price,
+            linked_order_id=linked_order_id,
             account_id=account_id,
         )
 

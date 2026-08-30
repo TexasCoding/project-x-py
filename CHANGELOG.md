@@ -41,6 +41,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Protective stop and target from `attach_risk_orders` are paired as OCO so a
+  fill of either leg cancels the sibling.
+- `features=["risk_manager"]` now assigns `RiskManager` onto `OrderManager` and
+  gates entry `place_*` calls through `validate_trade` before HTTP (protective
+  order types are skipped). `ManagedTrade` remains the recommended path.
+- Daily loss and trade counters update from `POSITION_CLOSED` events, not only
+  from explicit `record_trade_result` calls.
+- Stop-distance math is unified: fixed = ticks × tickSize; percentage = percent
+  of entry. Both `attach_risk_orders` and `calculate_stop_loss` use the same
+  definition.
+- `ManagedTrade` flattens if it exits after a fill with no working stop;
+  `scale_in` validates first; `scale_out` resizes protective order size to the
+  remainder.
 - Query-cache LRU recency uses a monotonic counter so ties in wall-clock
   `time.time()` do not evict the wrong entry.
 - Partial close sends Gateway field `size` (was `closeSize`).

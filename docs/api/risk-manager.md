@@ -6,6 +6,8 @@ Comprehensive async risk management system with position sizing, risk validation
 
 The RiskManager provides automated risk management capabilities for trading operations. It handles position sizing calculations, trade validation against risk limits, automatic stop-loss and take-profit order placement, and comprehensive risk analytics.
 
+**ManagedTrade remains the recommended path** for entries (sizing, validation, OCO stop/target). Enabling `features=["risk_manager"]` also turns on an `OrderManager` auto-gate: entry `place_*` calls run `validate_trade` before HTTP and refuse invalid trades. Protective orders (stop / stop-limit / trailing stop) skip the gate. Use the auto-gate as a backstop, not as the primary risk workflow.
+
 **Key Features:**
 - Risk-based position sizing with Kelly criterion support
 - Daily loss limits and trade count restrictions
@@ -190,9 +192,9 @@ Automatically attach stop-loss and take-profit orders to a position.
 **Returns:** Dictionary with order details and risk metrics
 
 **Stop Loss Calculation:**
-- `"fixed"`: Uses `default_stop_distance` in points
+- `"fixed"`: Uses `default_stop_distance` **ticks** (`distance * tickSize`; tickSize defaults to `1.0` if no instrument)
 - `"atr"`: Uses ATR * `default_stop_atr_multiplier`
-- `"percentage"`: Uses percentage of entry price
+- `"percentage"`: Uses percent of entry (`entry * pct / 100`)
 
 **Example:**
 ```python
@@ -303,7 +305,8 @@ async def calculate_stop_loss(
     self,
     entry_price: float,
     side: OrderSide,
-    atr_value: float | None = None
+    atr_value: float | None = None,
+    instrument: Instrument | None = None,
 ) -> float
 ```
 
@@ -313,6 +316,7 @@ Calculate stop loss price based on configuration.
 - `entry_price`: Entry price for the trade
 - `side`: Order side (BUY or SELL)
 - `atr_value`: ATR value for dynamic stop calculation
+- `instrument`: Optional instrument (tickSize used for fixed stops; defaults to `1.0`)
 
 **Returns:** Calculated stop loss price
 
@@ -486,7 +490,7 @@ class RiskConfig:
     # Stop-loss configuration
     use_stop_loss: bool = True
     stop_loss_type: str = "fixed"  # "fixed", "atr", "percentage"
-    default_stop_distance: Decimal = Decimal("50")  # Points
+    default_stop_distance: Decimal = Decimal("50")  # Fixed = ticks (× tickSize); percentage = percent of entry
     default_stop_atr_multiplier: Decimal = Decimal("2.0")  # ATR multiplier
 
     # Take-profit configuration

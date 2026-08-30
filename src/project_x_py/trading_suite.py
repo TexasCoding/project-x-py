@@ -403,6 +403,7 @@ class TradingSuite:
                     position_manager=self._positions,
                     config=config.get_risk_config(),
                 )
+                self._orders.risk_manager = self._risk_manager
                 self._positions.risk_manager = self._risk_manager
                 self._stats_aggregator.risk_manager = self._risk_manager
         else:
@@ -659,6 +660,7 @@ class TradingSuite:
                     position_manager=position_manager,
                     config=config.get_risk_config(),
                 )
+                order_manager.risk_manager = risk_manager
                 position_manager.risk_manager = risk_manager
 
             # Create context

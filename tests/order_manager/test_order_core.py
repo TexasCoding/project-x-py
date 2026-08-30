@@ -1,6 +1,6 @@
 """Tests for OrderManager core API."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -74,6 +74,56 @@ class TestOrderManagerCore:
         order_manager.max_order_size = 2
         with pytest.raises(ProjectXOrderError, match="max_order_size"):
             await order_manager.place_order("MGC", 2, 0, 5)
+
+    @pytest.mark.asyncio
+    async def test_place_order_auto_risk_failure_skips_http(
+        self, order_manager, make_order_response
+    ):
+        """When auto_risk_management is on, invalid validation must not POST."""
+        order_manager.auto_risk_management = True
+        risk_manager = MagicMock()
+        risk_manager.validate_trade = AsyncMock(
+            return_value={
+                "is_valid": False,
+                "reasons": ["Daily loss limit reached ($1000)"],
+                "warnings": [],
+            }
+        )
+        order_manager.risk_manager = risk_manager
+        order_manager.project_x._make_request = AsyncMock(
+            return_value=make_order_response(99)
+        )
+
+        with pytest.raises(ProjectXOrderError, match="Daily loss"):
+            await order_manager.place_market_order("MGC", 0, 1)
+
+        order_manager.project_x._make_request.assert_not_called()
+        risk_manager.validate_trade.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_place_stop_order_skips_auto_risk_gate(
+        self, order_manager, make_order_response
+    ):
+        """Protective types must not be refused because max_positions already includes the live position."""
+        order_manager.auto_risk_management = True
+        risk_manager = MagicMock()
+        risk_manager.validate_trade = AsyncMock(
+            return_value={
+                "is_valid": False,
+                "reasons": ["Maximum positions limit reached (3)"],
+                "warnings": [],
+            }
+        )
+        order_manager.risk_manager = risk_manager
+        order_manager.project_x._make_request = AsyncMock(
+            return_value=make_order_response(7)
+        )
+
+        resp = await order_manager.place_stop_order("MGC", 1, 1, 2040.0)
+
+        assert resp.orderId == 7
+        risk_manager.validate_trade.assert_not_called()
+        order_manager.project_x._make_request.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_place_order_error_raises(self, order_manager, make_order_response):
