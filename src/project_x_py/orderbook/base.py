@@ -712,7 +712,7 @@ class OrderBookBase(BaseStatisticsTracker):
     @deprecated(
         reason="Use TradingSuite.on() with EventType enum for event handling",
         version="3.1.0",
-        removal_version="4.0.0",
+        removal_version="5.0.0",
         replacement="TradingSuite.on(EventType.MARKET_DEPTH_UPDATE, callback)",
     )
     @handle_errors("add callback", reraise=False)
@@ -768,7 +768,7 @@ class OrderBookBase(BaseStatisticsTracker):
     @deprecated(
         reason="Use TradingSuite.off() with EventType enum for event handling",
         version="3.1.0",
-        removal_version="4.0.0",
+        removal_version="5.0.0",
         replacement="TradingSuite.off(EventType.MARKET_DEPTH_UPDATE, callback)",
     )
     @handle_errors("remove callback", reraise=False)

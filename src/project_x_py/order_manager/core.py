@@ -58,11 +58,11 @@ See Also:
 
 import asyncio
 import time
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Optional
 
-from project_x_py.exceptions import ProjectXOrderError
+from project_x_py.exceptions import OrderSubmissionUncertainError, ProjectXOrderError
 from project_x_py.models import Order, OrderPlaceResponse
 from project_x_py.statistics import BaseStatisticsTracker
 from project_x_py.types.config_types import OrderManagerConfig
@@ -345,6 +345,8 @@ class OrderManager(
         custom_tag: str | None = None,
         linked_order_id: int | None = None,
         account_id: int | None = None,
+        stop_loss_bracket: dict[str, Any] | None = None,
+        take_profit_bracket: dict[str, Any] | None = None,
     ) -> OrderPlaceResponse:
         """
         Place an order with comprehensive parameter support and automatic price alignment.
@@ -541,12 +543,31 @@ class OrderManager(
             # Only include customTag if it's provided and not None/empty
             if custom_tag:
                 payload["customTag"] = custom_tag
+            if stop_loss_bracket:
+                payload["stopLossBracket"] = stop_loss_bracket
+            if take_profit_bracket:
+                payload["takeProfitBracket"] = take_profit_bracket
 
             # Place the order with timing
             start_time = time.time()
-            response = await self.project_x._make_request(
-                "POST", "/Order/place", data=payload
-            )
+            try:
+                response = await self.project_x._make_request(
+                    "POST", "/Order/place", data=payload
+                )
+            except asyncio.CancelledError:
+                raise OrderSubmissionUncertainError(
+                    "Order request was cancelled after it may have been submitted. "
+                    "Reconcile against positions and orders before retrying.",
+                    payload=payload,
+                ) from None
+            except ValueError as e:
+                if "semaphore" in str(e).lower():
+                    raise OrderSubmissionUncertainError(
+                        "Order request failed after a transport error; the broker "
+                        "may have accepted the order. Reconcile before retrying.",
+                        payload=payload,
+                    ) from e
+                raise
             duration_ms = (time.time() - start_time) * 1000
 
             # Response should be a dict for order placement
@@ -715,7 +736,7 @@ class OrderManager(
         open_orders = []
         for order_data in orders:
             try:
-                order = Order(**order_data)
+                order = Order.from_api(order_data)
                 open_orders.append(order)
 
                 # Update our cache
@@ -730,6 +751,72 @@ class OrderManager(
                 continue
 
         return open_orders
+
+    @handle_errors("search orders")
+    async def search_orders(
+        self,
+        start_timestamp: datetime | None = None,
+        end_timestamp: datetime | None = None,
+        contract_id: str | None = None,
+        account_id: int | None = None,
+    ) -> list[Order]:
+        """
+        Search historical orders including terminal (filled/cancelled) orders.
+
+        Unlike search_open_orders, this queries POST /Order/search so filled
+        market orders can be reconciled after they leave the open-order book.
+        """
+        if account_id is None:
+            if not self.project_x.account_info:
+                await self.project_x.authenticate()
+            if not self.project_x.account_info:
+                raise ProjectXOrderError(ErrorMessages.ORDER_NO_ACCOUNT)
+            account_id = self.project_x.account_info.id
+
+        if end_timestamp is None:
+            end_timestamp = datetime.now(UTC)
+        if start_timestamp is None:
+            start_timestamp = end_timestamp - timedelta(days=30)
+
+        payload: dict[str, Any] = {
+            "accountId": account_id,
+            "startTimestamp": start_timestamp.isoformat(),
+            "endTimestamp": end_timestamp.isoformat(),
+        }
+
+        if contract_id:
+            resolved = await resolve_contract_id(contract_id, self.project_x)
+            if resolved and resolved.get("id"):
+                payload["contractId"] = resolved["id"]
+
+        response = await self.project_x._make_request(
+            "POST", "/Order/search", data=payload
+        )
+
+        if not isinstance(response, dict):
+            raise ProjectXOrderError("Invalid response format")
+
+        if not response.get("success", False):
+            error_msg = response.get("errorMessage", ErrorMessages.ORDER_SEARCH_FAILED)
+            raise ProjectXOrderError(error_msg)
+
+        orders = []
+        for order_data in response.get("orders", []):
+            try:
+                order = Order.from_api(order_data)
+                orders.append(order)
+
+                async with self.order_lock:
+                    self.tracked_orders[str(order.id)] = order_data
+                    self.order_status_cache[str(order.id)] = order.status
+            except Exception as e:
+                self.logger.warning(
+                    "Failed to parse order",
+                    extra={"error": str(e), "order_data": order_data},
+                )
+                continue
+
+        return orders
 
     async def _check_circuit_breaker(self) -> bool:
         """
@@ -912,104 +999,126 @@ class OrderManager(
             order_data = await self.get_tracked_order_status(order_id_str)
             if order_data:
                 try:
-                    return Order(**order_data)
+                    return Order.from_api(order_data)
                 except Exception as e:
                     self.logger.debug(f"Failed to parse cached order data: {e}")
 
-        # Fallback to API search
+        # Fallback to open order search
         try:
             orders = await self.search_open_orders()
             for order in orders:
                 if order.id == order_id:
                     return order
-            return None
+        except Exception as e:
+            self.logger.debug(f"Failed to search open orders for {order_id}: {e}")
+
+        # Historical search so terminal orders (filled/cancelled) can be found.
+        try:
+            orders = await self.search_orders()
+            for order in orders:
+                if order.id == order_id:
+                    return order
         except Exception as e:
             self.logger.error(f"Failed to get order {order_id}: {e}")
-            return None
+
+        return None
+
+    async def _cache_order_status(
+        self, order_id: int, status: int, order_data: dict[str, Any] | None = None
+    ) -> None:
+        """Update local order caches for a known order status."""
+        async with self.order_lock:
+            order_id_str = str(order_id)
+            if order_data is not None:
+                self.tracked_orders[order_id_str] = order_data
+            elif order_id_str in self.tracked_orders:
+                self.tracked_orders[order_id_str]["status"] = status
+            self.order_status_cache[order_id_str] = status
 
     @handle_errors("cancel order")
     async def cancel_order(self, order_id: int, account_id: int | None = None) -> bool:
         """
-        Cancel an open order.
+        Cancel an open order, reconciling terminal broker state on failure.
 
-        Args:
-            order_id: Order ID to cancel
-            account_id: Account ID. Uses default account if None.
-
-        Returns:
-            True if cancellation successful
+        Returns True if the order is cancelled (or already cancelled). Returns
+        False if the order is already filled/expired/rejected. Raises only when
+        the cancel request fails and the order cannot be reconciled.
         """
         self.logger.info(LogMessages.ORDER_CANCEL, extra={"order_id": order_id})
 
+        order_id_str = str(order_id)
         async with self.order_lock:
-            # Check if order is already filled
-            order_id_str = str(order_id)
             if order_id_str in self.order_status_cache:
                 status = self.order_status_cache[order_id_str]
-                if status == OrderStatus.FILLED or status == 2:  # 2 is FILLED
-                    raise ProjectXOrderError(
-                        f"Cannot cancel order {order_id}: already filled"
-                    )
+                if status == OrderStatus.FILLED or status == 2:
+                    return False
+                if status == OrderStatus.CANCELLED or status == 3:
+                    return True
 
-            # Also check tracked orders
             if order_id_str in self.tracked_orders:
                 tracked = self.tracked_orders[order_id_str]
                 if (
                     tracked.get("status") == OrderStatus.FILLED
                     or tracked.get("status") == 2
                 ):
-                    raise ProjectXOrderError(
-                        f"Cannot cancel order {order_id}: already filled"
-                    )
+                    return False
+                if (
+                    tracked.get("status") == OrderStatus.CANCELLED
+                    or tracked.get("status") == 3
+                ):
+                    return True
 
-            # Get account ID if not provided
-            if account_id is None:
-                if not self.project_x.account_info:
-                    await self.project_x.authenticate()
-                if not self.project_x.account_info:
-                    raise ProjectXOrderError(ErrorMessages.ORDER_NO_ACCOUNT)
-                account_id = self.project_x.account_info.id
+        if account_id is None:
+            if not self.project_x.account_info:
+                await self.project_x.authenticate()
+            if not self.project_x.account_info:
+                raise ProjectXOrderError(ErrorMessages.ORDER_NO_ACCOUNT)
+            account_id = self.project_x.account_info.id
 
-            # Use correct endpoint and payload structure
-            payload = {
-                "accountId": account_id,
-                "orderId": order_id,
-            }
+        payload = {
+            "accountId": account_id,
+            "orderId": order_id,
+        }
 
-            response = await self.project_x._make_request(
-                "POST", "/Order/cancel", data=payload
-            )
+        response = await self.project_x._make_request(
+            "POST", "/Order/cancel", data=payload
+        )
 
-            # Response should be a dict
-            if not isinstance(response, dict):
-                raise ProjectXOrderError("Invalid response format")
+        if not isinstance(response, dict):
+            raise ProjectXOrderError("Invalid response format")
 
-            success = response.get("success", False) if response else False
+        success = response.get("success", False) if response else False
 
-            if success:
-                # Update cache
-                if str(order_id) in self.tracked_orders:
-                    self.tracked_orders[str(order_id)]["status"] = OrderStatus.CANCELLED
-                    self.order_status_cache[str(order_id)] = OrderStatus.CANCELLED
+        if success:
+            await self._cache_order_status(order_id, OrderStatus.CANCELLED)
+            await self.increment("orders_cancelled")
+            self.stats["orders_cancelled"] += 1
+            self.logger.info(LogMessages.ORDER_CANCELLED, extra={"order_id": order_id})
+            return True
 
-                # Update statistics
-                await self.increment("orders_cancelled")
-                self.stats["orders_cancelled"] += 1
-                self.logger.info(
-                    LogMessages.ORDER_CANCELLED, extra={"order_id": order_id}
-                )
+        reconciled_order = await self.get_order_by_id(order_id)
+        if reconciled_order is not None and reconciled_order.is_terminal:
+            await self._cache_order_status(reconciled_order.id, reconciled_order.status)
+            if reconciled_order.is_cancelled:
                 return True
-            else:
-                error_msg = response.get(
-                    "errorMessage", ErrorMessages.ORDER_CANCEL_FAILED
-                )
-                raise ProjectXOrderError(
-                    format_error_message(
-                        ErrorMessages.ORDER_CANCEL_FAILED,
-                        order_id=order_id,
-                        reason=error_msg,
-                    )
-                )
+            self.logger.info(
+                "Order already terminal before cancel completed",
+                extra={
+                    "order_id": order_id,
+                    "status": reconciled_order.status,
+                    "status_str": reconciled_order.status_str,
+                },
+            )
+            return False
+
+        error_msg = response.get("errorMessage", ErrorMessages.ORDER_CANCEL_FAILED)
+        raise ProjectXOrderError(
+            format_error_message(
+                ErrorMessages.ORDER_CANCEL_FAILED,
+                order_id=order_id,
+                reason=error_msg,
+            )
+        )
 
     @handle_errors("modify order")
     async def modify_order(
@@ -1182,24 +1291,26 @@ class OrderManager(
                 LogMessages.ORDER_CANCEL_ALL, extra={"contract_id": contract_id}
             )
 
-            orders = await self.search_open_orders(contract_id, account_id)
+            orders = await self.search_open_orders(contract_id, account_id=account_id)
+            raw_ids = await self._raw_open_order_ids(contract_id, account_id)
+            cancel_ids = {order.id for order in orders} | raw_ids
 
             results: dict[str, Any] = {
-                "total": len(orders),
+                "total": len(cancel_ids),
                 "cancelled": 0,
                 "failed": 0,
                 "errors": [],
             }
 
-            for order in orders:
+            for order_id in cancel_ids:
                 try:
-                    if await self.cancel_order(order.id, account_id):
+                    if await self.cancel_order(order_id, account_id):
                         results["cancelled"] += 1
                     else:
                         results["failed"] += 1
                 except Exception as e:
                     results["failed"] += 1
-                    results["errors"].append({"order_id": order.id, "error": str(e)})
+                    results["errors"].append({"order_id": order_id, "error": str(e)})
 
             self.logger.info(
                 LogMessages.ORDER_CANCEL_ALL_COMPLETE,
@@ -1211,6 +1322,35 @@ class OrderManager(
             )
 
             return results
+
+    async def _raw_open_order_ids(
+        self, contract_id: str | None = None, account_id: int | None = None
+    ) -> set[int]:
+        """Collect open-order IDs from the raw Gateway payload, even if parse fails."""
+        try:
+            if account_id is None:
+                if not self.project_x.account_info:
+                    return set()
+                account_id = self.project_x.account_info.id
+            payload: dict[str, Any] = {"accountId": account_id}
+            if contract_id:
+                payload["contractId"] = contract_id
+            response = await self.project_x._make_request(
+                "POST", "/Order/searchOpen", data=payload
+            )
+            if not isinstance(response, dict):
+                return set()
+            ids: set[int] = set()
+            for order_data in response.get("orders", []):
+                if isinstance(order_data, dict) and order_data.get("id") is not None:
+                    try:
+                        ids.add(int(order_data["id"]))
+                    except (TypeError, ValueError):
+                        continue
+            return ids
+        except Exception as e:
+            self.logger.debug(f"Failed to collect raw open order ids: {e}")
+            return set()
 
     def _get_recovery_manager(self) -> OperationRecoveryManager:
         """Get the recovery manager instance for complex operations."""

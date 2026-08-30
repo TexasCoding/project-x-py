@@ -816,18 +816,15 @@ class TestTradingSuiteStatistics:
             assert "components" in stats
 
     @pytest.mark.asyncio
-    async def test_get_stats_sync_deprecated(self):
-        """Test that get_stats_sync is deprecated but still works."""
+    async def test_export_stats_json(self):
+        """Test that export_stats writes suite statistics."""
         mock_client = self._create_mock_client()
         mock_realtime = self._create_mock_realtime_client()
 
         with self._patch_dependencies(mock_client, mock_realtime):
             suite = await TradingSuite.create("MNQ")
-
-            # Expected: Should issue deprecation warning
-            with pytest.warns(DeprecationWarning):
-                stats = suite.get_stats_sync()
-                assert isinstance(stats, dict)
+            exported = await suite.export_stats("json")
+            assert exported is not None
 
     # Helper methods remain the same
     def _create_mock_client(self):
@@ -910,10 +907,8 @@ class TestTradingSuiteBackwardCompatibility:
             suite = await TradingSuite.create(instrument="MNQ")
             suite._data = mock_data_manager
 
-            # Expected: Should work with deprecation warning
-            with pytest.warns(DeprecationWarning):
-                data = suite.data  # Direct access should work with warning
-                assert data == mock_data_manager
+            data = suite.data
+            assert data == mock_data_manager
 
     @pytest.mark.asyncio
     async def test_multi_instrument_direct_access_error(self):

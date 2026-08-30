@@ -254,6 +254,8 @@ class OrderManagerProtocol(Protocol):
         custom_tag: str | None = None,
         linked_order_id: int | None = None,
         account_id: int | None = None,
+        stop_loss_bracket: dict[str, Any] | None = None,
+        take_profit_bracket: dict[str, Any] | None = None,
     ) -> "OrderPlaceResponse": ...
 
     async def place_market_order(
@@ -300,6 +302,10 @@ class OrderManagerProtocol(Protocol):
     ) -> "OrderPlaceResponse": ...
 
     async def get_order_by_id(self, order_id: int) -> "Order | None": ...
+
+    async def _filled_size_from_trades(self, order_id: int) -> int: ...
+
+    async def _try_native_bracket_order(self, *args: Any, **kwargs: Any) -> Any: ...
 
     async def cancel_order(
         self, order_id: int, account_id: int | None = None
@@ -630,6 +636,11 @@ class ProjectXRealtimeClientProtocol(Protocol):
     _last_health_score: float
     _events_received_last_check: int
     _last_performance_check: float
+    event_bus: Any
+    stale_feed_seconds: float
+    stale_feed_check_interval: float
+    _stale_feed_task: Any
+    _stale_feed_emitted: bool
 
     # Methods required by mixins
     async def setup_connections(self) -> None: ...
@@ -672,6 +683,10 @@ class ProjectXRealtimeClientProtocol(Protocol):
     async def update_jwt_token(
         self, new_jwt_token: str, timeout: float = 30.0
     ) -> bool: ...
+    def _on_gateway_logout(self, *args: Any) -> None: ...
+    async def _start_stale_feed_watchdog(self) -> None: ...
+    async def _stop_stale_feed_watchdog(self) -> None: ...
+    async def _stale_feed_watchdog_loop(self) -> None: ...
     async def _recover_connection_state(
         self,
         original_token: str,

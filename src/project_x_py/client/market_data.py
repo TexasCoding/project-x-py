@@ -554,6 +554,11 @@ class MarketDataMixin:
             )
         )
 
+        # Order canonical OHLCV first, but keep extra API fields.
+        canonical = ["timestamp", "open", "high", "low", "close", "volume"]
+        extra = [column for column in data.columns if column not in canonical]
+        data = data.select(canonical + extra)
+
         # Handle datetime conversion robustly
         # Try the simple approach first (fastest for consistent data)
         try:

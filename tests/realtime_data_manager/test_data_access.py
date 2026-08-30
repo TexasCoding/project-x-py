@@ -18,6 +18,7 @@ Coverage Target: >90% for data_access.py module
 
 import asyncio
 import logging
+import time
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -904,6 +905,27 @@ class TestErrorHandling:
 
         # Should not raise exceptions due to proper locking
         assert all(not isinstance(r, Exception) for r in results)
+
+
+class TestRestPriceFallback:
+    """When the tick feed is stale, get_current_price should use REST bars."""
+
+    @pytest.mark.asyncio
+    async def test_get_current_price_uses_rest_when_ticks_stale(
+        self, data_access_manager
+    ):
+        data_access_manager.current_tick_data.append({"price": 100.0})
+        data_access_manager._last_tick_time = time.time() - 60
+        data_access_manager.project_x = MagicMock()
+        data_access_manager.instrument = "MNQ"
+        data_access_manager.project_x.get_bars = AsyncMock(
+            return_value=pl.DataFrame({"close": [21000.25]})
+        )
+
+        price = await data_access_manager.get_current_price()
+
+        assert price == 21000.25
+        data_access_manager.project_x.get_bars.assert_awaited()
 
 
 if __name__ == "__main__":

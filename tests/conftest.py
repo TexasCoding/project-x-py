@@ -215,7 +215,7 @@ def mock_trades_data():
 @pytest.fixture
 def mock_trades_response(mock_response, mock_trades_data):
     """Create a mock trades response."""
-    return mock_response(json_data=mock_trades_data)
+    return mock_response(json_data={"success": True, "trades": mock_trades_data})
 
 
 @pytest.fixture

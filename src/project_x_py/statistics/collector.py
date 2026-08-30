@@ -91,6 +91,18 @@ class ComponentCollector(BaseStatisticsTracker):
         self.trading_suite = trading_suite
         self._collection_start_time = time.time()
 
+    def _suite_component(self, name: str) -> Any:
+        """Return a manager from the suite or the first instrument context."""
+        value = getattr(self.trading_suite, name, None)
+        if value is not None:
+            return value
+        instruments = getattr(self.trading_suite, "_instruments", None) or {}
+        for context in instruments.values():
+            value = getattr(context, name, None)
+            if value is not None:
+                return value
+        return None
+
     async def collect(self) -> dict[str, Any]:
         """
         Main collection method that delegates to specific component collectors.
@@ -162,15 +174,12 @@ class ComponentCollector(BaseStatisticsTracker):
         Returns:
             OrderManagerStats if component is available, None otherwise
         """
-        if (
-            not hasattr(self.trading_suite, "orders")
-            or self.trading_suite.orders is None
-        ):
+        order_manager = self._suite_component("orders")
+        if order_manager is None:
             return None
 
         try:
             start_time = time.time()
-            order_manager = self.trading_suite.orders
 
             # Get base statistics from order manager
             base_stats: dict[str, Any] = {}
@@ -270,15 +279,12 @@ class ComponentCollector(BaseStatisticsTracker):
         Returns:
             PositionManagerStats if component is available, None otherwise
         """
-        if (
-            not hasattr(self.trading_suite, "positions")
-            or self.trading_suite.positions is None
-        ):
+        position_manager = self._suite_component("positions")
+        if position_manager is None:
             return None
 
         try:
             start_time = time.time()
-            position_manager = self.trading_suite.positions
 
             # Get base statistics
             base_stats: dict[str, Any] = {}
@@ -372,12 +378,12 @@ class ComponentCollector(BaseStatisticsTracker):
         Returns:
             RealtimeDataManagerStats if component is available, None otherwise
         """
-        if not hasattr(self.trading_suite, "data") or self.trading_suite.data is None:
+        data_manager = self._suite_component("data")
+        if data_manager is None:
             return None
 
         try:
             start_time = time.time()
-            data_manager = self.trading_suite.data
 
             # Get memory statistics (async method)
             base_stats: dict[str, Any] = {}
@@ -468,15 +474,12 @@ class ComponentCollector(BaseStatisticsTracker):
         Returns:
             OrderbookStats if component is available, None otherwise
         """
-        if (
-            not hasattr(self.trading_suite, "orderbook")
-            or self.trading_suite.orderbook is None
-        ):
+        orderbook = self._suite_component("orderbook")
+        if orderbook is None:
             return None
 
         try:
             start_time = time.time()
-            orderbook = self.trading_suite.orderbook
 
             # Get memory statistics (async method)
             base_stats: dict[str, Any] = {}
@@ -562,15 +565,12 @@ class ComponentCollector(BaseStatisticsTracker):
         Returns:
             RiskManagerStats if component is available, None otherwise
         """
-        if (
-            not hasattr(self.trading_suite, "risk_manager")
-            or self.trading_suite.risk_manager is None
-        ):
+        risk_manager = self._suite_component("risk_manager")
+        if risk_manager is None:
             return None
 
         try:
             start_time = time.time()
-            risk_manager = self.trading_suite.risk_manager
 
             # Get base statistics
             base_stats: dict[str, Any] = {}

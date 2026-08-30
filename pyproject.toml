@@ -1,6 +1,6 @@
 [project]
 name = "project-x-py"
-version = "3.5.9"
+version = "4.0.0"
 description = "High-performance Python SDK for futures trading with real-time WebSocket data, technical indicators, order management, and market depth analysis"
 readme = "README.md"
 license = { text = "MIT" }
@@ -17,7 +17,7 @@ keywords = [
     "financial-data",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Financial and Insurance Industry",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
@@ -25,6 +25,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Office/Business :: Financial :: Investment",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
@@ -34,25 +35,22 @@ dependencies = [
     "polars>=1.31.0", # TODO: Update to 1.31.0
     "numpy>=2.3.2",
     "pytz>=2025.2",
-    "requests>=2.32.4",
     "httpx[http2]>=0.27.0",
     "rich>=14.1.0",
-    "signalrcore>=0.9.5",
-    "websocket-client>=1.0.0",
+    "pysignalr>=1.3.0",
     "pydantic>=2.11.7",
     "pyyaml>=6.0.2",
     "orjson>=3.11.1",
-    "uvloop>=0.21.0",
-    "msgpack-python>=0.5.6",
     "lz4>=4.4.4",
     "cachetools>=6.1.0",
-    "plotly>=6.3.0",
     "deprecated>=1.2.18",
 ]
 
 [project.optional-dependencies]
 # Real-time features (WebSocket support)
-realtime = ["signalrcore>=0.9.5", "websocket-client>=1.0.0"]
+realtime = ["pysignalr>=1.3.0"]
+# Faster event loop on Unix (opt-in; never installed at import time)
+uvloop = ["uvloop>=0.21.0"]
 
 # Development dependencies
 dev = [

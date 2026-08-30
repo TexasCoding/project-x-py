@@ -68,7 +68,9 @@ See Also:
 """
 
 import asyncio
+import time
 from collections.abc import Callable, Coroutine
+from concurrent.futures import CancelledError as FutureCancelledError
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -98,6 +100,8 @@ class EventHandlingMixin(TaskManagerMixin):
         self._init_task_manager()  # Initialize task management
         self._batched_handler: OptimizedRealtimeHandler | None = None
         self._use_batching = False
+        self._last_market_message: float = 0.0
+        self._last_user_message: float = 0.0
 
     async def add_callback(
         self,
@@ -260,6 +264,7 @@ class EventHandlingMixin(TaskManagerMixin):
             Typically contains balance, buying power, margin, and other
             account-level information.
         """
+        self._mark_hub_message("user")
         self._schedule_async_task("account_update", args)
 
     def _forward_position_update(self, *args: Any) -> None:
@@ -276,6 +281,7 @@ class EventHandlingMixin(TaskManagerMixin):
             Contains position details including size, average price, and P&L.
             Position closure indicated by size = 0.
         """
+        self._mark_hub_message("user")
         self._schedule_async_task("position_update", args)
 
     def _forward_order_update(self, *args: Any) -> None:
@@ -291,6 +297,7 @@ class EventHandlingMixin(TaskManagerMixin):
         Event Data:
             Contains order details including status, filled quantity, and prices.
         """
+        self._mark_hub_message("user")
         self._schedule_async_task("order_update", args)
 
     def _forward_trade_execution(self, *args: Any) -> None:
@@ -306,6 +313,7 @@ class EventHandlingMixin(TaskManagerMixin):
         Event Data:
             Contains execution details including price, size, and timestamp.
         """
+        self._mark_hub_message("user")
         self._schedule_async_task("trade_execution", args)
 
     def enable_batching(self) -> None:
@@ -347,12 +355,12 @@ class EventHandlingMixin(TaskManagerMixin):
         Event Data Format:
             Callbacks receive: {"contract_id": str, "data": quote_dict}
         """
+        self._mark_hub_message("market")
         if self._use_batching and self._batched_handler and args:
             # Use batched processing for high-frequency quotes
-            self._create_task(
+            self._schedule_coroutine_threadsafe(
                 self._batched_handler.handle_quote(args[0]),
                 name="handle_quote",
-                persistent=False,
             )
         else:
             self._schedule_async_task("quote_update", args)
@@ -370,12 +378,12 @@ class EventHandlingMixin(TaskManagerMixin):
         Event Data Format:
             Callbacks receive: {"contract_id": str, "data": trade_dict}
         """
+        self._mark_hub_message("market")
         if self._use_batching and self._batched_handler and args:
             # Use batched processing for trades
-            self._create_task(
+            self._schedule_coroutine_threadsafe(
                 self._batched_handler.handle_trade(args[0]),
                 name="handle_trade",
-                persistent=False,
             )
         else:
             self._schedule_async_task("market_trade", args)
@@ -393,15 +401,70 @@ class EventHandlingMixin(TaskManagerMixin):
         Event Data Format:
             Callbacks receive: {"contract_id": str, "data": depth_dict}
         """
+        self._mark_hub_message("market")
         if self._use_batching and self._batched_handler and args:
             # Use batched processing for depth updates
-            self._create_task(
+            self._schedule_coroutine_threadsafe(
                 self._batched_handler.handle_depth(args[0]),
                 name="handle_depth",
-                persistent=False,
             )
         else:
             self._schedule_async_task("market_depth", args)
+
+    def _mark_hub_message(self, hub: str) -> None:
+        """Record the last inbound message time for stale-feed detection."""
+        now = time.monotonic()
+        if hub == "market":
+            self._last_market_message = now
+        else:
+            self._last_user_message = now
+
+    def _active_event_loop(self) -> asyncio.AbstractEventLoop | None:
+        """Return the captured asyncio loop, or capture the current running loop."""
+        loop = getattr(self, "_loop", None)
+        if loop is not None and not loop.is_closed():
+            return loop
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            return None
+        if running.is_closed():
+            return None
+        self._loop = running
+        return running
+
+    def _schedule_coroutine_threadsafe(
+        self,
+        coro: Coroutine[Any, Any, Any],
+        *,
+        name: str,
+    ) -> bool:
+        """Schedule a coroutine on the captured loop from any thread."""
+        loop = self._active_event_loop()
+        if loop is None:
+            coro.close()
+            self.logger.debug(f"Dropping {name}; no active asyncio event loop")
+            return False
+
+        try:
+            future = asyncio.run_coroutine_threadsafe(coro, loop)
+        except Exception as e:
+            coro.close()
+            self.logger.error(f"Error scheduling async task {name}: {e}")
+            return False
+
+        def _log_task_error(task_future: Any) -> None:
+            if task_future.cancelled():
+                return
+            try:
+                task_future.result()
+            except (asyncio.CancelledError, FutureCancelledError):
+                return
+            except Exception as exc:
+                self.logger.error(f"Async task {name} failed: {exc}", exc_info=True)
+
+        future.add_done_callback(_log_task_error)
+        return True
 
     def _schedule_async_task(self, event_type: str, data: Any) -> None:
         """
@@ -428,25 +491,10 @@ class EventHandlingMixin(TaskManagerMixin):
         Note:
             Critical for thread safety - ensures callbacks run in proper context.
         """
-        if self._loop and not self._loop.is_closed():
-            try:
-                asyncio.run_coroutine_threadsafe(
-                    self._forward_event_async(event_type, data), self._loop
-                )
-            except Exception as e:
-                # Fallback for logging - avoid recursion
-                self.logger.error(f"Error scheduling async task: {e}")
-        else:
-            # Fallback - try to create task in current loop context
-            try:
-                self._create_task(
-                    self._forward_event_async(event_type, data),
-                    name=f"forward_{event_type}",
-                    persistent=False,
-                )
-            except RuntimeError:
-                # No event loop available, log and continue
-                self.logger.error(f"No event loop available for {event_type} event")
+        self._schedule_coroutine_threadsafe(
+            self._forward_event_async(event_type, data),
+            name=f"forward_{event_type}",
+        )
 
     async def _forward_event_async(self, event_type: str, args: Any) -> None:
         """

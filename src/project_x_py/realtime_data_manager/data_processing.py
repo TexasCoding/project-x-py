@@ -441,10 +441,12 @@ class DataProcessingMixin:
                 # AsyncRWLock - use write_lock for modifying data
                 async with self.data_lock.write_lock():
                     self.current_tick_data.append(tick)
+                    self._last_tick_time = current_time
             else:
                 # Regular Lock - use directly
                 async with self.data_lock:
                     self.current_tick_data.append(tick)
+                    self._last_tick_time = current_time
 
             # Process each timeframe with fine-grained locking and atomic operations
             successful_updates = []
@@ -734,7 +736,9 @@ class DataProcessingMixin:
                         }
                     )
 
-                    self.data[tf_key] = pl.concat([current_data, new_bar])
+                    self.data[tf_key] = pl.concat(
+                        [current_data, new_bar], how="diagonal_relaxed"
+                    )
                     self.last_bar_times[tf_key] = bar_time
 
                     # Track new bar creation with new statistics system

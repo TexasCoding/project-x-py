@@ -280,6 +280,64 @@ class TestMarketData:
                 assert cache_key in client._opt_market_data_cache
 
     @pytest.mark.asyncio
+    async def test_get_bars_preserves_extra_api_columns(
+        self,
+        mock_httpx_client,
+        mock_auth_response,
+        mock_instrument_response,
+        mock_response,
+    ):
+        """Extra fields in the bars API response are preserved, canonical first."""
+        auth_response, accounts_response = mock_auth_response
+        now = datetime.datetime.now(pytz.UTC)
+        bars_data = [
+            {
+                "t": (now - datetime.timedelta(minutes=i * 5)).isoformat(),
+                "o": 1900.0 + i,
+                "h": 1905.0 + i,
+                "l": 1895.0 + i,
+                "c": 1902.0 + i,
+                "v": 100 + i,
+                "symbol": "MGC",
+                "n": i,
+            }
+            for i in range(3)
+        ]
+        bars_response = mock_response(json_data={"success": True, "bars": bars_data})
+        mock_httpx_client.request.side_effect = [
+            auth_response,
+            accounts_response,
+            mock_instrument_response,
+            bars_response,
+        ]
+
+        with patch("httpx.AsyncClient", return_value=mock_httpx_client):
+            async with ProjectX("testuser", "test-api-key") as client:
+                client.api_call_count = 0
+                client._opt_instrument_cache = {}
+                client._opt_instrument_cache_time = {}
+                client._opt_market_data_cache = {}
+                client._opt_market_data_cache_time = {}
+                client.cache_ttl = 300
+                client.last_cache_cleanup = time.time()
+                client.cache_hit_count = 0
+                client.rate_limiter = RateLimiter(max_requests=100, window_seconds=60)
+                await client.authenticate()
+
+                bars = await client.get_bars("MGC", days=5, interval=5)
+
+                assert bars.columns[:6] == [
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                ]
+                assert "symbol" in bars.columns
+                assert "n" in bars.columns
+
+    @pytest.mark.asyncio
     async def test_get_bars_from_cache(self, mock_httpx_client, mock_auth_response):
         """Test getting bars from cache."""
         auth_response, accounts_response = mock_auth_response

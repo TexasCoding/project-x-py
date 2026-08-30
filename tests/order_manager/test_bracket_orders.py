@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from project_x_py.exceptions import ProjectXOrderError
-from project_x_py.models import OrderPlaceResponse
+from project_x_py.models import Order, OrderPlaceResponse
 from project_x_py.order_manager.bracket_orders import BracketOrderMixin
 from project_x_py.order_manager.error_recovery import OperationRecoveryManager
 from project_x_py.order_manager.order_types import OrderTypesMixin
@@ -739,3 +739,152 @@ class TestBracketOrderMixin:
         assert result.entry_order_id == 1
         assert result.stop_order_id == 2
         assert result.target_order_id == 3
+
+    @pytest.mark.asyncio
+    async def test_fill_status_treats_historical_filled_order_as_filled(
+        self, mock_order_manager
+    ):
+        """Missing open-order cache still reports a filled historical order as filled."""
+        mixin = mock_order_manager
+        mixin.get_order_by_id = AsyncMock(
+            return_value=type(
+                "Order",
+                (),
+                {
+                    "fillVolume": 1,
+                    "size": 1,
+                    "is_filled": True,
+                },
+            )()
+        )
+
+        is_filled, filled, remaining = await BracketOrderMixin._check_order_fill_status(
+            mixin, 42
+        )
+
+        assert is_filled is True
+        assert filled == 1
+        assert remaining == 0
+
+    @pytest.mark.asyncio
+    async def test_fill_status_uses_trade_history_when_order_missing(
+        self, mock_order_manager
+    ):
+        """Absence from open orders is confirmed via trade history before aborting."""
+        mixin = mock_order_manager
+        mixin.get_order_by_id = AsyncMock(return_value=None)
+        mixin._filled_size_from_trades = AsyncMock(return_value=2)
+
+        is_filled, filled, remaining = await BracketOrderMixin._check_order_fill_status(
+            mixin, 99
+        )
+
+        assert is_filled is True
+        assert filled == 2
+        assert remaining == 0
+
+    @pytest.mark.asyncio
+    async def test_native_bracket_places_gateway_brackets(
+        self, mock_order_manager
+    ):
+        """Native path converts price offsets to ticks and attaches Gateway brackets."""
+        mixin = mock_order_manager
+        mixin.project_x = MagicMock()
+        mixin.place_order = AsyncMock(
+            return_value=OrderPlaceResponse(
+                orderId=10, success=True, errorCode=0, errorMessage=None
+            )
+        )
+        mixin.search_open_orders = AsyncMock(
+            return_value=[
+                Order.from_api(
+                    {
+                        "id": 10,
+                        "accountId": 1,
+                        "contractId": "MNQ",
+                        "creationTimestamp": "2024-01-01T00:00:00Z",
+                        "updateTimestamp": None,
+                        "status": 1,
+                        "type": 1,
+                        "side": 0,
+                        "size": 1,
+                    }
+                ),
+                Order.from_api(
+                    {
+                        "id": 11,
+                        "accountId": 1,
+                        "contractId": "MNQ",
+                        "creationTimestamp": "2024-01-01T00:00:00Z",
+                        "updateTimestamp": None,
+                        "status": 1,
+                        "type": 4,
+                        "side": 1,
+                        "size": 1,
+                    }
+                ),
+                Order.from_api(
+                    {
+                        "id": 12,
+                        "accountId": 1,
+                        "contractId": "MNQ",
+                        "creationTimestamp": "2024-01-01T00:00:00Z",
+                        "updateTimestamp": None,
+                        "status": 1,
+                        "type": 1,
+                        "side": 1,
+                        "size": 1,
+                    }
+                ),
+            ]
+        )
+
+        with patch(
+            "project_x_py.order_manager.utils._get_cached_tick_size",
+            new=AsyncMock(return_value=0.25),
+        ):
+            result = await mixin._try_native_bracket_order(
+                contract_id="MNQ",
+                side=0,
+                size=1,
+                entry_price=100.0,
+                stop_loss_price=95.0,
+                take_profit_price=110.0,
+                entry_type="limit",
+                account_id=1,
+            )
+
+        assert result is not None
+        assert result.success is True
+        assert result.entry_order_id == 10
+        assert result.stop_order_id == 11
+        assert result.target_order_id == 12
+        kwargs = mixin.place_order.await_args.kwargs
+        assert kwargs["stop_loss_bracket"] == {"ticks": 20, "type": 4}
+        assert kwargs["take_profit_bracket"] == {"ticks": 40, "type": 1}
+
+    @pytest.mark.asyncio
+    async def test_native_bracket_falls_back_when_gateway_rejects(
+        self, mock_order_manager
+    ):
+        """A rejected native place must fall through to the client-side path."""
+        mixin = mock_order_manager
+        mixin.project_x = MagicMock()
+        mixin.place_order = AsyncMock(side_effect=ProjectXOrderError("no native"))
+
+        with patch(
+            "project_x_py.order_manager.utils._get_cached_tick_size",
+            new=AsyncMock(return_value=0.25),
+        ):
+            result = await mixin._try_native_bracket_order(
+                contract_id="MNQ",
+                side=0,
+                size=1,
+                entry_price=100.0,
+                stop_loss_price=95.0,
+                take_profit_price=105.0,
+                entry_type="limit",
+                account_id=1,
+            )
+
+        assert result is None

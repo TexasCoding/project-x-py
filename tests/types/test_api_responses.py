@@ -38,12 +38,10 @@ class TestAPIResponseTypes:
         hints = get_type_hints(AuthLoginResponse, include_extras=True)
 
         # Required fields
-        assert "jwt" in hints
-        assert hints["jwt"] is str
+        assert "token" in hints
+        assert hints["token"] is str
         assert "expiresIn" in hints
-        assert hints["expiresIn"] is int
         assert "accountId" in hints
-        assert hints["accountId"] is int
 
     def test_account_response_structure(self):
         """Test AccountResponse has correct fields."""
@@ -115,6 +113,7 @@ class TestAPIResponseTypes:
         assert hints["size"] is int
         assert "averagePrice" in hints
         assert hints["averagePrice"] is float
+        assert "contractDisplayName" in hints
 
     def test_trade_response_structure(self):
         """Test TradeResponse has correct fields."""
@@ -129,7 +128,7 @@ class TestAPIResponseTypes:
         assert "side" in hints
         assert hints["side"] is int
         assert "fees" in hints
-        assert hints["fees"] is float
+        assert "commissions" in hints
 
         # Optional P&L (None for half-turn trades)
         assert "profitAndLoss" in hints
@@ -238,7 +237,7 @@ class TestAPIResponseTypes:
         """Test creating responses with real-world data."""
         # Create a valid auth response
         auth_response: AuthLoginResponse = {
-            "jwt": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+            "token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
             "expiresIn": 3600,
             "accountId": 12345,
             "accountName": "TestAccount",
@@ -246,7 +245,7 @@ class TestAPIResponseTypes:
             "simulated": False,
         }
 
-        assert auth_response["jwt"].startswith("eyJ")
+        assert auth_response["token"].startswith("eyJ")
         assert auth_response["expiresIn"] == 3600
 
         # Create a valid instrument response
@@ -267,6 +266,7 @@ class TestAPIResponseTypes:
             "id": 67890,
             "accountId": 12345,
             "contractId": "CON.F.US.MNQ.U25",
+            "contractDisplayName": "MNQU25",
             "creationTimestamp": "2024-01-01T10:00:00Z",
             "type": 1,  # LONG
             "size": 5,
@@ -275,6 +275,7 @@ class TestAPIResponseTypes:
 
         assert position["type"] == 1
         assert position["size"] == 5
+        assert position["contractDisplayName"] == "MNQU25"
 
     def test_market_data_responses(self):
         """Test market data response structures."""

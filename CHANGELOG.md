@@ -14,6 +14,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Migration guides will be provided for all breaking changes
 - Semantic versioning (MAJOR.MINOR.PATCH) is strictly followed
 
+## [4.0.0] - 2026-08-29
+
+### Breaking
+
+- Version is now **4.0.0**. ProjectX is TopstepX-only; defaults are
+  `https://api.topstepx.com` and `https://rtc.topstepx.com`.
+- Removed `TradingSuite.get_stats_sync()`. Use `await get_stats()` or
+  `await export_stats()`.
+- Removed import-time `uvloop.install()`. Install the optional `uvloop` extra
+  if you want it.
+- Removed unused default dependencies: `requests`, `plotly`, `msgpack-python`,
+  `signalrcore`, `websocket-client`.
+- Removed placeholder `suite.journal` / `suite.analytics` attributes.
+- Auth TypedDicts now use Gateway field names (`token`, `contracts`).
+- User-Agent is `ProjectX-Python-SDK/4.0.0`.
+
+### Added
+
+- Tolerant `from_api()` constructors for Order, Position, and Trade.
+- Native Gateway brackets on `place_order()` plus REST fill reconciliation.
+- `OrderSubmissionUncertainError` for interrupted HTTP submissions.
+- pysignalr-based realtime hubs with the existing `HubConnectionBuilder` API.
+- Stale-feed watchdog (`EventType.FEED_STALE`) and REST price fallback.
+- Diagonal-relaxed Polars concat so live bars can append onto historical frames.
+- `TradingSuite.export_stats()` and `projectx-check` / `projectx-config` CLI.
+- `TradingSuite.create(username=, api_key=)` credential kwargs.
+
+### Fixed
+
+- Trade search uses `POST /Trade/search` with official timestamps.
+- Order search uses `POST /Order/search`; cancel reconciles unparseable IDs.
+- Non-dict depth/quote payloads are ignored.
+- Disconnect realtime before freeing Polars frames.
+- HTTP requests are shielded so cancellation cannot drop in-flight orders.
+
+### Changed
+
+- Single-instrument `suite.data` / `suite.orders` / `suite.positions` are
+  official accessors (no deprecation warning). Multi-instrument still uses
+  `suite["SYMBOL"]`.
+- `get_positions()` is a documented alias of `search_open_positions()`.
+- `Features.TRADE_JOURNAL` and `Features.AUTO_RECONNECT` warn and have no effect.
+
 ## [3.5.8] - 2025-09-02
 
 ### 🐛 Fixed

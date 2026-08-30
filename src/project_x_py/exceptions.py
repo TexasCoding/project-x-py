@@ -91,6 +91,7 @@ from typing import Any
 
 __all__ = [
     "InvalidOrderParameters",
+    "OrderSubmissionUncertainError",
     "ProjectXAuthenticationError",
     "ProjectXClientError",
     "ProjectXConnectionError",
@@ -153,6 +154,25 @@ class ProjectXDataError(ProjectXError):
 
 class ProjectXOrderError(ProjectXError):
     """Order placement and management errors."""
+
+
+class OrderSubmissionUncertainError(ProjectXOrderError):
+    """The order request may have reached the broker; do not assume it failed.
+
+    Raised when cancellation or a transport error occurs after the HTTP request
+    may already have been sent. Callers must reconcile against open orders,
+    positions, and trades instead of flattening as if the order never existed.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        error_code: int | None = None,
+        response_data: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+    ):
+        super().__init__(message, error_code=error_code, response_data=response_data)
+        self.payload = payload or {}
 
 
 class ProjectXPositionError(ProjectXError):

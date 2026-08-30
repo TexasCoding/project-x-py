@@ -109,6 +109,25 @@ class TestOrderModel:
         o = self.make_order(contractId="MNQH25")
         assert o.symbol == "MNQH25"
 
+    def test_order_from_api_ignores_unknown_fields(self):
+        order = Order.from_api(
+            {
+                "id": 101,
+                "accountId": 10,
+                "contractId": "CON.F.US.MNQ.H25",
+                "creationTimestamp": "2024-01-01T00:00:00Z",
+                "updateTimestamp": None,
+                "status": 1,
+                "type": 1,
+                "side": 0,
+                "size": 2,
+                "fills": [{"price": 2100.5, "size": 1}],
+            }
+        )
+        assert order.id == 101
+        assert order.size == 2
+        assert not hasattr(order, "fills")
+
 
 class TestPositionModel:
     def make_position(self, **overrides) -> Position:
@@ -130,6 +149,29 @@ class TestPositionModel:
         assert p.direction == "LONG"
         assert p["averagePrice"] == pytest.approx(2050.0)
         assert p.symbol == "MGC"
+        assert p.contractDisplayName is None
+
+    def test_contract_display_name(self):
+        p = self.make_position(contractDisplayName="MGCM25")
+        assert p.contractDisplayName == "MGCM25"
+        assert p["contractDisplayName"] == "MGCM25"
+
+    def test_position_from_api_ignores_unknown_fields(self):
+        position = Position.from_api(
+            {
+                "id": 42,
+                "accountId": 10,
+                "contractId": "CON.F.US.MGC.M25",
+                "contractDisplayName": "MGCM25",
+                "creationTimestamp": "2024-01-01T00:00:00Z",
+                "type": 1,
+                "size": 2,
+                "averagePrice": 2050.0,
+                "unknownGatewayField": "ignored",
+            }
+        )
+        assert position.contractDisplayName == "MGCM25"
+        assert not hasattr(position, "unknownGatewayField")
 
     def test_short_position_helpers(self):
         p = self.make_position(type=2, size=3)
@@ -183,10 +225,48 @@ class TestTradeModel:
         # Access attributes
         assert t.price == pytest.approx(5000.0)
         assert t.profitAndLoss is None  # half-turn trade allowed
+        assert t.commissions is None
+
+        t_with_commissions = Trade(
+            id=8,
+            accountId=10,
+            contractId="CON.F.US.MNQ.H25",
+            creationTimestamp="2024-01-01T00:01:00Z",
+            price=5001.0,
+            profitAndLoss=10.0,
+            fees=2.5,
+            side=1,
+            size=1,
+            voided=False,
+            orderId=124,
+            commissions=2.5,
+        )
+        assert t_with_commissions.commissions == pytest.approx(2.5)
 
         # __slots__ should prevent setting unknown attributes
         with pytest.raises(AttributeError):
             t.extra = "not-allowed"  # type: ignore[attr-defined]
+
+    def test_trade_from_api_maps_commissions_and_ignores_unknown_fields(self):
+        trade = Trade.from_api(
+            {
+                "id": 7,
+                "accountId": 10,
+                "contractId": "CON.F.US.MNQ.H25",
+                "creationTimestamp": "2024-01-01T00:00:00Z",
+                "price": 5000.0,
+                "profitAndLoss": None,
+                "commissions": 2.25,
+                "side": 0,
+                "size": 1,
+                "voided": False,
+                "orderId": 123,
+                "extraField": "ignored",
+            }
+        )
+        assert trade.fees == pytest.approx(2.25)
+        assert trade.commissions == pytest.approx(2.25)
+        assert not hasattr(trade, "extraField")
 
 
 class TestBracketAndResponses:

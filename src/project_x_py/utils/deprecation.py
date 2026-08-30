@@ -46,7 +46,7 @@ def deprecated(
         @deprecated(
             reason="Use TradingSuite.track_order() for integrated tracking",
             version="3.1.14",
-            removal_version="4.0.0",
+            removal_version="5.0.0",
             replacement="TradingSuite.track_order()",
         )
         def old_track_order(order_id: int):
@@ -183,7 +183,7 @@ def deprecated_class(
         @deprecated_class(
             reason="Integrated into TradingSuite",
             version="3.1.14",
-            removal_version="4.0.0",
+            removal_version="5.0.0",
             replacement="TradingSuite",
         )
         class OldManager:

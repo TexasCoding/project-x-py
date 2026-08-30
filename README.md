@@ -438,7 +438,8 @@ Or use a config file (`~/.config/projectx/config.json`):
     "api_key": "your_api_key",
     "username": "your_username",
     "api_url": "https://api.topstepx.com/api",
-    "websocket_url": "wss://api.topstepx.com",
+    "user_hub_url": "https://rtc.topstepx.com/hubs/user",
+    "market_hub_url": "https://rtc.topstepx.com/hubs/market",
     "timezone": "US/Central"
 }
 ```

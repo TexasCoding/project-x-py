@@ -58,12 +58,12 @@ from typing import NotRequired, TypedDict
 class AuthLoginResponse(TypedDict):
     """Response from authentication login."""
 
-    jwt: str
-    expiresIn: int
-    accountId: int
-    accountName: str
-    canTrade: bool
-    simulated: bool
+    token: str
+    expiresIn: NotRequired[int]
+    accountId: NotRequired[int]
+    accountName: NotRequired[str]
+    canTrade: NotRequired[bool]
+    simulated: NotRequired[bool]
 
 
 class AccountResponse(TypedDict):
@@ -133,6 +133,7 @@ class PositionResponse(TypedDict):
     type: int  # 0=UNDEFINED, 1=LONG, 2=SHORT
     size: int
     averagePrice: float
+    contractDisplayName: NotRequired[str]
 
 
 class TradeResponse(TypedDict):
@@ -144,7 +145,8 @@ class TradeResponse(TypedDict):
     creationTimestamp: str
     price: float
     profitAndLoss: NotRequired[float]  # None for half-turn trades
-    fees: float
+    fees: NotRequired[float]
+    commissions: NotRequired[float]
     side: int  # 0=Buy, 1=Sell
     size: int
     voided: bool
@@ -204,8 +206,9 @@ class MarketDepthResponse(TypedDict):
 class InstrumentSearchResponse(TypedDict):
     """Response from instrument search."""
 
-    instruments: list[InstrumentResponse]
-    totalCount: int
+    contracts: list[InstrumentResponse]
+    success: NotRequired[bool]
+    totalCount: NotRequired[int]
 
 
 # WebSocket event payloads

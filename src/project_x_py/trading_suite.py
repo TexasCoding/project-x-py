@@ -34,7 +34,6 @@ Example Usage:
 """
 
 import asyncio
-import warnings
 from collections.abc import Iterator
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
@@ -70,7 +69,6 @@ from project_x_py.types.config_types import (
 from project_x_py.types.protocols import ProjectXClientProtocol
 from project_x_py.types.stats_types import TradingSuiteStats
 from project_x_py.utils import ProjectXLogger
-from project_x_py.utils.deprecation import deprecated
 
 logger = ProjectXLogger.get_logger(__name__)
 
@@ -159,9 +157,9 @@ class Features(str, Enum):
 
     ORDERBOOK = "orderbook"
     RISK_MANAGER = "risk_manager"
-    TRADE_JOURNAL = "trade_journal"
+    TRADE_JOURNAL = "trade_journal"  # Reserved; not implemented in 4.0
     PERFORMANCE_ANALYTICS = "performance_analytics"
-    AUTO_RECONNECT = "auto_reconnect"
+    AUTO_RECONNECT = "auto_reconnect"  # Reserved; not implemented in 4.0
 
 
 class TradingSuiteConfig:
@@ -383,12 +381,6 @@ class TradingSuite:
             # Optional components
             self._orderbook: OrderBook | None = None
             self._risk_manager: RiskManager | None = None
-            # Future enhancements - not currently implemented
-            # These attributes are placeholders for future feature development
-            # To enable these features, implement the corresponding classes
-            # and integrate them into the TradingSuite initialization flow
-            self.journal = None  # Trade journal for recording and analyzing trades
-            self.analytics = None  # Performance analytics for strategy evaluation
 
             # Create PositionManager first
             self._positions = PositionManager(
@@ -471,6 +463,9 @@ class TradingSuite:
             timeframes: Data timeframes (default: ["5min"])
             features: Optional features to enable
             session_config: Optional session configuration
+            username: Optional ProjectX username. Must be used with api_key.
+            api_key: Optional ProjectX API key. Must be used with username.
+            account_name: Optional account name to select during authentication
             **kwargs: Additional configuration options
 
         Returns:
@@ -507,17 +502,47 @@ class TradingSuite:
                 "Must provide either 'instruments' or 'instrument' parameter"
             )
 
+        username = cast(str | None, kwargs.pop("username", None))
+        api_key = cast(str | None, kwargs.pop("api_key", None))
+        account_name = cast(str | None, kwargs.pop("account_name", None))
+
+        if (username is None) != (api_key is None):
+            raise ValueError(
+                "Both 'username' and 'api_key' must be provided for direct "
+                "TradingSuite authentication"
+            )
+
+        resolved_features = [Features(f) for f in (features or [])]
+        unimplemented = [
+            f.value
+            for f in resolved_features
+            if f in {Features.TRADE_JOURNAL, Features.AUTO_RECONNECT}
+        ]
+        if unimplemented:
+            logger.warning(
+                "Features %s are reserved and have no effect in 4.0",
+                unimplemented,
+            )
+
         # Build configuration using primary instrument
         config = TradingSuiteConfig(
             instrument=primary_instrument,
             timeframes=timeframes or ["5min"],
-            features=[Features(f) for f in (features or [])],
+            features=resolved_features,
             session_config=session_config,
             **kwargs,
         )
 
         # Create and authenticate client
-        client_context = ProjectX.from_env()
+        client_context: AbstractAsyncContextManager[ProjectXBase]
+        if username is not None and api_key is not None:
+            client_context = ProjectX(
+                username=username,
+                api_key=api_key,
+                account_name=account_name.upper() if account_name else None,
+            )
+        else:
+            client_context = ProjectX.from_env(account_name=account_name)
         client = await client_context.__aenter__()
 
         try:
@@ -540,6 +565,7 @@ class TradingSuite:
 
             # Create suite instance with contexts
             suite = cls(client, realtime_client, config, instrument_contexts)
+            realtime_client.event_bus = suite.events
 
             # Set up event forwarding from instrument buses to suite bus
             await suite._setup_event_forwarding()
@@ -838,7 +864,13 @@ class TradingSuite:
         try:
             # Connect to realtime feeds
             logger.info("Connecting to real-time feeds...")
-            await self.realtime.connect()
+            connected = await self.realtime.connect()
+            if not connected:
+                from project_x_py.exceptions import ProjectXConnectionError
+
+                raise ProjectXConnectionError(
+                    "Failed to establish ProjectX realtime connections"
+                )
             await self.realtime.subscribe_user_updates()
 
             if self._instruments:
@@ -982,16 +1014,20 @@ class TradingSuite:
         """
         logger.info("Disconnecting TradingSuite...")
 
+        # Disconnect realtime FIRST so the SignalR background reader thread is
+        # quiesced before any Polars data frames it writes into are freed.
+        # Previous order (cleanup contexts -> disconnect realtime) raced native
+        # SignalR threads against Polars memory and corrupted the heap on
+        # disconnect (Windows STATUS_HEAP_CORRUPTION / 0xc0000374). See #98.
+        if self.realtime:
+            await self.realtime.disconnect()
+
         if self._instruments:
             # Multi-instrument mode - disconnect all contexts
             await self._disconnect_instrument_contexts()
         else:
             # Legacy single-instrument mode
             await self._disconnect_legacy_single_instrument()
-
-        # Disconnect realtime
-        if self.realtime:
-            await self.realtime.disconnect()
 
         # Clean up client context
         if hasattr(self, "_client_context") and self._client_context:
@@ -1057,121 +1093,51 @@ class TradingSuite:
     @property
     def is_connected(self) -> bool:
         """Check if all components are connected and ready."""
-        return self._connected and self.realtime.is_connected()
+        return self._connected and cast(Any, self.realtime).is_connected()
 
-    # Backward compatibility properties for single-instrument mode
+    # Single-instrument accessors. Multi-instrument suites use suite["SYMBOL"].
     @property
     def data(self) -> Any:
-        """Deprecated: Direct access to data manager."""
+        """Realtime data manager for the primary instrument."""
         if hasattr(self, "_data"):
-            warnings.warn(
-                f"Direct access to 'data' is deprecated. "
-                f"Please use suite['{self._symbol}'].data instead. "
-                f"This compatibility mode will be removed in v4.0.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
             return self._data
-        elif self._is_single_instrument and self._single_context:
-            warnings.warn(
-                f"Direct access to 'data' is deprecated. "
-                f"Please use suite['{self._single_context.symbol}'].data instead. "
-                f"This compatibility mode will be removed in v4.0.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+        if self._is_single_instrument and self._single_context:
             return self._single_context.data
         raise AttributeError("'TradingSuite' object has no attribute 'data'")
 
     @property
     def orders(self) -> Any:
-        """Deprecated: Direct access to order manager."""
+        """Order manager for the primary instrument."""
         if hasattr(self, "_orders"):
-            warnings.warn(
-                f"Direct access to 'orders' is deprecated. "
-                f"Please use suite['{self._symbol}'].orders instead. "
-                f"This compatibility mode will be removed in v4.0.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
             return self._orders
-        elif self._is_single_instrument and self._single_context:
-            warnings.warn(
-                f"Direct access to 'orders' is deprecated. "
-                f"Please use suite['{self._single_context.symbol}'].orders instead. "
-                f"This compatibility mode will be removed in v4.0.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+        if self._is_single_instrument and self._single_context:
             return self._single_context.orders
         raise AttributeError("'TradingSuite' object has no attribute 'orders'")
 
     @property
     def positions(self) -> Any:
-        """Deprecated: Direct access to position manager."""
+        """Position manager for the primary instrument."""
         if hasattr(self, "_positions"):
-            warnings.warn(
-                f"Direct access to 'positions' is deprecated. "
-                f"Please use suite['{self._symbol}'].positions instead. "
-                f"This compatibility mode will be removed in v4.0.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
             return self._positions
-        elif self._is_single_instrument and self._single_context:
-            warnings.warn(
-                f"Direct access to 'positions' is deprecated. "
-                f"Please use suite['{self._single_context.symbol}'].positions instead. "
-                f"This compatibility mode will be removed in v4.0.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+        if self._is_single_instrument and self._single_context:
             return self._single_context.positions
         raise AttributeError("'TradingSuite' object has no attribute 'positions'")
 
     @property
     def orderbook(self) -> Any:
-        """Deprecated: Direct access to orderbook."""
+        """Order book for the primary instrument, if the feature is enabled."""
         if hasattr(self, "_orderbook"):
-            warnings.warn(
-                f"Direct access to 'orderbook' is deprecated. "
-                f"Please use suite['{self._symbol}'].orderbook instead. "
-                f"This compatibility mode will be removed in v4.0.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
             return self._orderbook
-        elif self._is_single_instrument and self._single_context:
-            warnings.warn(
-                f"Direct access to 'orderbook' is deprecated. "
-                f"Please use suite['{self._single_context.symbol}'].orderbook instead. "
-                f"This compatibility mode will be removed in v4.0.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+        if self._is_single_instrument and self._single_context:
             return self._single_context.orderbook
         raise AttributeError("'TradingSuite' object has no attribute 'orderbook'")
 
     @property
     def risk_manager(self) -> Any:
-        """Deprecated: Direct access to risk manager."""
+        """Risk manager for the primary instrument, if the feature is enabled."""
         if hasattr(self, "_risk_manager"):
-            warnings.warn(
-                f"Direct access to 'risk_manager' is deprecated. "
-                f"Please use suite['{self._symbol}'].risk_manager instead. "
-                f"This compatibility mode will be removed in v4.0.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
             return self._risk_manager
-        elif self._is_single_instrument and self._single_context:
-            warnings.warn(
-                f"Direct access to 'risk_manager' is deprecated. "
-                f"Please use suite['{self._single_context.symbol}'].risk_manager instead. "
-                f"This compatibility mode will be removed in v4.0.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+        if self._is_single_instrument and self._single_context:
             return self._single_context.risk_manager
         raise AttributeError("'TradingSuite' object has no attribute 'risk_manager'")
 
@@ -1408,46 +1374,13 @@ class TradingSuite:
         """
         return await self._stats_aggregator.aggregate_stats()
 
-    @deprecated(
-        reason="Synchronous methods are being phased out in favor of async-only API",
-        version="3.3.0",
-        removal_version="4.0.0",
-        replacement="await get_stats()",
-    )
-    def get_stats_sync(self) -> TradingSuiteStats:
-        """
-        Synchronous wrapper for get_stats for backward compatibility.
+    async def export_stats(self, export_format: str = "json", **kwargs: Any) -> Any:
+        """Export suite statistics as JSON, Prometheus, CSV, or Datadog."""
+        from project_x_py.statistics.export import StatsExporter
 
-        Returns:
-            Structured statistics from all active components
-        """
-        import asyncio
-
-        # Check if we're already in an async context
-        try:
-            loop = asyncio.get_running_loop()
-            # We're in an async context, create a task and wait for it
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(asyncio.run, self.get_stats())
-                return future.result()
-        except RuntimeError:
-            # No running loop, we can use run_until_complete
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # Edge case: loop exists but is running
-                    import concurrent.futures
-
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(asyncio.run, self.get_stats())
-                        return future.result()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-
-            return loop.run_until_complete(self.get_stats())
+        stats = await self.get_stats()
+        exporter = StatsExporter()
+        return await exporter.export(cast(Any, stats), export_format, **kwargs)
 
     # Session-aware methods
     async def set_session_type(self, session_type: SessionType) -> None:
@@ -1613,13 +1546,6 @@ class TradingSuite:
             and self._single_context
             and hasattr(self._single_context, name)
         ):
-            warnings.warn(
-                f"Direct access to '{name}' is deprecated. "
-                f"Please use suite['{self._single_context.symbol}'].{name} instead. "
-                f"This compatibility mode will be removed in v4.0.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
             return getattr(self._single_context, name)
 
         # Provide helpful error message for multi-instrument suites

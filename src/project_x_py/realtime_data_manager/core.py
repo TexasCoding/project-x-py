@@ -117,7 +117,7 @@ import time
 from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import polars as pl
 import pytz
@@ -1024,7 +1024,7 @@ class RealtimeDataManager(
                 )
 
             # Check if realtime client is connected
-            if not self.realtime_client.is_connected():
+            if not cast(Any, self.realtime_client).is_connected():
                 raise ProjectXError(
                     format_error_message(
                         ErrorMessages.INTERNAL_ERROR,
@@ -1306,7 +1306,9 @@ class RealtimeDataManager(
                                 }
                             )
 
-                            self.data[tf_key] = pl.concat([current_data, new_bar])
+                            self.data[tf_key] = pl.concat(
+                                [current_data, new_bar], how="diagonal_relaxed"
+                            )
                             self.last_bar_times[tf_key] = expected_bar_time
 
                             self.logger.debug(
@@ -1379,7 +1381,9 @@ class RealtimeDataManager(
                                 }
                             )
 
-                            self.data[tf_key] = pl.concat([current_data, new_bar])
+                            self.data[tf_key] = pl.concat(
+                                [current_data, new_bar], how="diagonal_relaxed"
+                            )
                             self.last_bar_times[tf_key] = expected_bar_time
 
                             self.logger.debug(

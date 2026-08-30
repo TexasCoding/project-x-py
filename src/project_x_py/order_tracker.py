@@ -73,7 +73,7 @@ logger = logging.getLogger(__name__)
 @deprecated_class(
     reason="Use TradingSuite.track_order() for integrated order tracking",
     version="3.1.14",
-    removal_version="4.0.0",
+    removal_version="5.0.0",
     replacement="TradingSuite.track_order()",
 )
 class OrderTracker:
@@ -373,7 +373,7 @@ class OrderTracker:
 @deprecated_class(
     reason="Use TradingSuite.order_chain() for integrated order chain building",
     version="3.1.14",
-    removal_version="4.0.0",
+    removal_version="5.0.0",
     replacement="TradingSuite.order_chain()",
 )
 class OrderChainBuilder:
@@ -625,7 +625,7 @@ class OrderLifecycleError(Exception):
 @deprecated(
     reason="Use TradingSuite.track_order() for integrated tracking",
     version="3.1.14",
-    removal_version="4.0.0",
+    removal_version="5.0.0",
     replacement="TradingSuite.track_order()",
 )
 def track_order(

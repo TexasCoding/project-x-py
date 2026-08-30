@@ -101,7 +101,6 @@ from project_x_py.realtime.connection_management import ConnectionManagementMixi
 from project_x_py.realtime.event_handling import EventHandlingMixin
 from project_x_py.realtime.health_monitoring import HealthMonitoringMixin
 from project_x_py.realtime.subscriptions import SubscriptionsMixin
-from project_x_py.types.base import HubConnection
 from project_x_py.utils.task_management import TaskManagerMixin
 
 if TYPE_CHECKING:
@@ -290,8 +289,8 @@ class ProjectXRealtimeClient(
             >>> # V3: Using custom config for different environments
             >>> from project_x_py.models import ProjectXConfig
             >>> config = ProjectXConfig(
-            ...     user_hub_url="https://gateway.topstepx.com/hubs/user",
-            ...     market_hub_url="https://gateway.topstepx.com/hubs/market",
+            ...     user_hub_url="https://rtc.topstepx.com/hubs/user",
+            ...     market_hub_url="https://rtc.topstepx.com/hubs/market",
             ... )
             >>> client = ProjectXRealtimeClient(
             ...     jwt_token=jwt_token, account_id="12345", config=config
@@ -353,8 +352,9 @@ class ProjectXRealtimeClient(
             self.base_market_url = "https://rtc.topstepx.com/hubs/market"
 
         # SignalR connection objects
-        self.user_connection: HubConnection | None = None
-        self.market_connection: HubConnection | None = None
+        self.user_connection = None  # type: ignore[assignment]
+        self.market_connection = None  # type: ignore[assignment]
+        self.event_bus: Any = None
 
         # Connection state tracking
         self.user_connected = False

@@ -100,6 +100,7 @@ See Also:
 
 import asyncio
 import logging
+import time
 from collections import deque
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -269,8 +270,14 @@ class DataAccessMixin:
               several seconds old if market activity is low
             - The method is thread-safe and can be called concurrently
         """
+        stale_after = getattr(self, "stale_price_seconds", 15.0)
+        last_tick_time = getattr(self, "_last_tick_time", 0.0)
+        tick_is_stale = (
+            last_tick_time > 0 and (time.time() - last_tick_time) > stale_after
+        )
+
         # Try to get from tick data first
-        if self.current_tick_data:
+        if self.current_tick_data and not tick_is_stale:
             try:
                 # Import here to avoid circular import
                 from project_x_py.order_manager.utils import align_price_to_tick
@@ -299,8 +306,14 @@ class DataAccessMixin:
                             "15min",
                         ]:  # Check common timeframes
                             if tf_key in self.data and not self.data[tf_key].is_empty():
-                                return float(self.data[tf_key]["close"][-1])
-                    return None
+                                bar_price = float(self.data[tf_key]["close"][-1])
+                                if not tick_is_stale:
+                                    return bar_price
+                                rest_price = await self._get_rest_fallback_price()
+                                return (
+                                    rest_price if rest_price is not None else bar_price
+                                )
+                    return await self._get_rest_fallback_price()
             except (ImportError, TypeError):
                 # Fall back to regular lock if AsyncRWLock not available or type check fails
                 pass
@@ -309,8 +322,28 @@ class DataAccessMixin:
         async with self.data_lock:  # type: ignore
             for tf_key in ["1min", "5min", "15min"]:  # Check common timeframes
                 if tf_key in self.data and not self.data[tf_key].is_empty():
-                    return float(self.data[tf_key]["close"][-1])
+                    bar_price = float(self.data[tf_key]["close"][-1])
+                    if not tick_is_stale:
+                        return bar_price
+                    rest_price = await self._get_rest_fallback_price()
+                    return rest_price if rest_price is not None else bar_price
 
+        return await self._get_rest_fallback_price()
+
+    async def _get_rest_fallback_price(self) -> float | None:
+        """Use REST partial bars when the realtime tick feed is stale or empty."""
+        project_x = getattr(self, "project_x", None)
+        instrument = getattr(self, "instrument", None)
+        if project_x is None or not instrument:
+            return None
+        try:
+            bars = await project_x.get_bars(
+                instrument, days=1, interval=1, unit=2, partial=True
+            )
+            if bars is not None and not bars.is_empty():
+                return float(bars["close"][-1])
+        except Exception as e:
+            logger.debug(f"REST price fallback failed: {e}")
         return None
 
     async def get_mtf_data(self) -> dict[str, pl.DataFrame]:

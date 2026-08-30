@@ -52,6 +52,7 @@ class EventType(Enum):
     DISCONNECTED = "disconnected"
     RECONNECTING = "reconnecting"
     AUTHENTICATED = "authenticated"
+    FEED_STALE = "feed_stale"
     ERROR = "error"
     WARNING = "warning"
 
@@ -232,6 +233,16 @@ class EventBus:
                     h for h in self._once_handlers[event_type] if h != handler
                 ]
 
+    def has_handlers(self, event: EventType | str | None = None) -> bool:
+        """Return True if any handler would run for the event (or any event)."""
+        if self._wildcard_handlers:
+            return True
+        if event is None:
+            return bool(self._handlers or self._once_handlers or self._legacy_handlers)
+        if isinstance(event, EventType):
+            return bool(self._handlers.get(event) or self._once_handlers.get(event))
+        return bool(self._legacy_handlers.get(str(event)))
+
     async def emit(
         self, event: EventType | str, data: Any, source: str | None = None
     ) -> None:
@@ -242,6 +253,8 @@ class EventBus:
             data: Event payload data
             source: Optional source component name
         """
+        if not self._history_enabled and not self.has_handlers(event):
+            return
         event_obj = Event(event, data, source)
 
         # Store in history if enabled

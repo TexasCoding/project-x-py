@@ -51,6 +51,7 @@ See Also:
     - `project_x_py.client.cache.CacheMixin`
 """
 
+import asyncio
 import time
 from typing import TYPE_CHECKING, Any, TypeVar
 
@@ -140,7 +141,7 @@ class HttpMixin:
             verify=True,
             follow_redirects=True,
             headers={
-                "User-Agent": "ProjectX-Python-SDK/2.0.0",
+                "User-Agent": "ProjectX-Python-SDK/4.0.0",
                 "Accept": "application/json",
             },
         )
@@ -222,13 +223,19 @@ class HttpMixin:
             start_time = time.time()
 
             try:
-                response = await client.request(
-                    method=method,
-                    url=url,
-                    json=data,
-                    params=params,
-                    headers=request_headers,
+                # Shield the in-flight request so asyncio cancellation cannot
+                # double-release httpx/httpcore connection-pool semaphores (#85).
+                response = await asyncio.shield(
+                    client.request(
+                        method=method,
+                        url=url,
+                        json=data,
+                        params=params,
+                        headers=request_headers,
+                    )
                 )
+            except asyncio.CancelledError:
+                raise
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 raise ProjectXConnectionError(str(e)) from e
 

@@ -261,8 +261,9 @@ class ProjectXBase(
             >>> config = {
             ...     "username": "your_username",
             ...     "api_key": "your_api_key",
-            ...     "api_url": "https://gateway.topstepx.com/api",
-            ...     "websocket_url": "wss://gateway.topstepx.com/signalr",
+            ...     "api_url": "https://api.topstepx.com/api",
+            ...     "user_hub_url": "https://rtc.topstepx.com/hubs/user",
+            ...     "market_hub_url": "https://rtc.topstepx.com/hubs/market",
             ...     "timezone": "US/Central",
             ... }
             >>> with open("config.json", "w") as f:

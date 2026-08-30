@@ -249,25 +249,12 @@ async def test_backward_compatibility_single_instrument():
                     mnq_context = suite["MNQ"]
                     assert mnq_context.symbol == "MNQ"
 
-                    # Old API should work with deprecation warnings
-                    with pytest.warns(
-                        DeprecationWarning,
-                        match="Direct access to 'data' is deprecated",
-                    ):
-                        old_data_manager = suite.data
-                        assert old_data_manager == mock_data_manager
-
-                    with pytest.warns(
-                        DeprecationWarning,
-                        match="Direct access to 'orders' is deprecated",
-                    ):
-                        old_order_manager = suite.orders
-
-                    with pytest.warns(
-                        DeprecationWarning,
-                        match="Direct access to 'positions' is deprecated",
-                    ):
-                        old_position_manager = suite.positions
+                    old_data_manager = suite.data
+                    assert old_data_manager == mock_data_manager
+                    old_order_manager = suite.orders
+                    assert old_order_manager is not None
+                    old_position_manager = suite.positions
+                    assert old_position_manager is not None
 
                     await suite.disconnect()
 

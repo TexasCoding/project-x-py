@@ -73,7 +73,6 @@ import pytz
 
 from project_x_py.exceptions import ProjectXError
 from project_x_py.models import Position, Trade
-from project_x_py.utils.deprecation import deprecated
 
 logger = logging.getLogger(__name__)
 
@@ -99,27 +98,11 @@ class TradingMixin:
         """Provided by HttpMixin."""
         _ = (method, endpoint, data, params, headers, retry_count)
 
-    @deprecated(
-        reason="Method renamed for API consistency",
-        version="3.0.0",
-        removal_version="4.0.0",
-        replacement="search_open_positions()",
-    )
     async def get_positions(self) -> list[Position]:
+        """Return open positions for the authenticated account.
+
+        Alias for ``search_open_positions()``.
         """
-        DEPRECATED: Get all open positions for the authenticated account.
-
-        This method is deprecated and will be removed in a future version.
-        Please use `search_open_positions()` instead, which provides the same
-        functionality with a more consistent API endpoint.
-
-        Args:
-            self: The client instance.
-
-        Returns:
-            A list of Position objects representing current holdings.
-        """
-        # Deprecation warning handled by decorator
         return await self.search_open_positions()
 
     async def search_open_positions(
@@ -182,7 +165,7 @@ class TradingMixin:
         else:
             return []
 
-        return [Position(**pos) for pos in positions_data]
+        return [Position.from_api(pos) for pos in positions_data]
 
     async def search_trades(
         self,
@@ -257,20 +240,27 @@ class TradingMixin:
         if start_date is None:
             start_date = end_date - timedelta(days=30)
 
-        # Prepare parameters
-        params = {
+        payload: dict[str, Any] = {
             "accountId": account_id,
-            "startDate": start_date.isoformat(),
-            "endDate": end_date.isoformat(),
-            "limit": limit,
+            "startTimestamp": start_date.isoformat(),
+            "endTimestamp": end_date.isoformat(),
         }
 
         if contract_id:
-            params["contractId"] = contract_id
+            payload["contractId"] = contract_id
 
-        response = await self._make_request("GET", "/trades/search", params=params)
+        response = await self._make_request("POST", "/Trade/search", data=payload)
 
-        if not response or not isinstance(response, list):
+        if response is None:
             return []
 
-        return [Trade(**trade) for trade in response]
+        if isinstance(response, list):
+            trades_data = response
+        elif isinstance(response, dict):
+            if not response.get("success", False):
+                return []
+            trades_data = response.get("trades", [])
+        else:
+            return []
+
+        return [Trade.from_api(trade) for trade in trades_data[:limit]]

@@ -53,8 +53,8 @@ class MockHealthMonitoringClient(HealthMonitoringMixin, MockBaseClient):
         # Mock realtime client attributes
         self.user_connected = True
         self.market_connected = True
-        self.user_connection = Mock(spec=HubConnection)
-        self.market_connection = Mock(spec=HubConnection)
+        self.user_connection = Mock()
+        self.market_connection = Mock()
 
         # Mock task manager methods
         self._managed_tasks = set()
@@ -669,6 +669,37 @@ class TestHeartbeatLoops:
 
         # Should have called send_heartbeat multiple times despite error
         assert health_client._send_heartbeat.call_count >= 2
+
+
+class TestStaleFeedWatchdog:
+    """Stale market feeds must emit FEED_STALE and reconnect."""
+
+    @pytest.mark.asyncio
+    async def test_stale_feed_watchdog_emits_and_reconnects(self):
+        from project_x_py.event_bus import EventType
+
+        client = MockHealthMonitoringClient()
+        client.stale_feed_seconds = 0.01
+        client.stale_feed_check_interval = 0.001
+        client._last_market_message = time.monotonic() - 1.0
+        client.event_bus = AsyncMock()
+        client.force_health_reconnect = AsyncMock()
+
+        calls = 0
+
+        async def fake_sleep(_delay: float) -> None:
+            nonlocal calls
+            calls += 1
+            if calls > 1:
+                raise asyncio.CancelledError()
+
+        with patch("asyncio.sleep", fake_sleep):
+            with pytest.raises(asyncio.CancelledError):
+                await client._stale_feed_watchdog_loop()
+
+        client.event_bus.emit.assert_awaited()
+        assert client.event_bus.emit.await_args.args[0] == EventType.FEED_STALE
+        client.force_health_reconnect.assert_awaited()
 
 
 if __name__ == "__main__":

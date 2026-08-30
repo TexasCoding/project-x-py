@@ -65,17 +65,13 @@ import asyncio
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from project_x_py.realtime.async_hub import HubConnectionBuilder, invoke_maybe
 from project_x_py.utils import (
     LogContext,
     LogMessages,
     ProjectXLogger,
     handle_errors,
 )
-
-try:
-    from signalrcore.hub_connection_builder import HubConnectionBuilder
-except ImportError:
-    HubConnectionBuilder = None
 
 if TYPE_CHECKING:
     from project_x_py.types import ProjectXRealtimeClientProtocol
@@ -123,7 +119,7 @@ class ConnectionManagementMixin:
                 - GatewayDepth -> market_depth
 
         Raises:
-            ImportError: If signalrcore package is not installed
+            ImportError: If the async SignalR client cannot be imported
             Exception: If connection setup fails
 
         Note:
@@ -137,9 +133,6 @@ class ConnectionManagementMixin:
             market_hub=self.market_hub_url,
         ):
             logger.debug(LogMessages.WS_CONNECT, extra={"phase": "setup"})
-
-            if HubConnectionBuilder is None:
-                raise ImportError("signalrcore is required for real-time functionality")
 
             async with self._connection_lock:
                 logger.info(
@@ -218,11 +211,13 @@ class ConnectionManagementMixin:
                 self.user_connection.on(
                     "GatewayUserTrade", self._forward_trade_execution
                 )
+                self.user_connection.on("GatewayLogout", self._on_gateway_logout)
 
                 # Market Hub Events
                 self.market_connection.on("GatewayQuote", self._forward_quote_update)
                 self.market_connection.on("GatewayTrade", self._forward_market_trade)
                 self.market_connection.on("GatewayDepth", self._forward_market_depth)
+                self.market_connection.on("GatewayLogout", self._on_gateway_logout)
 
                 logger.debug(
                     LogMessages.WS_CONNECTED, extra={"phase": "setup_complete"}
@@ -272,15 +267,15 @@ class ConnectionManagementMixin:
             operation="connect",
             account_id=self.account_id,
         ):
-            if not self.setup_complete:
-                await self.setup_connections()
-
-            # Store the event loop for cross-thread task scheduling
+            # Capture the loop before setup so SignalR callbacks can dispatch.
             try:
                 self._loop = asyncio.get_running_loop()
             except RuntimeError:
                 logger.error("No running event loop found.")
                 return False
+
+            if not self.setup_complete:
+                await self.setup_connections()
 
             logger.debug(LogMessages.WS_CONNECT)
 
@@ -304,15 +299,22 @@ class ConnectionManagementMixin:
                     )
                     return False
 
-                # Wait for connections to establish
+                wait_tasks = [
+                    asyncio.create_task(self.user_hub_ready.wait()),
+                    asyncio.create_task(self.market_hub_ready.wait()),
+                ]
                 try:
-                    await asyncio.wait_for(
-                        asyncio.gather(
-                            self.user_hub_ready.wait(), self.market_hub_ready.wait()
-                        ),
-                        timeout=10.0,
-                    )
-                except TimeoutError:
+                    _, pending = await asyncio.wait(wait_tasks, timeout=10.0)
+                except asyncio.CancelledError:
+                    for task in wait_tasks:
+                        task.cancel()
+                    await asyncio.gather(*wait_tasks, return_exceptions=True)
+                    raise
+
+                if pending:
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.gather(*wait_tasks, return_exceptions=True)
                     logger.error(
                         LogMessages.WS_ERROR,
                         extra={
@@ -323,6 +325,8 @@ class ConnectionManagementMixin:
 
                 if self.user_connected and self.market_connected:
                     self.stats["connected_time"] = datetime.now()
+                    if hasattr(self, "_start_stale_feed_watchdog"):
+                        await self._start_stale_feed_watchdog()
                     logger.debug(LogMessages.WS_CONNECTED)
                     return True
                 else:
@@ -349,9 +353,7 @@ class ConnectionManagementMixin:
         Note:
             This is an internal method that bridges sync SignalR with async code.
         """
-        # SignalR connections are synchronous, so we run them in executor
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, connection.start)
+        await invoke_maybe(connection.start)
         logger.debug(LogMessages.WS_CONNECTED, extra={"hub": name})
 
     @handle_errors("disconnect")
@@ -389,14 +391,16 @@ class ConnectionManagementMixin:
         ):
             logger.debug(LogMessages.WS_DISCONNECT)
 
+            if hasattr(self, "_stop_stale_feed_watchdog"):
+                await self._stop_stale_feed_watchdog()
+
             async with self._connection_lock:
-                loop = asyncio.get_running_loop()
                 if self.user_connection:
-                    await loop.run_in_executor(None, self.user_connection.stop)
+                    await invoke_maybe(self.user_connection.stop)
                     self.user_connected = False
 
                 if self.market_connection:
-                    await loop.run_in_executor(None, self.market_connection.stop)
+                    await invoke_maybe(self.market_connection.stop)
                     self.market_connected = False
 
                 logger.debug(LogMessages.WS_DISCONNECTED)
@@ -467,6 +471,10 @@ class ConnectionManagementMixin:
         self.market_connected = False
         self.market_hub_ready.clear()
         self.logger.warning("❌ Market hub disconnected")
+
+    def _on_gateway_logout(self: "ProjectXRealtimeClientProtocol", *args: Any) -> None:
+        """Handle GatewayLogout so it is not treated as an unhandled hub event."""
+        self.logger.debug("Gateway logout event received", extra={"payload": args})
 
     def _on_connection_error(
         self: "ProjectXRealtimeClientProtocol", hub: str, error: Any

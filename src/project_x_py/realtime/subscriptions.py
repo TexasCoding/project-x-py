@@ -65,6 +65,7 @@ See Also:
 import asyncio
 from typing import TYPE_CHECKING
 
+from project_x_py.realtime.async_hub import invoke_maybe
 from project_x_py.utils import (
     LogContext,
     LogMessages,
@@ -158,39 +159,15 @@ class SubscriptionsMixin:
                 )
                 return False
 
-            # ProjectX Gateway expects Subscribe method with account ID
-            loop = asyncio.get_running_loop()
-
-            # Subscribe to account updates
-            await loop.run_in_executor(
-                None,
-                self.user_connection.send,
-                "SubscribeAccounts",
-                [],  # Empty list for accounts subscription
+            await invoke_maybe(self.user_connection.send, "SubscribeAccounts", [])
+            await invoke_maybe(
+                self.user_connection.send, "SubscribeOrders", [int(self.account_id)]
             )
-
-            # Subscribe to order updates
-            await loop.run_in_executor(
-                None,
-                self.user_connection.send,
-                "SubscribeOrders",
-                [int(self.account_id)],  # List with int account ID
+            await invoke_maybe(
+                self.user_connection.send, "SubscribePositions", [int(self.account_id)]
             )
-
-            # Subscribe to position updates
-            await loop.run_in_executor(
-                None,
-                self.user_connection.send,
-                "SubscribePositions",
-                [int(self.account_id)],  # List with int account ID
-            )
-
-            # Subscribe to trade updates
-            await loop.run_in_executor(
-                None,
-                self.user_connection.send,
-                "SubscribeTrades",
-                [int(self.account_id)],  # List with int account ID
+            await invoke_maybe(
+                self.user_connection.send, "SubscribeTrades", [int(self.account_id)]
             )
 
             logger.debug(
@@ -285,9 +262,6 @@ class SubscriptionsMixin:
                 if contract_id not in self._subscribed_contracts:
                     self._subscribed_contracts.append(contract_id)
 
-            # Subscribe using ProjectX Gateway methods (same as sync client)
-            loop = asyncio.get_running_loop()
-
             for contract_id in contract_ids:
                 if self.market_connection is None:
                     logger.error(
@@ -297,20 +271,17 @@ class SubscriptionsMixin:
                     return False
 
                 try:
-                    await loop.run_in_executor(
-                        None,
+                    await invoke_maybe(
                         self.market_connection.send,
                         "SubscribeContractQuotes",
                         [contract_id],
                     )
-                    await loop.run_in_executor(
-                        None,
+                    await invoke_maybe(
                         self.market_connection.send,
                         "SubscribeContractTrades",
                         [contract_id],
                     )
-                    await loop.run_in_executor(
-                        None,
+                    await invoke_maybe(
                         self.market_connection.send,
                         "SubscribeContractMarketDepth",
                         [contract_id],
@@ -379,27 +350,18 @@ class SubscriptionsMixin:
             logger.debug(
                 LogMessages.DATA_UNSUBSCRIBE, extra={"channel": "user_updates"}
             )
-            loop = asyncio.get_running_loop()
             account_id_arg = [int(self.account_id)]
-
-            # Unsubscribe from account updates
-            await loop.run_in_executor(
-                None, self.user_connection.send, "UnsubscribeAccounts", account_id_arg
+            await invoke_maybe(
+                self.user_connection.send, "UnsubscribeAccounts", account_id_arg
             )
-
-            # Unsubscribe from order updates
-            await loop.run_in_executor(
-                None, self.user_connection.send, "UnsubscribeOrders", account_id_arg
+            await invoke_maybe(
+                self.user_connection.send, "UnsubscribeOrders", account_id_arg
             )
-
-            # Unsubscribe from position updates
-            await loop.run_in_executor(
-                None, self.user_connection.send, "UnsubscribePositions", account_id_arg
+            await invoke_maybe(
+                self.user_connection.send, "UnsubscribePositions", account_id_arg
             )
-
-            # Unsubscribe from trade updates
-            await loop.run_in_executor(
-                None, self.user_connection.send, "UnsubscribeTrades", account_id_arg
+            await invoke_maybe(
+                self.user_connection.send, "UnsubscribeTrades", account_id_arg
             )
 
             logger.debug(
@@ -470,8 +432,6 @@ class SubscriptionsMixin:
                 if contract_id in self._subscribed_contracts:
                     self._subscribed_contracts.remove(contract_id)
 
-            # ProjectX Gateway expects Unsubscribe method
-            loop = asyncio.get_running_loop()
             if self.market_connection is None:
                 logger.error(
                     LogMessages.WS_ERROR,
@@ -479,25 +439,13 @@ class SubscriptionsMixin:
                 )
                 return False
 
-            # Unsubscribe from quotes
-            await loop.run_in_executor(
-                None,
-                self.market_connection.send,
-                "UnsubscribeContractQuotes",
-                contract_ids,
+            await invoke_maybe(
+                self.market_connection.send, "UnsubscribeContractQuotes", contract_ids
             )
-
-            # Unsubscribe from trades
-            await loop.run_in_executor(
-                None,
-                self.market_connection.send,
-                "UnsubscribeContractTrades",
-                contract_ids,
+            await invoke_maybe(
+                self.market_connection.send, "UnsubscribeContractTrades", contract_ids
             )
-
-            # Unsubscribe from market depth
-            await loop.run_in_executor(
-                None,
+            await invoke_maybe(
                 self.market_connection.send,
                 "UnsubscribeContractMarketDepth",
                 contract_ids,

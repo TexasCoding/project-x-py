@@ -226,13 +226,15 @@ class TestConnectionManagementMixin:
             "GatewayUserAccount",
             "GatewayUserPosition",
             "GatewayUserOrder",
-            "GatewayUserTrade"
+            "GatewayUserTrade",
+            "GatewayLogout",
         ]
 
         expected_market_events = [
             "GatewayQuote",
             "GatewayTrade",
-            "GatewayDepth"
+            "GatewayDepth",
+            "GatewayLogout",
         ]
 
         # Check that all event handlers were registered
@@ -385,8 +387,15 @@ class TestConnectionManagementMixin:
                 mock_client.user_connected = False
                 mock_client.market_connected = False
 
-                # Use a very short timeout for testing
-                with patch('asyncio.wait_for', side_effect=TimeoutError()):
+                async def timeout_wait(tasks, timeout):
+                    del timeout
+                    return set(), set(tasks)
+
+                with patch(
+                    "asyncio.wait",
+                    new_callable=AsyncMock,
+                    side_effect=timeout_wait,
+                ):
                     result = await mock_client.connect()
 
                 assert result is False
@@ -420,17 +429,13 @@ class TestConnectionManagementMixin:
 
     @pytest.mark.asyncio
     async def test_start_connection_async_runs_in_executor(self, mock_client):
-        """Test that _start_connection_async runs SignalR start() in executor."""
+        """Test that _start_connection_async invokes hub start()."""
         mock_connection = Mock()
+        mock_connection.start = Mock()
 
-        with patch('asyncio.get_running_loop') as mock_get_loop:
-            mock_loop = AsyncMock()
-            mock_get_loop.return_value = mock_loop
+        await mock_client._start_connection_async(mock_connection, "test")
 
-            await mock_client._start_connection_async(mock_connection, "test")
-
-            # Verify that start() was called through run_in_executor
-            mock_loop.run_in_executor.assert_called_once_with(None, mock_connection.start)
+        mock_connection.start.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_disconnect_stops_both_connections(self, mock_client):
@@ -440,16 +445,10 @@ class TestConnectionManagementMixin:
         mock_client.user_connection = mock_user_connection
         mock_client.market_connection = mock_market_connection
 
-        with patch('asyncio.get_running_loop') as mock_get_loop:
-            mock_loop = AsyncMock()
-            mock_get_loop.return_value = mock_loop
+        await mock_client.disconnect()
 
-            await mock_client.disconnect()
-
-            # Verify both connections were stopped through executor
-            assert mock_loop.run_in_executor.call_count == 2
-            mock_loop.run_in_executor.assert_any_call(None, mock_user_connection.stop)
-            mock_loop.run_in_executor.assert_any_call(None, mock_market_connection.stop)
+        mock_user_connection.stop.assert_called_once()
+        mock_market_connection.stop.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_disconnect_updates_connection_flags(self, mock_client):
