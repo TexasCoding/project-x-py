@@ -161,6 +161,7 @@ class ConfigManager:
         config_dict.update(env_config)
 
         self._config = ProjectXConfig(**config_dict)
+        self.validate_config(self._config)
         return self._config
 
     def _load_config_file(self) -> dict[str, Any]:

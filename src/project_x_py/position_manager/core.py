@@ -39,7 +39,7 @@ Example Usage:
         # V3.1: Get current positions with detailed fields
         positions = await suite.positions.get_all_positions()
         for pos in positions:
-            print(f"{pos.contractId}: {pos.netPos} @ ${pos.buyAvgPrice}")
+            print(f"{pos.contractId}: {pos.size} @ ${pos.averagePrice}")
 
         # V3.1: Calculate P&L with market prices
         current_price = await suite.data.get_current_price()
@@ -149,8 +149,8 @@ class PositionManager(
         >>> positions = await position_manager.get_all_positions()
         >>> mgc_position = await position_manager.get_position("MGC")
         >>> if mgc_position:
-        >>>     print(f"Size: {mgc_position.netPos}")
-        >>>     print(f"Avg Price: ${mgc_position.buyAvgPrice}")
+        >>>     print(f"Size: {mgc_position.size}")
+        >>>     print(f"Avg Price: ${mgc_position.averagePrice}")
         >>> # V3: Portfolio analytics with market prices
         >>> market_prices = {"MGC": 2050.0, "MNQ": 18500.0}
         >>> portfolio_pnl = await position_manager.calculate_portfolio_pnl(
@@ -436,8 +436,8 @@ class PositionManager(
             >>> positions = await position_manager.get_all_positions()
             >>> for pos in positions:
             ...     print(f"Contract: {pos.contractId}")
-            ...     print(f"  Net Position: {pos.netPos}")
-            ...     print(f"  Buy Avg Price: ${pos.buyAvgPrice:.2f}")
+            ...     print(f"  Size: {pos.size}")
+            ...     print(f"  Average Price: ${pos.averagePrice:.2f}")
             ...     print(f"  Unrealized P&L: ${pos.unrealizedPnl:.2f}")
             >>> # V3: Get positions for specific account
             >>> positions = await position_manager.get_all_positions(account_id=12345)
@@ -458,12 +458,7 @@ class PositionManager(
         except Exception as e:
             self.stats["errors"] += 1
             self.logger.error(f"Error getting positions: {e}")
-            # Re-raise connection errors for refresh_positions to handle
-            from project_x_py.exceptions import ProjectXConnectionError
-
-            if isinstance(e, ProjectXConnectionError):
-                raise
-            return []
+            raise
 
         # Track the operation timing
         duration_ms = (time.time() - start_time) * 1000
@@ -481,8 +476,13 @@ class PositionManager(
             p for p in filtered_positions if p.size != 0 and p.contractId is not None
         ]
 
-        # Update tracked positions
+        # Update tracked positions — replace the book so closed contracts drop out
         async with self.position_lock:
+            live_ids = {position.contractId for position in filtered_positions}
+            for stale_id in [
+                cid for cid in self.tracked_positions if cid not in live_ids
+            ]:
+                del self.tracked_positions[stale_id]
             for position in filtered_positions:
                 self.tracked_positions[position.contractId] = position
 
@@ -527,8 +527,8 @@ class PositionManager(
             >>> # V3.1: Check if we have a position with TradingSuite
             >>> position = await suite.positions.get_position(suite.instrument_id)
             >>> if position:
-            ...     print(f"{suite.instrument} position: {position.netPos} contracts")
-            ...     print(f"Buy Avg Price: ${position.buyAvgPrice:.2f}")
+            ...     print(f"{suite.instrument} position: {position.size} contracts")
+            ...     print(f"Average Price: ${position.averagePrice:.2f}")
             ...     print(f"Sell Avg Price: ${position.sellAvgPrice:.2f}")
             ...     print(f"Unrealized P&L: ${position.unrealizedPnl:.2f}")
             ...     print(f"Realized P&L: ${position.realizedPnl:.2f}")

@@ -30,10 +30,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remove the Codecov GitHub Action, `codecov.yml`, and README badge.
   Coverage still runs locally via pytest-cov.
 
+### Added
+
+- `Auth/validate` session refresh and `Auth/logout`.
+- `Contract/searchById` for full `CON.*` ids and `Contract/available`.
+- `Order/searchById`, `Order/v2/query`, `GET /Status/ping`.
+- `get_bars(live=...)`, 20,000-bar cap, and Tick unit `7`.
+- `modify_order(trail_price=...)`.
+- Gateway `OrderStatus.PENDING_CANCELLATION` (7) and `SUSPENDED` (8).
+
 ### Fixed
 
 - Query-cache LRU recency uses a monotonic counter so ties in wall-clock
   `time.time()` do not evict the wrong entry.
+- Partial close sends Gateway field `size` (was `closeSize`).
+- Native bracket success no longer places a second client-side entry.
+- Position-order cancel/resize honors nested `{entry,stop,target}_orders`.
+- JWT refresh no longer deadlocks on `_connection_lock`.
+- Health monitoring `connect`/`disconnect` run via mixin MRO.
+- OrderBook accepts a single GatewayDepth object and `volume` (fallback `size`).
+- Position sizing uses `tickSize`/`tickValue` when an instrument is provided.
+- Trailing stops only ratchet in the favorable direction.
+- `/Order/searchOpen` and `/Order/search` send only official fields; extra
+  filters run locally.
+- Mutating POSTs are not retried after 401/429/`ReadError`.
+- `list_accounts` uses `Account.from_api`.
+- `get_all_positions` raises on search failure and drops closed contracts
+  from the cache.
+- Place-order events emit after releasing `order_lock`.
+- Unmarked pytest tests default to the `unit` marker.
 
 ## [4.0.1] - 2026-08-30
 

@@ -57,9 +57,9 @@ Example Usage:
         async def on_position_update(event):
             data = event.data
             print(f"Position update: {data}")
-            if "netPos" in data:
-                print(f"  Net Position: {data['netPos']}")
-                print(f"  Unrealized P&L: ${data.get('unrealizedPnl', 0):.2f}")
+            if "size" in data:
+                print(f"  Size: {data['size']}")
+                print(f"  Average Price: ${data.get('averagePrice', 0):.2f}")
 
         async def on_quote_update(event):
             data = event.data

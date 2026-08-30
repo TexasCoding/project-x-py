@@ -72,7 +72,7 @@ Example Usage:
 Order Types:
     - OrderSide: BUY=0, SELL=1 for order direction
     - OrderType: LIMIT=1, MARKET=2, STOP_LIMIT=3, STOP=4, TRAILING_STOP=5, JOIN_BID=6, JOIN_ASK=7
-    - OrderStatus: NONE=0, OPEN=1, FILLED=2, CANCELLED=3, REJECTED=4, EXPIRED=5, PENDING=6
+    - OrderStatus: NONE=0, OPEN=1, FILLED=2, CANCELLED=3, EXPIRED=4, REJECTED=5, PENDING=6, PENDING_CANCELLATION=7, SUSPENDED=8
 
 Position Types:
     - PositionType: UNDEFINED=0, LONG=1, SHORT=2 for position direction
@@ -114,7 +114,7 @@ class OrderType(IntEnum):
 
 
 class OrderStatus(IntEnum):
-    """Order status enumeration."""
+    """Order status enumeration (Gateway OrderStatus)."""
 
     NONE = 0
     OPEN = 1
@@ -123,6 +123,8 @@ class OrderStatus(IntEnum):
     EXPIRED = 4
     REJECTED = 5
     PENDING = 6
+    PENDING_CANCELLATION = 7
+    SUSPENDED = 8
 
 
 class PositionType(IntEnum):

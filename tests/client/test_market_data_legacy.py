@@ -93,28 +93,24 @@ class TestMarketDataMixin:
         """Test getting instrument by direct contract ID."""
         mock_response = {
             "success": True,
-            "contracts": [
-                {
-                    "id": "CON.F.US.MNQ.U25",
-                    "name": "MNQU25",
-                    "description": "Micro E-mini Nasdaq-100 futures",
-                    "tickSize": 0.25,
-                    "tickValue": 12.5,
-                    "activeContract": True,
-                    "symbolId": "MNQ",
-                }
-            ],
+            "contract": {
+                "id": "CON.F.US.MNQ.U25",
+                "name": "MNQU25",
+                "description": "Micro E-mini Nasdaq-100 futures",
+                "tickSize": 0.25,
+                "tickValue": 12.5,
+                "activeContract": True,
+                "symbolId": "MNQ",
+            },
         }
         market_client._make_request.return_value = mock_response
 
         instrument = await market_client.get_instrument("CON.F.US.MNQ.U25")
 
         assert instrument.id == "CON.F.US.MNQ.U25"
-        # Should search by ID when format matches CON.*
         market_client._make_request.assert_called_once()
         call_args = market_client._make_request.call_args
-        # Check that it uses /Contract/search endpoint
-        assert call_args[0][1] == "/Contract/search"
+        assert call_args[0][1] == "/Contract/searchById"
 
     @pytest.mark.asyncio
     async def test_get_instrument_no_results(self, market_client):

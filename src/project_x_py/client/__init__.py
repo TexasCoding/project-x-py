@@ -113,7 +113,7 @@ class ProjectX(ProjectXBase):
         >>>     position = await suite.positions.get_position("MNQ")
         >>>     bars = await suite.data.get_data("1min")
         >>>
-        >>>     print(f"Placed order {order.id}, current position: {position.netPos}")
+        >>>     print(f"Placed order {order.id}, current position: {position.size}")
         >>>     print(f"Latest 1-min bar: {bars.tail(1)}")
         >>>
         >>> asyncio.run(trading_app())

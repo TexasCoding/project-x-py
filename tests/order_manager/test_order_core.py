@@ -29,7 +29,43 @@ class TestOrderManagerCore:
         assert call_args["type"] == 2
         assert call_args["side"] == 0
         assert call_args["size"] == 2
+        assert "linkedOrderId" not in call_args
         assert order_manager.stats["orders_placed"] == start_count + 1
+
+    @pytest.mark.asyncio
+    async def test_search_open_orders_sends_only_account_id(self, order_manager):
+        """Gateway searchOpen accepts only accountId; contract/side are local filters."""
+        mnq = {
+            "id": 1,
+            "accountId": 12345,
+            "contractId": "CON.F.US.MNQ.U25",
+            "creationTimestamp": "2024-01-01T01:00:00Z",
+            "updateTimestamp": None,
+            "status": 1,
+            "type": 1,
+            "side": 0,
+            "size": 1,
+        }
+        mes = {
+            **mnq,
+            "id": 2,
+            "contractId": "CON.F.US.MES.U25",
+            "side": 1,
+        }
+        order_manager.project_x._make_request = AsyncMock(
+            return_value={"success": True, "orders": [mnq, mes]}
+        )
+        orders = await order_manager.search_open_orders(
+            contract_id="CON.F.US.MNQ.U25", side=0
+        )
+        search_calls = [
+            call
+            for call in order_manager.project_x._make_request.await_args_list
+            if call.args[1] == "/Order/searchOpen"
+        ]
+        assert search_calls, "expected POST /Order/searchOpen"
+        assert search_calls[0].kwargs["data"] == {"accountId": 12345}
+        assert [o.id for o in orders] == [1]
 
     @pytest.mark.asyncio
     async def test_place_order_rejects_size_over_max(self, order_manager):
@@ -260,8 +296,9 @@ class TestOrderManagerCore:
         order_manager.project_x.account_info.id = 12345
         order_manager.project_x._make_request = AsyncMock(
             side_effect=[
-                {"success": True, "orders": []},
-                {"success": True, "orders": [order_data]},
+                {"success": False, "errorCode": 1},  # searchById miss
+                {"success": True, "orders": []},  # searchOpen miss
+                {"success": True, "orders": [order_data]},  # historical search
             ]
         )
 
@@ -270,10 +307,12 @@ class TestOrderManagerCore:
         assert isinstance(order, Order)
         assert order.id == 123
         assert order.status == 2
-        assert order_manager.project_x._make_request.call_args_list[1].args[:2] == (
-            "POST",
-            "/Order/search",
-        )
+        endpoints = [
+            call.args[1]
+            for call in order_manager.project_x._make_request.call_args_list
+        ]
+        assert "/Order/searchById" in endpoints
+        assert "/Order/search" in endpoints
 
     @pytest.mark.asyncio
     async def test_modify_order_success_and_aligns(self, order_manager):
@@ -352,7 +391,9 @@ class TestOrderManagerCore:
         assert call_args["stopPrice"] == 16800.0
 
     @pytest.mark.asyncio
-    async def test_place_order_with_account_id(self, order_manager, make_order_response):
+    async def test_place_order_with_account_id(
+        self, order_manager, make_order_response
+    ):
         """place_order includes account_id when provided."""
         order_manager.project_x._make_request = AsyncMock(
             return_value=make_order_response(45)
@@ -388,6 +429,9 @@ class TestOrderManagerCore:
         assert isinstance(order, Order)
         assert order.id == 123
         assert order.contractId == "MNQ"
+        first_call = order_manager.project_x._make_request.await_args_list[0]
+        assert first_call.args[0] == "POST"
+        assert first_call.args[1] == "/Order/searchById"
 
         # Should update cache through search_open_orders
         assert order_manager.tracked_orders["123"] == order_data
@@ -426,9 +470,16 @@ class TestOrderManagerCore:
 
         await order_manager.search_open_orders(contract_id="MNQ", side=1)
 
-        call_args = order_manager.project_x._make_request.call_args[1]["data"]
+        search_calls = [
+            call
+            for call in order_manager.project_x._make_request.await_args_list
+            if call.args[1] == "/Order/searchOpen"
+        ]
+        assert search_calls
+        call_args = search_calls[0].kwargs["data"]
         assert call_args["accountId"] == 12345
-        assert call_args["side"] == 1
+        assert "side" not in call_args
+        assert "contractId" not in call_args
 
     @pytest.mark.asyncio
     async def test_search_open_orders_api_error(self, order_manager):
@@ -447,7 +498,9 @@ class TestOrderManagerCore:
             return_value={"success": False, "errorMessage": "Order not found"}
         )
 
-        with pytest.raises(ProjectXOrderError, match="Failed to cancel order 999: Order not found"):
+        with pytest.raises(
+            ProjectXOrderError, match="Failed to cancel order 999: Order not found"
+        ):
             await order_manager.cancel_order(999)
 
     @pytest.mark.asyncio
@@ -533,14 +586,16 @@ class TestOrderManagerCore:
     def test_get_order_statistics_calculations(self, order_manager):
         """Test order statistics calculations."""
         # Set up test statistics
-        order_manager.stats.update({
-            "orders_placed": 100,
-            "orders_filled": 80,
-            "orders_cancelled": 15,
-            "market_orders": 30,
-            "limit_orders": 70,
-            "bracket_orders": 25
-        })
+        order_manager.stats.update(
+            {
+                "orders_placed": 100,
+                "orders_filled": 80,
+                "orders_cancelled": 15,
+                "market_orders": 30,
+                "limit_orders": 70,
+                "bracket_orders": 25,
+            }
+        )
 
         stats = order_manager.get_order_statistics()
 
@@ -554,11 +609,9 @@ class TestOrderManagerCore:
 
     def test_get_order_statistics_zero_division(self, order_manager):
         """Test order statistics with zero orders placed."""
-        order_manager.stats.update({
-            "orders_placed": 0,
-            "orders_filled": 0,
-            "orders_cancelled": 0
-        })
+        order_manager.stats.update(
+            {"orders_placed": 0, "orders_filled": 0, "orders_cancelled": 0}
+        )
 
         stats = order_manager.get_order_statistics()
 
@@ -584,7 +637,12 @@ class TestOrderManagerCore:
         """place_order forwards Gateway-native bracket fields on the payload."""
         order_manager.project_x.account_info.id = 12345
         order_manager.project_x._make_request = AsyncMock(
-            return_value={"success": True, "orderId": 9, "errorCode": 0, "errorMessage": None}
+            return_value={
+                "success": True,
+                "orderId": 9,
+                "errorCode": 0,
+                "errorMessage": None,
+            }
         )
 
         await order_manager.place_order(

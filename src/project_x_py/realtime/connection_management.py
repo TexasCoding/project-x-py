@@ -627,76 +627,73 @@ class ConnectionManagementMixin:
             original_setup_complete = self.setup_complete
             original_subscriptions = list(self._subscribed_contracts)
             try:
-                # Acquire connection lock with timeout to prevent deadlock
+                # disconnect()/connect() already take _connection_lock. Holding it
+                # here deadlocks because asyncio.Lock is not re-entrant.
                 async with asyncio.timeout(timeout):
-                    async with self._connection_lock:
-                        # Disconnect existing connections
-                        await self.disconnect()
+                    await self.disconnect()
 
-                        # Update JWT token
-                        self.jwt_token = new_jwt_token
+                    # Update JWT token
+                    self.jwt_token = new_jwt_token
 
-                        # Reset setup flag to force new connection setup
-                        self.setup_complete = False
+                    # Reset setup flag to force new connection setup
+                    self.setup_complete = False
 
-                        # Reconnect with timeout
+                    # Reconnect with timeout
+                    reconnect_success = False
+                    try:
+                        async with asyncio.timeout(
+                            timeout * 0.7
+                        ):  # Reserve time for subscriptions
+                            reconnect_success = await self.connect()
+                    except TimeoutError:
+                        logger.error(
+                            LogMessages.WS_ERROR,
+                            extra={
+                                "error": f"Connection timeout after {timeout * 0.7}s"
+                            },
+                        )
                         reconnect_success = False
+
+                    if reconnect_success:
+                        # Re-subscribe to user updates with timeout
                         try:
                             async with asyncio.timeout(
-                                timeout * 0.7
-                            ):  # Reserve time for subscriptions
-                                reconnect_success = await self.connect()
+                                timeout * 0.15
+                            ):  # Small portion for user updates
+                                await self.subscribe_user_updates()
                         except TimeoutError:
-                            logger.error(
-                                LogMessages.WS_ERROR,
-                                extra={
-                                    "error": f"Connection timeout after {timeout * 0.7}s"
-                                },
+                            logger.warning(
+                                "User subscription timeout during token refresh"
                             )
-                            reconnect_success = False
 
-                        if reconnect_success:
-                            # Re-subscribe to user updates with timeout
+                        # Re-subscribe to market data with timeout
+                        if original_subscriptions:
                             try:
                                 async with asyncio.timeout(
                                     timeout * 0.15
-                                ):  # Small portion for user updates
-                                    await self.subscribe_user_updates()
+                                ):  # Small portion for market data
+                                    await self.subscribe_market_data(
+                                        original_subscriptions
+                                    )
                             except TimeoutError:
                                 logger.warning(
-                                    "User subscription timeout during token refresh"
+                                    "Market subscription timeout during token refresh"
                                 )
 
-                            # Re-subscribe to market data with timeout
-                            if original_subscriptions:
-                                try:
-                                    async with asyncio.timeout(
-                                        timeout * 0.15
-                                    ):  # Small portion for market data
-                                        await self.subscribe_market_data(
-                                            original_subscriptions
-                                        )
-                                except TimeoutError:
-                                    logger.warning(
-                                        "Market subscription timeout during token refresh"
-                                    )
+                        logger.debug(LogMessages.WS_RECONNECT)
+                        return True
 
-                            logger.debug(LogMessages.WS_RECONNECT)
-                            return True
-                        else:
-                            # Connection failed - initiate recovery
-                            logger.error(
-                                LogMessages.WS_ERROR,
-                                extra={
-                                    "error": "Failed to reconnect with new JWT token"
-                                },
-                            )
-                            await self._recover_connection_state(
-                                original_token,
-                                original_setup_complete,
-                                original_subscriptions,
-                            )
-                            return False
+                    # Connection failed - initiate recovery
+                    logger.error(
+                        LogMessages.WS_ERROR,
+                        extra={"error": "Failed to reconnect with new JWT token"},
+                    )
+                    await self._recover_connection_state(
+                        original_token,
+                        original_setup_complete,
+                        original_subscriptions,
+                    )
+                    return False
 
             except TimeoutError:
                 logger.error(

@@ -339,8 +339,10 @@ class RealtimeHandler:
             self.logger.debug("Ignoring malformed market depth payload")
             return
 
-        market_data = data.get("data", [])
-        if not isinstance(market_data, list):
+        market_data = data.get("data", data)
+        if isinstance(market_data, dict):
+            market_data = [market_data]
+        elif not isinstance(market_data, list):
             self.logger.debug("Ignoring market depth payload with non-list data")
             return
         if not market_data:
@@ -412,7 +414,7 @@ class RealtimeHandler:
         try:
             trade_type = entry.get("type", 0)
             price = float(entry.get("price", 0))
-            volume = int(entry.get("volume", 0))
+            volume = int(entry.get("volume", entry.get("size", 0)) or 0)
 
             # Map type and update statistics
             type_name = self.orderbook._map_trade_type(trade_type)

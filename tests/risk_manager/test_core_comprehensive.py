@@ -34,18 +34,22 @@ def mock_client():
         balance=100000.0,
         canTrade=True,
         isVisible=True,
-        simulated=True
+        simulated=True,
     )
     client.get_account_info = AsyncMock(return_value=client.account_info)
-    client.list_accounts = AsyncMock(return_value=[client.account_info])  # Add this method
-    client.get_instrument = AsyncMock(return_value=Instrument(
-        id="MNQ",
-        name="Micro E-mini Nasdaq",
-        description="Micro E-mini Nasdaq futures",
-        tickSize=0.25,
-        tickValue=5.0,
-        activeContract=True
-    ))
+    client.list_accounts = AsyncMock(
+        return_value=[client.account_info]
+    )  # Add this method
+    client.get_instrument = AsyncMock(
+        return_value=Instrument(
+            id="MNQ",
+            name="Micro E-mini Nasdaq",
+            description="Micro E-mini Nasdaq futures",
+            tickSize=0.25,
+            tickValue=5.0,
+            activeContract=True,
+        )
+    )
     return client
 
 
@@ -92,7 +96,13 @@ def mock_data_manager():
 
 
 @pytest.fixture
-async def risk_manager(mock_client, mock_order_manager, mock_position_manager, mock_event_bus, mock_data_manager):
+async def risk_manager(
+    mock_client,
+    mock_order_manager,
+    mock_position_manager,
+    mock_event_bus,
+    mock_data_manager,
+):
     """Create a RiskManager instance for testing."""
     rm = RiskManager(
         project_x=mock_client,
@@ -100,11 +110,11 @@ async def risk_manager(mock_client, mock_order_manager, mock_position_manager, m
         position_manager=mock_position_manager,
         event_bus=mock_event_bus,
         config=RiskConfig(),
-        data_manager=mock_data_manager
+        data_manager=mock_data_manager,
     )
 
     # Wait for initialization
-    if hasattr(rm, '_init_task'):
+    if hasattr(rm, "_init_task"):
         try:
             await asyncio.wait_for(rm._init_task, timeout=1.0)
         except asyncio.TimeoutError:
@@ -117,12 +127,14 @@ class TestRiskManagerInitialization:
     """Test RiskManager initialization and setup."""
 
     @pytest.mark.asyncio
-    async def test_initialization_with_defaults(self, mock_client, mock_order_manager, mock_event_bus):
+    async def test_initialization_with_defaults(
+        self, mock_client, mock_order_manager, mock_event_bus
+    ):
         """Test RiskManager initializes with default configuration."""
         rm = RiskManager(
             project_x=mock_client,
             order_manager=mock_order_manager,
-            event_bus=mock_event_bus
+            event_bus=mock_event_bus,
         )
 
         assert rm.client == mock_client
@@ -141,18 +153,17 @@ class TestRiskManagerInitialization:
         assert rm._max_drawdown == Decimal("0")
 
     @pytest.mark.asyncio
-    async def test_initialization_with_custom_config(self, mock_client, mock_order_manager, mock_event_bus):
+    async def test_initialization_with_custom_config(
+        self, mock_client, mock_order_manager, mock_event_bus
+    ):
         """Test RiskManager with custom configuration."""
-        config = RiskConfig(
-            max_risk_per_trade=Decimal("0.02"),
-            max_daily_trades=20
-        )
+        config = RiskConfig(max_risk_per_trade=Decimal("0.02"), max_daily_trades=20)
 
         rm = RiskManager(
             project_x=mock_client,
             order_manager=mock_order_manager,
             event_bus=mock_event_bus,
-            config=config
+            config=config,
         )
 
         assert rm.config.max_risk_per_trade == Decimal("0.02")
@@ -168,7 +179,9 @@ class TestRiskManagerInitialization:
         assert risk_manager.position_manager == new_pm
 
     @pytest.mark.asyncio
-    async def test_set_position_manager_replaces_existing(self, risk_manager, mock_position_manager):
+    async def test_set_position_manager_replaces_existing(
+        self, risk_manager, mock_position_manager
+    ):
         """Test replacing existing position manager."""
         rm = risk_manager
         rm.positions = mock_position_manager
@@ -191,7 +204,7 @@ class TestPositionSizing:
         result = await rm.calculate_position_size(
             entry_price=15000.0,
             stop_loss=14900.0,
-            risk_percent=0.01  # 1% risk
+            risk_percent=0.01,  # 1% risk
         )
 
         assert isinstance(result, dict)
@@ -208,7 +221,7 @@ class TestPositionSizing:
         result = await rm.calculate_position_size(
             entry_price=15000.0,
             stop_loss=14900.0,
-            risk_amount=1000.0  # $1000 risk
+            risk_amount=1000.0,  # $1000 risk
         )
 
         assert result["position_size"] > 0
@@ -222,13 +235,47 @@ class TestPositionSizing:
 
         result = await rm.calculate_position_size(
             entry_price=15000.0,
-            stop_loss=14900.0,
+            stop_loss=14990.0,
             risk_percent=0.01,
-            instrument=instrument
+            instrument=instrument,
         )
 
         assert result["position_size"] > 0
         assert True  # Skip contract_size check
+
+    @pytest.mark.asyncio
+    async def test_calculate_position_size_uses_tick_value(self, risk_manager):
+        """MNQ $2/point must size off tickValue, not $1/point."""
+        from project_x_py.models import Account, Instrument
+
+        rm = risk_manager
+        rm._get_account_info = AsyncMock(
+            return_value=Account(
+                id=1,
+                name="Test",
+                balance=100000.0,
+                canTrade=True,
+                isVisible=True,
+                simulated=True,
+            )
+        )
+        rm.config.max_position_size = 100
+        mnq = Instrument(
+            id="CON.F.US.MNQ.U25",
+            name="MNQ",
+            description="Micro Nasdaq",
+            tickSize=0.25,
+            tickValue=0.50,
+            activeContract=True,
+        )
+        result = await rm.calculate_position_size(
+            entry_price=21000.0,
+            stop_loss=20990.0,
+            risk_amount=1000.0,
+            instrument=mnq,
+        )
+        # 10 points * $2/pt = $20/contract → 50 contracts, not 100
+        assert result["position_size"] == 50
 
     @pytest.mark.asyncio
     async def test_calculate_position_size_with_kelly(self, risk_manager):
@@ -244,7 +291,7 @@ class TestPositionSizing:
         result = await rm.calculate_position_size(
             entry_price=1000.0,  # Lower price for testing
             stop_loss=990.0,
-            use_kelly=True
+            use_kelly=True,
         )
 
         assert result["position_size"] > 0
@@ -260,7 +307,7 @@ class TestPositionSizing:
         result = await rm.calculate_position_size(
             entry_price=15000.0,
             stop_loss=14999.0,  # Very tight stop
-            risk_percent=0.10  # Large risk to trigger max position
+            risk_percent=0.10,  # Large risk to trigger max position
         )
 
         assert result["position_size"] <= 5
@@ -273,9 +320,7 @@ class TestPositionSizing:
         # Stop loss same as entry (no risk)
         with pytest.raises((InvalidOrderParameters, ValueError)):
             await rm.calculate_position_size(
-                entry_price=15000.0,
-                stop_loss=15000.0,
-                risk_percent=0.01
+                entry_price=15000.0, stop_loss=15000.0, risk_percent=0.01
             )
 
     @pytest.mark.asyncio
@@ -284,9 +329,7 @@ class TestPositionSizing:
         rm = risk_manager
 
         result = await rm.calculate_position_size(
-            entry_price=15000.0,
-            stop_loss=14900.0,
-            risk_percent=0.0
+            entry_price=15000.0, stop_loss=14900.0, risk_percent=0.0
         )
 
         # Debug
@@ -315,7 +358,7 @@ class TestTradeValidation:
             side=OrderSide.BUY.value,
             size=2,
             limitPrice=15000.0,
-            stopPrice=14900.0
+            stopPrice=14900.0,
         )
 
         result = await rm.validate_trade(order)
@@ -342,7 +385,7 @@ class TestTradeValidation:
             side=OrderSide.BUY.value,
             size=1,
             limitPrice=15000.0,
-            stopPrice=14900.0
+            stopPrice=14900.0,
         )
 
         result = await rm.validate_trade(order)
@@ -380,7 +423,7 @@ class TestTradeValidation:
             side=OrderSide.BUY.value,
             size=1,
             limitPrice=15000.0,
-            stopPrice=14900.0
+            stopPrice=14900.0,
         )
 
         result = await rm.validate_trade(order)
@@ -405,7 +448,7 @@ class TestTradeValidation:
             side=OrderSide.BUY.value,
             size=10,  # Exceeds max
             limitPrice=15000.0,
-            stopPrice=14900.0
+            stopPrice=14900.0,
         )
 
         result = await rm.validate_trade(order)
@@ -421,7 +464,7 @@ class TestTradeValidation:
         rm.config.allowed_trading_hours = [("09:30", "16:00")]
 
         # Mock time to be outside hours
-        with patch('project_x_py.risk_manager.core.datetime') as mock_dt:
+        with patch("project_x_py.risk_manager.core.datetime") as mock_dt:
             # Create a proper datetime object that returns the time
             mock_now = datetime(2024, 1, 1, 20, 0)  # 8 PM
             mock_dt.now.return_value = mock_now
@@ -438,7 +481,7 @@ class TestTradeValidation:
                 side=OrderSide.BUY.value,
                 size=1,
                 limitPrice=15000.0,
-                stopPrice=14900.0
+                stopPrice=14900.0,
             )
 
             result = await rm.validate_trade(order)
@@ -464,7 +507,7 @@ class TestTradeValidation:
             side=OrderSide.BUY.value,
             size=1,
             limitPrice=15000.0,
-            stopPrice=14900.0
+            stopPrice=14900.0,
         )
 
         result = await rm.validate_trade(order)
@@ -490,7 +533,7 @@ class TestRiskAnalysis:
                 creationTimestamp=datetime.now().isoformat(),
                 type=1,  # LONG
                 size=2,
-                averagePrice=15000.0
+                averagePrice=15000.0,
             ),
             Position(
                 id=2,
@@ -499,8 +542,8 @@ class TestRiskAnalysis:
                 creationTimestamp=datetime.now().isoformat(),
                 type=1,  # LONG
                 size=1,
-                averagePrice=4500.0
-            )
+                averagePrice=4500.0,
+            ),
         ]
         mock_position_manager.get_all_positions = AsyncMock(return_value=positions)
 
@@ -523,7 +566,7 @@ class TestRiskAnalysis:
             entry_price=15000.0,
             stop_loss=14900.0,
             take_profit=15200.0,
-            position_size=2
+            position_size=2,
         )
 
         assert isinstance(result, dict)
@@ -605,10 +648,7 @@ class TestStopLossManagement:
         rm.config.stop_loss_type = "fixed"
         rm.config.default_stop_distance = Decimal("50")
 
-        result = await rm.calculate_stop_loss(
-            entry_price=15000.0,
-            side=OrderSide.BUY
-        )
+        result = await rm.calculate_stop_loss(entry_price=15000.0, side=OrderSide.BUY)
 
         assert result == 14950.0  # Entry - stop distance
 
@@ -619,10 +659,7 @@ class TestStopLossManagement:
         rm.config.stop_loss_type = "percentage"
         rm.config.default_stop_distance = Decimal("0.01")  # 1%
 
-        result = await rm.calculate_stop_loss(
-            entry_price=15000.0,
-            side=OrderSide.BUY
-        )
+        result = await rm.calculate_stop_loss(entry_price=15000.0, side=OrderSide.BUY)
 
         assert result == 14850.0  # Entry * (1 - 0.01)
 
@@ -637,9 +674,7 @@ class TestStopLossManagement:
         mock_data_manager.calculate_atr = AsyncMock(return_value=25.0)
 
         result = await rm.calculate_stop_loss(
-            entry_price=15000.0,
-            side=OrderSide.BUY,
-            atr_value=25.0
+            entry_price=15000.0, side=OrderSide.BUY, atr_value=25.0
         )
 
         assert result == 14950.0  # Entry - (ATR * multiplier)
@@ -651,10 +686,7 @@ class TestStopLossManagement:
         rm.config.stop_loss_type = "fixed"
         rm.config.default_stop_distance = Decimal("50")
 
-        result = await rm.calculate_stop_loss(
-            entry_price=15000.0,
-            side=OrderSide.SELL
-        )
+        result = await rm.calculate_stop_loss(entry_price=15000.0, side=OrderSide.SELL)
 
         assert result == 15050.0  # Entry + stop distance for shorts
 
@@ -670,7 +702,7 @@ class TestStopLossManagement:
         should_trail = await rm.should_activate_trailing_stop(
             entry_price=15000.0,
             current_price=15035.0,  # 35 points profit
-            side=OrderSide.BUY
+            side=OrderSide.BUY,
         )
 
         assert should_trail is True
@@ -679,7 +711,7 @@ class TestStopLossManagement:
         should_trail = await rm.should_activate_trailing_stop(
             entry_price=15000.0,
             current_price=15020.0,  # Only 20 points profit
-            side=OrderSide.BUY
+            side=OrderSide.BUY,
         )
 
         assert should_trail is False
@@ -699,7 +731,7 @@ class TestTradeHistory:
             entry_price=15000.0,
             exit_price=15050.0,
             size=2,
-            side=OrderSide.BUY
+            side=OrderSide.BUY,
         )
 
         assert len(rm._trade_history) == 1
@@ -747,10 +779,7 @@ class TestTradeHistory:
         rm._trade_history = [{}] * 50  # Enough history
 
         kelly_size = await rm.calculate_kelly_position_size(
-            base_size=10,
-            win_rate=0.6,
-            avg_win=500,
-            avg_loss=300
+            base_size=10, win_rate=0.6, avg_win=500, avg_loss=300
         )
 
         assert kelly_size > 0
@@ -777,7 +806,7 @@ class TestErrorHandling:
             side=OrderSide.BUY.value,
             size=1,
             limitPrice=15000.0,
-            stopPrice=14900.0
+            stopPrice=14900.0,
         )
 
         # Should handle gracefully
@@ -791,15 +820,15 @@ class TestErrorHandling:
         mock_client.account_info.balance = 0
 
         result = await rm.calculate_position_size(
-            entry_price=15000.0,
-            stop_loss=14900.0,
-            risk_percent=0.01
+            entry_price=15000.0, stop_loss=14900.0, risk_percent=0.01
         )
 
         assert result["position_size"] == 0
 
     @pytest.mark.asyncio
-    async def test_analyze_risk_with_api_error(self, risk_manager, mock_position_manager):
+    async def test_analyze_risk_with_api_error(
+        self, risk_manager, mock_position_manager
+    ):
         """Test risk analysis when API calls fail."""
         rm = risk_manager
         mock_position_manager.get_all_positions = AsyncMock(

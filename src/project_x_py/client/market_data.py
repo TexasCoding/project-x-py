@@ -158,6 +158,20 @@ class MarketDataMixin:
 
             logger.debug(LogMessages.CACHE_MISS, extra={"symbol": symbol})
 
+            # Official lookup when the caller already has a full contract id
+            if symbol.startswith("CON."):
+                by_id = await self._make_request(
+                    "POST", "/Contract/searchById", data={"contractId": symbol}
+                )
+                if (
+                    isinstance(by_id, dict)
+                    and by_id.get("success")
+                    and isinstance(by_id.get("contract"), dict)
+                ):
+                    instrument = Instrument.from_api(by_id["contract"])
+                    self.cache_instrument(symbol, instrument)
+                    return instrument
+
             # Check if this is a full contract ID (e.g., CON.F.US.MNQ.U25)
             # If so, extract the base symbol for searching
             search_symbol = symbol
@@ -306,6 +320,30 @@ class MarketDataMixin:
         # Default to first result
         return instruments[0]
 
+    @handle_errors("list available contracts")
+    async def list_available_contracts(self, live: bool = False) -> list[Instrument]:
+        """List contracts available to the authenticated account.
+
+        Args:
+            live: If True, list live-subscription contracts.
+
+        Returns:
+            List of Instrument objects from POST /Contract/available.
+        """
+        await self._ensure_authenticated()
+        response = await self._make_request(
+            "POST", "/Contract/available", data={"live": live}
+        )
+        if not isinstance(response, dict) or not response.get("success", False):
+            error_msg = (
+                response.get("errorMessage", "Contract available search failed")
+                if isinstance(response, dict)
+                else "Contract available search failed"
+            )
+            raise ProjectXInstrumentError(error_msg)
+        contracts = response.get("contracts", []) or []
+        return [Instrument.from_api(contract) for contract in contracts]
+
     @handle_errors("search instruments")
     @validate_response(required_fields=["success", "contracts"])
     async def search_instruments(
@@ -364,6 +402,8 @@ class MarketDataMixin:
 
             return instruments
 
+    HISTORY_BAR_LIMIT = 20_000
+
     @handle_errors("get bars")
     async def get_bars(
         self,
@@ -375,6 +415,7 @@ class MarketDataMixin:
         partial: bool = True,
         start_time: datetime.datetime | None = None,
         end_time: datetime.datetime | None = None,
+        live: bool = False,
     ) -> pl.DataFrame:
         """
         Retrieve historical OHLCV bar data for an instrument.
@@ -388,11 +429,13 @@ class MarketDataMixin:
             days: Number of days of historical data (default: 8, ignored if start_time/end_time provided)
             interval: Interval between bars in the specified unit (default: 5)
             unit: Time unit for the interval (default: 2 for minutes)
-                  1=Second, 2=Minute, 3=Hour, 4=Day, 5=Week, 6=Month
-            limit: Maximum number of bars to retrieve (auto-calculated if None)
+                  1=Second, 2=Minute, 3=Hour, 4=Day, 5=Week, 6=Month, 7=Tick
+            limit: Maximum number of bars to retrieve (auto-calculated if None,
+                   capped at 20,000 per Gateway)
             partial: Include incomplete/partial bars (default: True)
             start_time: Optional start datetime (overrides days if provided)
             end_time: Optional end datetime (defaults to now if not provided)
+            live: If True, retrieve bars from the live data subscription
 
         Returns:
             pl.DataFrame: DataFrame with OHLCV data and timezone-aware timestamps
@@ -467,13 +510,13 @@ class MarketDataMixin:
 
                 # Calculate days for cache key (approximate)
                 days_calc = int((end_date - start_date).total_seconds() / 86400)
-                cache_key = f"{symbol}_{start_date.isoformat()}_{end_date.isoformat()}_{interval}_{unit}_{partial}"
+                cache_key = f"{symbol}_{start_date.isoformat()}_{end_date.isoformat()}_{interval}_{unit}_{partial}_{live}"
             else:
                 # Use days parameter
                 start_date = datetime.datetime.now(market_tz) - timedelta(days=days)
                 end_date = datetime.datetime.now(market_tz)
                 days_calc = days
-                cache_key = f"{symbol}_{days}_{interval}_{unit}_{partial}"
+                cache_key = f"{symbol}_{days}_{interval}_{unit}_{partial}_{live}"
 
             # Check market data cache
             cached_data = self.get_cached_market_data(cache_key)
@@ -504,10 +547,12 @@ class MarketDataMixin:
                 total_minutes = int((end_date - start_date).total_seconds() / 60)
                 limit = int(total_minutes / interval)
 
+        limit = max(1, min(int(limit), self.HISTORY_BAR_LIMIT))
+
         # Prepare payload - convert to UTC for API
         payload = {
             "contractId": instrument.id,
-            "live": False,
+            "live": live,
             "startTime": start_date.astimezone(pytz.UTC).isoformat(),
             "endTime": end_date.astimezone(pytz.UTC).isoformat(),
             "unit": unit,

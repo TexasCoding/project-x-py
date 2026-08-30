@@ -558,7 +558,7 @@ class TestEdgeCases:
         config_file = tmp_path / "config.json"
         config_data = {
             "api_url": "https://测试.api.com",
-            "timezone": "Asia/东京",
+            "timezone": "Asia/Tokyo",
         }
         config_file.write_bytes(orjson.dumps(config_data))
 

@@ -941,7 +941,7 @@ class TestBracketOrderMixin:
     async def test_native_bracket_falls_back_when_children_missing(
         self, mock_order_manager
     ):
-        """Place success without uniquely identified children must fall back."""
+        """Native place success must keep the entry even if children are unresolved."""
         mixin = mock_order_manager
         mixin.project_x = MagicMock()
         mixin.place_order = AsyncMock(
@@ -982,7 +982,11 @@ class TestBracketOrderMixin:
                 account_id=1,
             )
 
-        assert result is None
+        assert result is not None
+        assert result.success is True
+        assert result.entry_order_id == 10
+        assert result.stop_order_id is None
+        assert result.target_order_id is None
 
     @pytest.mark.asyncio
     async def test_native_bracket_does_not_steal_unrelated_working_orders(
@@ -1042,4 +1046,7 @@ class TestBracketOrderMixin:
                 account_id=1,
             )
 
-        assert result is None
+        assert result is not None
+        assert result.entry_order_id == 10
+        assert result.stop_order_id is None
+        assert result.target_order_id is None

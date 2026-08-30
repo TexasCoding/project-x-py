@@ -1,7 +1,7 @@
 """
 Order lifecycle tracking and management for ProjectX SDK v3.0.0.
 
-DEPRECATED: This module is deprecated as of v3.1.14 and will be removed in v4.0.0.
+DEPRECATED: This module is deprecated as of v3.1.14 and will be removed in v5.0.0.
             Use TradingSuite.track_order() and TradingSuite.order_chain() instead.
 
 Author: SDK v3.0.0

@@ -30,30 +30,17 @@ class TestErrorScenarios:
         # Mock the HTTP client
         client._client = MagicMock()
 
-        # First call returns 401, then successful after re-auth
+        # First call returns 401; session is refreshed via Auth/validate.
         client._client.request = AsyncMock(
             side_effect=[
                 MagicMock(status_code=401),  # Token expired
                 MagicMock(
                     status_code=200,
-                    json=lambda: {"token": "new_token", "expiresIn": 3600},
-                ),  # Re-auth
-                MagicMock(
-                    status_code=200,
                     json=lambda: {
                         "success": True,
-                        "accounts": [
-                            {
-                                "id": 1,
-                                "name": "Test",
-                                "balance": 100000,
-                                "canTrade": True,
-                                "isVisible": True,
-                                "simulated": True,
-                            }
-                        ],
+                        "newToken": "new_token",
                     },
-                ),  # Get accounts
+                ),  # Auth/validate
                 MagicMock(
                     status_code=200, json=lambda: {"success": True, "data": []}
                 ),  # Original request retry

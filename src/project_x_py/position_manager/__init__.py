@@ -50,9 +50,9 @@ Example Usage:
         positions = await suite.positions.get_all_positions()
         for pos in positions:
             print(f"Contract: {pos.contractId}")
-            print(f"  Size: {pos.netPos}")
-            print(f"  Avg Price: ${pos.buyAvgPrice:.2f}")
-            print(f"  Unrealized P&L: ${pos.unrealizedPnl:.2f}")
+            print(f"  Size: {pos.size}")
+            print(f"  Avg Price: ${pos.averagePrice:.2f}")
+            print(f"  Direction: {pos.direction}")
 
         # V3.1: Calculate portfolio P&L with current market prices
         current_price = await suite.data.get_current_price()

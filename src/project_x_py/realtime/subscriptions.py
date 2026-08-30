@@ -352,9 +352,7 @@ class SubscriptionsMixin:
                 LogMessages.DATA_UNSUBSCRIBE, extra={"channel": "user_updates"}
             )
             account_id_arg = [int(self.account_id)]
-            await invoke_maybe(
-                self.user_connection.send, "UnsubscribeAccounts", account_id_arg
-            )
+            await invoke_maybe(self.user_connection.send, "UnsubscribeAccounts", [])
             await invoke_maybe(
                 self.user_connection.send, "UnsubscribeOrders", account_id_arg
             )
@@ -441,17 +439,22 @@ class SubscriptionsMixin:
                 )
                 return False
 
-            await invoke_maybe(
-                self.market_connection.send, "UnsubscribeContractQuotes", contract_ids
-            )
-            await invoke_maybe(
-                self.market_connection.send, "UnsubscribeContractTrades", contract_ids
-            )
-            await invoke_maybe(
-                self.market_connection.send,
-                "UnsubscribeContractMarketDepth",
-                contract_ids,
-            )
+            for contract_id in contract_ids:
+                await invoke_maybe(
+                    self.market_connection.send,
+                    "UnsubscribeContractQuotes",
+                    [contract_id],
+                )
+                await invoke_maybe(
+                    self.market_connection.send,
+                    "UnsubscribeContractTrades",
+                    [contract_id],
+                )
+                await invoke_maybe(
+                    self.market_connection.send,
+                    "UnsubscribeContractMarketDepth",
+                    [contract_id],
+                )
 
             logger.debug(
                 LogMessages.DATA_UNSUBSCRIBE,

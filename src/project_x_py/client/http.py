@@ -165,6 +165,13 @@ class HttpMixin:
 
         return client
 
+    async def ping(self: "ProjectXClientProtocol") -> str:
+        """GET /Status/ping — returns ``pong`` when the Gateway is up."""
+        result = await self._make_request("GET", "/Status/ping")
+        if isinstance(result, str):
+            return result
+        return str(result)
+
     async def _ensure_client(self: "ProjectXClientProtocol") -> httpx.AsyncClient:
         """
         Ensure HTTP client is initialized and ready for API requests.
@@ -306,7 +313,12 @@ class HttpMixin:
                 )
             except asyncio.CancelledError:
                 raise
-            except (httpx.ConnectError, httpx.TimeoutException) as e:
+            except (
+                httpx.ConnectError,
+                httpx.TimeoutException,
+                httpx.ReadError,
+                httpx.RemoteProtocolError,
+            ) as e:
                 raise ProjectXConnectionError(str(e)) from e
 
             # Log API call
@@ -320,6 +332,12 @@ class HttpMixin:
 
             # Handle rate limiting
             if response.status_code == 429:
+                if _is_mutating_request(method, endpoint):
+                    raise OrderSubmissionUncertainError(
+                        "Mutating request was rate-limited after it may have been "
+                        "submitted. Reconcile before retrying.",
+                        payload=data or {},
+                    )
                 retry_after = int(response.headers.get("Retry-After", "60"))
                 message = format_error_message(
                     ErrorMessages.API_RATE_LIMITED, retry_after=retry_after
@@ -345,7 +363,16 @@ class HttpMixin:
 
             # Handle authentication errors
             if response.status_code == 401:
-                if endpoint != "/Auth/loginKey" and retry_count == 0:
+                if _is_mutating_request(method, endpoint):
+                    raise OrderSubmissionUncertainError(
+                        "Mutating request received 401 after it may have been "
+                        "submitted. Reconcile before retrying.",
+                        payload=data or {},
+                    )
+                if (
+                    endpoint not in {"/Auth/loginKey", "/Auth/validate", "/Auth/logout"}
+                    and retry_count == 0
+                ):
                     # Try to refresh authentication
                     await self._refresh_authentication()
                     retry_result: dict[str, Any] | list[Any] = await self._make_request(

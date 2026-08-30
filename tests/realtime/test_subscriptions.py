@@ -58,15 +58,15 @@ class TestSubscriptionsMixinInitialization:
     def test_init_attributes(self, subscription_handler):
         """Test that subscriptions handler has required attributes."""
         # Should have connection status attributes
-        assert hasattr(subscription_handler, 'user_connected')
-        assert hasattr(subscription_handler, 'market_connected')
+        assert hasattr(subscription_handler, "user_connected")
+        assert hasattr(subscription_handler, "market_connected")
 
         # Should have connection objects
-        assert hasattr(subscription_handler, 'user_connection')
-        assert hasattr(subscription_handler, 'market_connection')
+        assert hasattr(subscription_handler, "user_connection")
+        assert hasattr(subscription_handler, "market_connection")
 
         # Should have subscription tracking
-        assert hasattr(subscription_handler, '_subscribed_contracts')
+        assert hasattr(subscription_handler, "_subscribed_contracts")
         assert isinstance(subscription_handler._subscribed_contracts, list)
 
 
@@ -85,17 +85,22 @@ class TestUserSubscriptions:
             "SubscribeAccounts", []
         )
         subscription_handler.user_connection.send.assert_any_call(
-            "SubscribeOrders", [123456]  # account_id as int
+            "SubscribeOrders",
+            [123456],  # account_id as int
         )
         subscription_handler.user_connection.send.assert_any_call(
-            "SubscribePositions", [123456]  # account_id as int
+            "SubscribePositions",
+            [123456],  # account_id as int
         )
         subscription_handler.user_connection.send.assert_any_call(
-            "SubscribeTrades", [123456]  # account_id as int
+            "SubscribeTrades",
+            [123456],  # account_id as int
         )
 
     @pytest.mark.asyncio
-    async def test_subscribe_user_updates_user_not_connected(self, subscription_handler):
+    async def test_subscribe_user_updates_user_not_connected(
+        self, subscription_handler
+    ):
         """Test subscribe user updates when user hub not connected."""
         subscription_handler.user_connected = False
 
@@ -106,7 +111,9 @@ class TestUserSubscriptions:
         subscription_handler.user_connection.send.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_subscribe_user_updates_user_connection_none(self, subscription_handler):
+    async def test_subscribe_user_updates_user_connection_none(
+        self, subscription_handler
+    ):
         """Test subscribe user updates when user connection is None."""
         subscription_handler.user_connection = None
 
@@ -122,12 +129,17 @@ class TestUserSubscriptions:
         result = await subscription_handler.subscribe_user_updates()
 
         assert result is False
-# Error is handled by decorator, result is False
+
+    # Error is handled by decorator, result is False
 
     @pytest.mark.asyncio
-    async def test_subscribe_user_updates_exception_handling(self, subscription_handler):
+    async def test_subscribe_user_updates_exception_handling(
+        self, subscription_handler
+    ):
         """Test subscribe user updates handles exceptions gracefully."""
-        subscription_handler.user_connection.send.side_effect = Exception("Connection error")
+        subscription_handler.user_connection.send.side_effect = Exception(
+            "Connection error"
+        )
 
         # Should handle exception and return False
         result = await subscription_handler.subscribe_user_updates()
@@ -143,9 +155,10 @@ class TestUserSubscriptions:
         assert result is True
 
         # Should send all required unsubscription calls
+        # SubscribeAccounts takes no args; unsubscribe matches that.
         account_id_arg = [123456]
         subscription_handler.user_connection.send.assert_any_call(
-            "UnsubscribeAccounts", account_id_arg
+            "UnsubscribeAccounts", []
         )
         subscription_handler.user_connection.send.assert_any_call(
             "UnsubscribeOrders", account_id_arg
@@ -158,14 +171,17 @@ class TestUserSubscriptions:
         )
 
     @pytest.mark.asyncio
-    async def test_unsubscribe_user_updates_user_not_connected(self, subscription_handler):
+    async def test_unsubscribe_user_updates_user_not_connected(
+        self, subscription_handler
+    ):
         """Test unsubscribe user updates when user hub not connected."""
         subscription_handler.user_connected = False
 
         result = await subscription_handler.unsubscribe_user_updates()
 
         assert result is False
-# Error is handled by decorator, result is False
+
+    # Error is handled by decorator, result is False
 
     @pytest.mark.asyncio
     async def test_unsubscribe_user_updates_connection_none(self, subscription_handler):
@@ -175,6 +191,8 @@ class TestUserSubscriptions:
         result = await subscription_handler.unsubscribe_user_updates()
 
         assert result is False
+
+
 # Error is handled by decorator, result is False
 
 
@@ -230,7 +248,9 @@ class TestMarketSubscriptions:
             assert contract_id in subscription_handler._subscribed_contracts
 
     @pytest.mark.asyncio
-    async def test_subscribe_market_data_duplicate_contracts(self, subscription_handler):
+    async def test_subscribe_market_data_duplicate_contracts(
+        self, subscription_handler
+    ):
         """Test subscribing to contracts already in subscription list."""
         # Pre-populate with some contracts
         subscription_handler._subscribed_contracts = ["MNQ", "ES"]
@@ -250,14 +270,17 @@ class TestMarketSubscriptions:
         assert "YM" in subscription_handler._subscribed_contracts
 
     @pytest.mark.asyncio
-    async def test_subscribe_market_data_market_not_connected(self, subscription_handler):
+    async def test_subscribe_market_data_market_not_connected(
+        self, subscription_handler
+    ):
         """Test subscribe market data when market hub not connected."""
         subscription_handler.market_connected = False
 
         result = await subscription_handler.subscribe_market_data(["MNQ"])
 
         assert result is False
-# Error is handled by decorator, result is False
+
+    # Error is handled by decorator, result is False
 
     @pytest.mark.asyncio
     async def test_subscribe_market_data_connection_none(self, subscription_handler):
@@ -267,7 +290,8 @@ class TestMarketSubscriptions:
         result = await subscription_handler.subscribe_market_data(["MNQ"])
 
         assert result is False
-# Error is handled by decorator, result is False
+
+    # Error is handled by decorator, result is False
 
     @pytest.mark.asyncio
     async def test_subscribe_market_data_hub_not_ready(self, subscription_handler):
@@ -277,10 +301,13 @@ class TestMarketSubscriptions:
         result = await subscription_handler.subscribe_market_data(["MNQ"])
 
         assert result is False
-# Error is handled by decorator, result is False
+
+    # Error is handled by decorator, result is False
 
     @pytest.mark.asyncio
-    async def test_subscribe_market_data_exception_during_subscription(self, subscription_handler):
+    async def test_subscribe_market_data_exception_during_subscription(
+        self, subscription_handler
+    ):
         """Test subscribe market data handles exceptions during subscription."""
         # Make the first call fail
         subscription_handler.market_connection.send.side_effect = [
@@ -293,7 +320,8 @@ class TestMarketSubscriptions:
 
         # Should return False due to exception
         assert result is False
-# Error is handled by decorator, result is False
+
+    # Error is handled by decorator, result is False
 
     @pytest.mark.asyncio
     async def test_unsubscribe_market_data_success(self, subscription_handler):
@@ -307,16 +335,17 @@ class TestMarketSubscriptions:
 
         assert result is True
 
-        # Should call unsubscription methods
-        subscription_handler.market_connection.send.assert_any_call(
-            "UnsubscribeContractQuotes", contract_ids
-        )
-        subscription_handler.market_connection.send.assert_any_call(
-            "UnsubscribeContractTrades", contract_ids
-        )
-        subscription_handler.market_connection.send.assert_any_call(
-            "UnsubscribeContractMarketDepth", contract_ids
-        )
+        # Subscribe is per-contract; unsubscribe matches that.
+        for contract_id in contract_ids:
+            subscription_handler.market_connection.send.assert_any_call(
+                "UnsubscribeContractQuotes", [contract_id]
+            )
+            subscription_handler.market_connection.send.assert_any_call(
+                "UnsubscribeContractTrades", [contract_id]
+            )
+            subscription_handler.market_connection.send.assert_any_call(
+                "UnsubscribeContractMarketDepth", [contract_id]
+            )
 
         # Should remove contracts from tracking
         assert "MNQ" not in subscription_handler._subscribed_contracts
@@ -325,14 +354,17 @@ class TestMarketSubscriptions:
         assert "NQ" in subscription_handler._subscribed_contracts
 
     @pytest.mark.asyncio
-    async def test_unsubscribe_market_data_market_not_connected(self, subscription_handler):
+    async def test_unsubscribe_market_data_market_not_connected(
+        self, subscription_handler
+    ):
         """Test unsubscribe market data when market hub not connected."""
         subscription_handler.market_connected = False
 
         result = await subscription_handler.unsubscribe_market_data(["MNQ"])
 
         assert result is False
-# Error is handled by decorator, result is False
+
+    # Error is handled by decorator, result is False
 
     @pytest.mark.asyncio
     async def test_unsubscribe_market_data_connection_none(self, subscription_handler):
@@ -342,10 +374,13 @@ class TestMarketSubscriptions:
         result = await subscription_handler.unsubscribe_market_data(["MNQ"])
 
         assert result is False
-# Error is handled by decorator, result is False
+
+    # Error is handled by decorator, result is False
 
     @pytest.mark.asyncio
-    async def test_unsubscribe_market_data_nonexistent_contracts(self, subscription_handler):
+    async def test_unsubscribe_market_data_nonexistent_contracts(
+        self, subscription_handler
+    ):
         """Test unsubscribing from contracts not in tracking list."""
         # Empty subscription list
         subscription_handler._subscribed_contracts = []
@@ -359,7 +394,9 @@ class TestMarketSubscriptions:
         subscription_handler.market_connection.send.assert_called()
 
     @pytest.mark.asyncio
-    async def test_unsubscribe_market_data_partial_contracts(self, subscription_handler):
+    async def test_unsubscribe_market_data_partial_contracts(
+        self, subscription_handler
+    ):
         """Test unsubscribing from mix of tracked and untracked contracts."""
         subscription_handler._subscribed_contracts = ["MNQ", "ES"]
 
@@ -398,7 +435,8 @@ class TestSubscriptionEdgeCases:
 
         # Should convert to int when calling subscription methods
         subscription_handler.user_connection.send.assert_any_call(
-            "SubscribeOrders", [789123]  # Should be int, not string
+            "SubscribeOrders",
+            [789123],  # Should be int, not string
         )
 
     @pytest.mark.asyncio
@@ -445,7 +483,8 @@ class TestSubscriptionEdgeCases:
         result = await subscription_handler.subscribe_user_updates()
 
         assert result is False
-# Error is handled by decorator, result is False
+
+    # Error is handled by decorator, result is False
 
     @pytest.mark.asyncio
     async def test_large_contract_list(self, subscription_handler):
@@ -461,7 +500,9 @@ class TestSubscriptionEdgeCases:
         assert len(subscription_handler._subscribed_contracts) == 100
 
         # Should call subscription for each contract
-        assert subscription_handler.market_connection.send.call_count == 300  # 3 calls per contract
+        assert (
+            subscription_handler.market_connection.send.call_count == 300
+        )  # 3 calls per contract
 
 
 class TestSubscriptionBehavior:
