@@ -183,7 +183,7 @@ class TestConnectionManagementMixin:
 
         # Verify user hub URL includes JWT token as query parameter
         expected_user_url = f"{mock_client.user_hub_url}?access_token={mock_client.jwt_token}"
-        builder.with_url.assert_any_call(expected_user_url)
+        builder.with_url.assert_any_call(expected_user_url, hub_name="user")
 
         # Verify automatic reconnection is configured
         builder.with_automatic_reconnect.assert_called()
@@ -202,7 +202,7 @@ class TestConnectionManagementMixin:
 
         # Verify market hub URL includes JWT token as query parameter
         expected_market_url = f"{mock_client.market_hub_url}?access_token={mock_client.jwt_token}"
-        builder.with_url.assert_any_call(expected_market_url)
+        builder.with_url.assert_any_call(expected_market_url, hub_name="market")
 
         # Verify connection is built and stored
         assert mock_client.market_connection is not None
