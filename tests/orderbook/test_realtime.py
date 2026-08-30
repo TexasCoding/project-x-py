@@ -44,22 +44,24 @@ def mock_orderbook_base():
     ob.orderbook_lock = asyncio.Lock()
     ob.instrument = "MNQ"
 
-    # Initialize empty orderbook DataFrames
+    # Initialize empty orderbook DataFrames with Gateway volume schema
     ob.orderbook_bids = pl.DataFrame(
-        {
-            "price": [],
-            "volume": [],
-            "timestamp": [],
-        }
-    ).cast({"price": pl.Float64, "volume": pl.Int64})
+        {"price": [], "volume": [], "timestamp": []},
+        schema={
+            "price": pl.Float64,
+            "volume": pl.Int64,
+            "timestamp": pl.Datetime(time_zone="UTC"),
+        },
+    )
 
     ob.orderbook_asks = pl.DataFrame(
-        {
-            "price": [],
-            "volume": [],
-            "timestamp": [],
-        }
-    ).cast({"price": pl.Float64, "volume": pl.Int64})
+        {"price": [], "volume": [], "timestamp": []},
+        schema={
+            "price": pl.Float64,
+            "volume": pl.Int64,
+            "timestamp": pl.Datetime(time_zone="UTC"),
+        },
+    )
 
     ob.recent_trades = pl.DataFrame(
         {
@@ -315,6 +317,42 @@ class TestMarketDepthProcessing:
         await realtime_handler._on_market_depth_update(depth_data)
 
         assert mock_orderbook_base.level2_update_count == 1
+        bids = mock_orderbook_base.orderbook_bids
+        assert bids.height == 1
+        assert bids["price"][0] == 21000.0
+        assert bids["volume"][0] == 10
+
+    @pytest.mark.asyncio
+    async def test_process_market_depth_seeds_volume_on_bid_and_ask(
+        self, realtime_handler, mock_orderbook_base
+    ):
+        """GatewayDepth volume (not size) must land in bid/ask DataFrames."""
+        depth_data = {
+            "contract_id": "CON.F.US.MNQ.U25",
+            "data": [
+                {
+                    "type": DomType.BID.value,
+                    "price": 21000.0,
+                    "volume": 12,
+                },
+                {
+                    "type": DomType.ASK.value,
+                    "price": 21001.0,
+                    "volume": 8,
+                },
+            ],
+        }
+
+        await realtime_handler._on_market_depth_update(depth_data)
+
+        bids = mock_orderbook_base.orderbook_bids
+        asks = mock_orderbook_base.orderbook_asks
+        assert bids.height == 1
+        assert asks.height == 1
+        assert bids["price"][0] == 21000.0
+        assert bids["volume"][0] == 12
+        assert asks["price"][0] == 21001.0
+        assert asks["volume"][0] == 8
 
     @pytest.mark.asyncio
     async def test_process_market_depth_add_ask(

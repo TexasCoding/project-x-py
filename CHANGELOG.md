@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Tests
+
+- Gateway payload and error-path coverage for JoinBid/JoinAsk, native
+  `place_bracket_order`, mutating uncertain errors, half-turn trades,
+  depth `volume`, and `close_all_positions` tracking.
+
 ### Security
 
 - Refresh `uv.lock` to patched floors for Dependabot findings (aiohttp 3.14.3,

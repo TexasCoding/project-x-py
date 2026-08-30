@@ -1,6 +1,6 @@
 """Tests for the HTTP client functionality of ProjectX client."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -312,3 +312,167 @@ class TestHttpClient:
             await client._make_request("POST", "/Order/cancel", data={"orderId": 1})
 
         assert client._client.request.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_modify_order_timeout_is_uncertain(self, initialized_client):
+        """POST /Order/modify timeout is uncertain and is not retried."""
+        client = initialized_client
+        client._client.request.side_effect = httpx.TimeoutException("timed out")
+
+        with pytest.raises(OrderSubmissionUncertainError):
+            await client._make_request(
+                "POST", "/Order/modify", data={"orderId": 1, "limitPrice": 100.0}
+            )
+
+        assert client._client.request.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_close_contract_503_is_uncertain_no_retry(
+        self, initialized_client, mock_response
+    ):
+        """POST /Position/closeContract 5xx is uncertain and is not retried."""
+        client = initialized_client
+        error_response = mock_response(status_code=503, json_data={"success": False})
+        client._client.request.side_effect = [
+            error_response,
+            error_response,
+            error_response,
+        ]
+
+        with pytest.raises(OrderSubmissionUncertainError):
+            await client._make_request(
+                "POST",
+                "/Position/closeContract",
+                data={"accountId": 12345, "contractId": "MGC"},
+            )
+
+        assert client._client.request.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_partial_close_connect_error_is_uncertain(self, initialized_client):
+        """POST /Position/partialCloseContract disconnect is uncertain, no retry."""
+        client = initialized_client
+        client._client.request.side_effect = httpx.ConnectError("Failed to connect")
+
+        with pytest.raises(OrderSubmissionUncertainError):
+            await client._make_request(
+                "POST",
+                "/Position/partialCloseContract",
+                data={"accountId": 12345, "contractId": "MGC", "size": 1},
+            )
+
+        assert client._client.request.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_modify_cancelled_request_is_uncertain(self, initialized_client):
+        """Cancellation of in-flight /Order/modify is uncertain, not CancelledError."""
+        import asyncio
+
+        client = initialized_client
+
+        async def _cancelled(*_args, **_kwargs):
+            raise asyncio.CancelledError()
+
+        client._client.request.side_effect = _cancelled
+
+        with pytest.raises(OrderSubmissionUncertainError):
+            await client._make_request("POST", "/Order/modify", data={"orderId": 1})
+        assert client._client.request.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_close_contract_cancelled_is_uncertain(self, initialized_client):
+        """Cancellation of in-flight /Position/closeContract is uncertain."""
+        import asyncio
+
+        client = initialized_client
+
+        async def _cancelled(*_args, **_kwargs):
+            raise asyncio.CancelledError()
+
+        client._client.request.side_effect = _cancelled
+
+        with pytest.raises(OrderSubmissionUncertainError):
+            await client._make_request(
+                "POST", "/Position/closeContract", data={"contractId": "MGC"}
+            )
+        assert client._client.request.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_make_request_includes_auth_token(
+        self, initialized_client, mock_response
+    ):
+        """Authenticated requests send the bearer token except on login."""
+        client = initialized_client
+        client.session_token = "test_token"
+        client._client.request.return_value = mock_response(json_data={"success": True})
+
+        await client._make_request("GET", "/test/endpoint")
+
+        headers = client._client.request.call_args.kwargs["headers"]
+        assert headers["Authorization"] == "Bearer test_token"
+
+    @pytest.mark.asyncio
+    async def test_make_request_no_auth_for_login(
+        self, initialized_client, mock_response
+    ):
+        """Login endpoints must not send a leftover bearer token."""
+        client = initialized_client
+        client.session_token = "test_token"
+        client._client.request.return_value = mock_response(json_data={"token": "new"})
+
+        await client._make_request("POST", "/Auth/loginKey", data={"user": "x"})
+
+        headers = client._client.request.call_args.kwargs["headers"]
+        assert "Authorization" not in headers
+
+    @pytest.mark.asyncio
+    async def test_make_request_401_refresh_auth(
+        self, initialized_client, mock_response
+    ):
+        """Non-mutating 401 triggers a single auth refresh then retries."""
+        client = initialized_client
+        client.session_token = "expired"
+        client._refresh_authentication = AsyncMock()
+        error_401 = mock_response(status_code=401, json_data={"success": False})
+        success = mock_response(json_data={"data": "refreshed"})
+        client._client.request.side_effect = [error_401, success]
+
+        result = await client._make_request("GET", "/test/endpoint")
+
+        assert result == {"data": "refreshed"}
+        client._refresh_authentication.assert_awaited_once()
+        assert client._client.request.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_make_request_204_no_content(self, initialized_client, mock_response):
+        """204 responses return an empty dict."""
+        client = initialized_client
+        empty = mock_response(status_code=204, json_data=None)
+        client._client.request.return_value = empty
+
+        result = await client._make_request("DELETE", "/test/endpoint")
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_make_request_json_parse_error(
+        self, initialized_client, mock_response
+    ):
+        """Invalid JSON on 200 is a data error, not a retry."""
+        client = initialized_client
+        bad = mock_response(json_data={"ok": True})
+        bad.json.side_effect = ValueError("Invalid JSON")
+        client._client.request.return_value = bad
+
+        with pytest.raises(ProjectXDataError, match="Failed to parse"):
+            await client._make_request("GET", "/test/endpoint")
+
+    @pytest.mark.asyncio
+    async def test_health_status_closed_client(self, initialized_client):
+        """A closed HTTP client reports zero active connections."""
+        client = initialized_client
+        client._client.is_closed = True
+
+        health = await client.get_health_status()
+
+        assert health["active_connections"] == 0
