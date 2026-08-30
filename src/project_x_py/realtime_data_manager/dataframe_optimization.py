@@ -305,7 +305,10 @@ class LazyQueryCache:
         # Cache storage with expiration times
         self._cache: dict[CacheKey, pl.DataFrame] = {}
         self._expiry_times: dict[CacheKey, float] = {}
-        self._access_times: dict[CacheKey, float] = {}
+        # Monotonic recency for LRU — wall-clock time.time() can tie or
+        # stall under test timers (pytest-benchmark), evicting the wrong key.
+        self._access_seq = 0
+        self._access_times: dict[CacheKey, int] = {}
 
         # Cache statistics
         self.hits = 0
@@ -319,7 +322,7 @@ class LazyQueryCache:
         if key in self._cache:
             # Check expiration
             if current_time <= self._expiry_times.get(key, 0):
-                self._access_times[key] = current_time
+                self._touch(key)
                 self.hits += 1
                 return self._cache[key]
             else:
@@ -343,7 +346,12 @@ class LazyQueryCache:
         # Store the result
         self._cache[key] = value
         self._expiry_times[key] = current_time + ttl
-        self._access_times[key] = current_time
+        self._touch(key)
+
+    def _touch(self, key: CacheKey) -> None:
+        """Record a cache access for LRU ordering."""
+        self._access_seq += 1
+        self._access_times[key] = self._access_seq
 
     def _remove_entry(self, key: CacheKey) -> None:
         """Remove a cache entry."""

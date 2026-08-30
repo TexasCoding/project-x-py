@@ -14,6 +14,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Migration guides will be provided for all breaking changes
 - Semantic versioning (MAJOR.MINOR.PATCH) is strictly followed
 
+## [Unreleased]
+
+### Security
+
+- Refresh `uv.lock` to patched floors for Dependabot findings (aiohttp 3.14.3,
+  orjson 3.12.0, h2 4.4.1, cryptography 50.0.1, and related transitives).
+- Raise the published `orjson` floor to `>=3.11.6`.
+- Add weekly grouped Dependabot updates for uv and GitHub Actions.
+
+### Fixed
+
+- Query-cache LRU recency uses a monotonic counter so ties in wall-clock
+  `time.time()` do not evict the wrong entry.
+
 ## [4.0.1] - 2026-08-30
 
 ### Fixed
