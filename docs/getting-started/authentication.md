@@ -69,15 +69,11 @@ from project_x_py import TradingSuite
 # Automatically uses environment variables
 suite = await TradingSuite.create(["MNQ"])
 
-# Or provide client explicitly
-from project_x_py import ProjectX
-
-client = ProjectX.from_env()
-await client.authenticate()
-
+# Or pass credentials directly
 suite = await TradingSuite.create(
-    instruments=["MNQ"],
-    project_x=client
+    ["MNQ"],
+    username="your-username",
+    api_key="your-api-key",  # pragma: allowlist secret
 )
 ```
 
@@ -112,14 +108,12 @@ async with ProjectX.from_env() as client:
 ### Common Authentication Errors
 
 ```python
-from project_x_py.exceptions import AuthenticationError, InvalidCredentialsError
+from project_x_py.exceptions import ProjectXAuthenticationError
 
 try:
     async with ProjectX.from_env() as client:
         await client.authenticate()
-except InvalidCredentialsError:
-    print("Invalid API key or username")
-except AuthenticationError as e:
+except ProjectXAuthenticationError as e:
     print(f"Authentication failed: {e}")
 ```
 

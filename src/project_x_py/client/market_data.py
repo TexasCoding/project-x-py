@@ -224,7 +224,7 @@ class MarketDataMixin:
             else:
                 best_match = self._select_best_contract(contracts_data, symbol)
 
-            instrument = Instrument(**best_match)
+            instrument = Instrument.from_api(best_match)
 
             # Cache the result
             self.cache_instrument(symbol, instrument)
@@ -355,7 +355,7 @@ class MarketDataMixin:
             contracts_data = (
                 response.get("contracts", []) if isinstance(response, dict) else []
             )
-            instruments = [Instrument(**contract) for contract in contracts_data]
+            instruments = [Instrument.from_api(contract) for contract in contracts_data]
 
             logger.debug(
                 LogMessages.DATA_RECEIVED,

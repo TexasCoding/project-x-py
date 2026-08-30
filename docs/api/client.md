@@ -19,8 +19,8 @@ async def basic_client_usage():
         # Authenticate automatically
         await client.authenticate()
 
-        # Get account information
-        account = await client.get_account_info()
+        # Get account information (sync accessor after authenticate)
+        account = client.get_account_info()
         print(f"Balance: ${account.balance:,.2f}")
 
         # Get market data
@@ -45,9 +45,8 @@ os.environ["PROJECT_X_USERNAME"] = "your_username"
 async def env_authentication():
     # Create client from environment
     async with ProjectX.from_env() as client:
-        # Authentication happens automatically
-        is_authenticated = await client.is_authenticated()
-        print(f"Authenticated: {is_authenticated}")
+        await client.authenticate()
+        print(f"Authenticated account: {client.account_info.name}")
 
 asyncio.run(env_authentication())
 ```
@@ -61,20 +60,19 @@ from project_x_py.models import ProjectXConfig
 async def manual_authentication():
     # Manual configuration
     config = ProjectXConfig(
-        api_key="your_api_key"  # pragma: allowlist secret,
-        username="your_username",
-        api_url="https://gateway.projectx.com/api",
+        api_url="https://api.topstepx.com/api",
         timeout_seconds=30,
-        retry_attempts=3
+        retry_attempts=3,
     )
 
-    async with ProjectX(config) as client:
+    async with ProjectX(
+        username="your_username",
+        api_key="your_api_key",  # pragma: allowlist secret
+        config=config,
+    ) as client:
         await client.authenticate()
-
-        # Get auth status
-        auth_info = await client.get_auth_info()
-        print(f"User ID: {auth_info.user_id}")
-        print(f"Token expires: {auth_info.expires_at}")
+        print(f"Account: {client.account_info.name}")
+        print(f"Token prefix: {client.get_session_token()[:20]}...")
 
 asyncio.run(manual_authentication())
 ```
@@ -86,15 +84,9 @@ async def token_management():
     async with ProjectX.from_env() as client:
         await client.authenticate()
 
-        # Check token status
-        token_info = await client.get_token_info()
-        print(f"Token valid: {token_info.is_valid}")
-        print(f"Expires in: {token_info.expires_in_seconds} seconds")
-
-        # Refresh token if needed
-        if token_info.expires_in_seconds < 300:  # Less than 5 minutes
-            await client.refresh_token()
-            print("Token refreshed")
+        token = client.get_session_token()
+        print(f"Session token acquired: {bool(token)}")
+        # JWT refresh is handled automatically before expiry.
 
 asyncio.run(token_management())
 ```
@@ -201,7 +193,7 @@ async def account_information():
         await client.authenticate()
 
         # Get account info
-        account = await client.get_account_info()
+        account = client.get_account_info()
         print(f"Account ID: {account.account_id}")
         print(f"Balance: ${account.balance:,.2f}")
         print(f"Available: ${account.available_balance:,.2f}")
@@ -543,7 +535,7 @@ async def custom_configuration():
     config = ProjectXConfig(
         api_key="your_api_key"  # pragma: allowlist secret,
         username="your_username",
-        api_url="https://gateway.projectx.com/api",
+        api_url="https://api.topstepx.com/api",
         timeout_seconds=60,        # Extended timeout
         retry_attempts=5,          # More retry attempts
         rate_limit_calls=100,      # Calls per minute

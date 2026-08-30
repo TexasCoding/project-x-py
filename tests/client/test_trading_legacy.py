@@ -278,9 +278,10 @@ class TestTradingMixin:
         mock_response = {"success": False, "error": "API Error"}
         trading_client._make_request.return_value = mock_response
 
-        positions = await trading_client.search_open_positions()
+        from project_x_py.exceptions import ProjectXError
 
-        assert positions == []
+        with pytest.raises(ProjectXError, match="API Error"):
+            await trading_client.search_open_positions()
 
     @pytest.mark.asyncio
     async def test_search_open_positions_invalid_response_type(self, trading_client):

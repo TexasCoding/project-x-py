@@ -32,6 +32,36 @@ class TestInstrumentAndAccount:
         assert inst.id == "CON.F.US.MNQ.H25"
         assert inst.symbolId is None
 
+    def test_instrument_from_api_ignores_unknown_fields(self):
+        inst = Instrument.from_api(
+            {
+                "id": "CON.F.US.MNQ.H25",
+                "name": "MNQH25",
+                "description": "Micro Nasdaq",
+                "tickSize": 0.25,
+                "tickValue": 0.5,
+                "activeContract": True,
+                "unknownGatewayField": True,
+            }
+        )
+        assert inst.id == "CON.F.US.MNQ.H25"
+        assert not hasattr(inst, "unknownGatewayField")
+
+    def test_account_from_api_ignores_unknown_fields(self):
+        acct = Account.from_api(
+            {
+                "id": 101,
+                "name": "Sim-101",
+                "balance": 10000.0,
+                "canTrade": True,
+                "isVisible": True,
+                "simulated": True,
+                "extra": "ignored",
+            }
+        )
+        assert acct.id == 101
+        assert not hasattr(acct, "extra")
+
     def test_account_creation(self):
         acct = Account(
             id=101,
@@ -127,6 +157,23 @@ class TestOrderModel:
         assert order.id == 101
         assert order.size == 2
         assert not hasattr(order, "fills")
+
+    def test_order_from_api_maps_filled_size_alias(self):
+        order = Order.from_api(
+            {
+                "id": 101,
+                "accountId": 10,
+                "contractId": "CON.F.US.MNQ.H25",
+                "creationTimestamp": "2024-01-01T00:00:00Z",
+                "updateTimestamp": None,
+                "status": 2,
+                "type": 2,
+                "side": 0,
+                "size": 2,
+                "filledSize": 2,
+            }
+        )
+        assert order.fillVolume == 2
 
 
 class TestPositionModel:

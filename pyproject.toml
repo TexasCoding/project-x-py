@@ -1,6 +1,6 @@
 [project]
 name = "project-x-py"
-version = "4.0.0"
+dynamic = ["version"]
 description = "High-performance Python SDK for futures trading with real-time WebSocket data, technical indicators, order management, and market depth analysis"
 readme = "README.md"
 license = { text = "MIT" }
@@ -25,14 +25,13 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
     "Topic :: Office/Business :: Financial :: Investment",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "polars>=1.31.0", # TODO: Update to 1.31.0
+    "polars>=1.31.0",
     "numpy>=2.3.2",
     "pytz>=2025.2",
     "httpx[http2]>=0.27.0",
@@ -114,9 +113,11 @@ path = "src/project_x_py/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/project_x_py"]
+exclude = ["**/*.bak", "**/*.backup"]
 
 [tool.hatch.build.targets.sdist]
 include = ["/src", "/tests", "/docs", "README.md", "CHANGELOG.md", "LICENSE"]
+exclude = ["**/*.bak", "**/*.backup"]
 
 # Development tools configuration
 [tool.ruff]

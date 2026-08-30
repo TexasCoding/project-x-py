@@ -52,8 +52,7 @@ async def check_current_positions():
         print(f"MNQ Position:")
         print(f"  Size: {mnq_position.size} contracts")
         print(f"  Average Price: ${mnq_position.averagePrice}")
-        print(f"  Unrealized P&L: ${mnq_position.unrealizedPnL}")
-        print(f"  Market Value: ${mnq_position.marketValue}")
+        print(f"  Unrealized P&L: ${mnq_position.unrealized_pnl(current_price)}")
     else:
         print("No MNQ position")
 
@@ -64,16 +63,9 @@ async def check_current_positions():
     for position in all_positions:
         print(f"  {position.contractId}: {position.size} @ ${position.averagePrice}")
 
-    # Get positions with filters
-    long_positions = await suite.positions.get_positions(
-        side_filter="long",      # only long positions
-        min_size=1               # minimum 1 contract
-    )
-
-    short_positions = await suite.positions.get_positions(
-        side_filter="short",
-        instruments=["MNQ", "MES"]  # specific instruments
-    )
+    all_positions = await suite.positions.get_all_positions()
+    long_positions = [p for p in all_positions if p.is_long]
+    short_positions = [p for p in all_positions if p.is_short]
 ```
 
 ### Real-time Position Monitoring

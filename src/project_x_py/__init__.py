@@ -3,7 +3,7 @@ ProjectX Python SDK for Trading Applications
 
 Author: @TexasCoding
 Date: 2026-08-29
-Version: 4.0.0 - TopstepX Gateway Revival
+Version: 4.0.1 - TopstepX Gateway Revival
 
 Overview:
     A comprehensive Python SDK for the ProjectX Trading Platform Gateway API, providing
@@ -11,7 +11,7 @@ Overview:
     This library offers comprehensive access to real-time market data, order management,
     position tracking, and advanced analytics for algorithmic trading.
 
-Key Features (v3.5.0):
+Key Features (v4.0.0):
     - Multi-instrument TradingSuite for managing multiple futures contracts simultaneously
     - Real-time market data streaming and historical data access
     - Comprehensive order management (market, limit, stop, bracket orders)
@@ -52,7 +52,7 @@ Example Usage:
     ```python
     from project_x_py import TradingSuite
 
-    # Simple one-line setup with TradingSuite v3
+    # Simple one-line setup with TradingSuite
     suite = await TradingSuite.create("MGC", timeframes=["1min", "5min", "15min"])
 
     # Everything is ready to use:
@@ -71,10 +71,10 @@ Example Usage:
     # Access real-time data
     current_price = await suite.data.get_current_price()
 
-    # Get comprehensive statistics (v3.3.0+)
+    # Get comprehensive statistics
     stats = await suite.get_stats()
     print(f"System Health: {stats['health_score']}/100")
-    print(f"API Success Rate: {stats['api_success_rate']:.1%}")
+    print(f"API Calls: {stats['total_api_calls']}")
 
     # Export statistics to multiple formats
     prometheus_metrics = await suite.export_stats("prometheus")
@@ -96,7 +96,7 @@ Architecture Benefits:
 It provides the infrastructure to help developers create their own trading applications
 that integrate with the ProjectX platform.
 
-Version: 3.3.0
+Version: 4.0.1
 Author: TexasCoding
 
 See Also:
@@ -109,7 +109,7 @@ See Also:
     - `utils`: Utility functions and calculations
 """
 
-__version__ = "4.0.0"
+__version__ = "4.0.1"
 __author__ = "TexasCoding"
 
 # Core client classes - renamed from Async* to standard names

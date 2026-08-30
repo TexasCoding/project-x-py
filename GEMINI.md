@@ -2,7 +2,7 @@
 
 This file provides guidance to Google's Gemini models when working with code in this repository.
 
-## Project Status: v3.3.0 - Complete Statistics Module Redesign
+## Project Status: v4.0.1 - TopstepX Gateway revival and live-order hardening
 
 **IMPORTANT**: This project uses a fully asynchronous architecture. All APIs are async-only, optimized for high-performance futures trading.
 

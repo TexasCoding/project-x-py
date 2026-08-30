@@ -62,6 +62,7 @@ class TestProjectXBase:
         assert client.api_key == "key" # pragma: allowlist secret
         assert client.account_name is None
         assert client.base_url == "https://api.topstepx.com/api"  # Default URL
+        assert client.rate_limiter.max_requests == client.config.requests_per_minute
 
     @pytest.mark.asyncio
     async def test_context_manager(self, base_client):

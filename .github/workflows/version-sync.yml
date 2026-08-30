@@ -49,6 +49,6 @@ jobs:
       - name: Create version tag
         if: steps.check-sync.outputs.sync_needed == 'true'
         run: |
-          VERSION=$(python -c "from src.project_x_py import __version__; print(__version__)")
+          VERSION=$(PYTHONPATH=src python -c "from project_x_py import __version__; print(__version__)")
           git tag "v$VERSION" || echo "Tag v$VERSION already exists"
           git push origin "v$VERSION" || echo "Tag v$VERSION already pushed"

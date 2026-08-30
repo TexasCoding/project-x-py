@@ -70,9 +70,9 @@ If the Gateway rejects native brackets, the SDK still falls back to the
 client-side OCO path. Fill detection now reconciles through `/Order/search`
 and trades instead of treating “not in open orders” as unfilled.
 
-If a place/cancel HTTP call is cancelled after the request is in flight, the
-SDK raises `OrderSubmissionUncertainError`. Reconcile with `get_order_by_id()`
-before retrying.
+If a place/cancel HTTP call is cancelled, times out, or gets a 5xx after the
+request may have been sent, the SDK raises `OrderSubmissionUncertainError`
+and does **not** retry. Reconcile with `get_order_by_id()` before retrying.
 
 ## Realtime
 

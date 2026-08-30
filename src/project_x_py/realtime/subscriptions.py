@@ -174,6 +174,7 @@ class SubscriptionsMixin:
                 LogMessages.DATA_SUBSCRIBE,
                 extra={"status": "success", "channel": "user_updates"},
             )
+            self._user_updates_subscribed = True
             return True
 
     @handle_errors("subscribe market data", reraise=False, default_return=False)
@@ -368,6 +369,7 @@ class SubscriptionsMixin:
                 LogMessages.DATA_UNSUBSCRIBE,
                 extra={"status": "success", "channel": "user_updates"},
             )
+            self._user_updates_subscribed = False
             return True
 
     @handle_errors("unsubscribe market data", reraise=False, default_return=False)

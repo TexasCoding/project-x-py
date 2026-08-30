@@ -26,7 +26,7 @@ async def basic_order_management():
         size=1
     )
 
-    print(f"Order placed: {response.order_id}")
+    print(f"Order placed: {response.orderId}")
     await suite.disconnect()
 ```
 
@@ -47,13 +47,10 @@ async def market_orders():
         size=1
     )
 
-    # Market order with additional parameters
     sell_order = await mnq_orders.place_market_order(
         contract_id=mnq_instrument_id,
         side=1,  # Sell
         size=2,
-        time_in_force="IOC",  # Immediate or Cancel
-        reduce_only=True      # Position reducing only
     )
 
     await suite.disconnect()

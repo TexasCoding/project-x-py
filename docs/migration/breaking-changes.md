@@ -2,50 +2,39 @@
 
 This document lists all breaking changes introduced in ProjectX Python SDK releases, providing migration paths and timelines for deprecated features.
 
-## v4.0.0 - Major Release (Planned)
+## v4.0.0 - Major Release (Shipped 2026-08-29)
 
-**Release Date**: TBD
-**Migration Period**: 6 months after release
-**Support**: v3.x will receive critical bug fixes for 12 months after v4.0 release
+**Release Date**: 2026-08-29
+**Canonical guide**: [Migration Guide: v3.x to v4.0](v3-to-v4.md)
 
-### Statistics System Redesign
+v4.0 is the TopstepX-only Gateway revival. Use the migration guide for the full upgrade checklist. The changes that actually shipped:
 
-**BREAKING**: Complete overhaul of statistics system with async-first architecture.
+| Removed or changed | Use instead |
+|------|------|
+| `suite.get_stats_sync()` | `await suite.get_stats()` or `await suite.export_stats()` |
+| Import-time `uvloop.install()` | Optional extra: `pip install project-x-py[uvloop]` |
+| `suite.journal` / `suite.analytics` | Removed. `Features.TRADE_JOURNAL` and `Features.AUTO_RECONNECT` warn and have no effect |
+| Auth TypedDict field `jwt` | Gateway field is `token` |
+| Instrument search TypedDict `instruments` | Gateway field is `contracts` |
+| signalrcore + websocket-client | pysignalr |
+| User-Agent `ProjectX-Python-SDK/2.0.0` | `ProjectX-Python-SDK/4.0.0` |
 
-#### What Changed
+There is no `migrate_to_v4.py` script. Suite statistics are `get_stats()` / `export_stats()`, not `get_statistics()`.
 
-**Before (v3.x)**:
+Single-instrument `suite.data` / `suite.orders` / `suite.positions` are official accessors. Multi-instrument still uses `suite["MNQ"]`.
+
+### Statistics System (already async since v3.3)
+
+v3.3 made statistics async. v4 only removes the leftover sync wrapper:
+
 ```python
-# Synchronous statistics methods
-stats = suite.get_stats()
-health = suite.get_health_scores()
-memory = suite.get_memory_stats()
+# v3.x
+stats = suite.get_stats_sync()  # removed in 4.0
+
+# v4
+stats = await suite.get_stats()
+payload = await suite.export_stats("json")
 ```
-
-**After (v4.0)**:
-```python
-# All statistics methods are now async
-stats = await suite.get_statistics()
-health = await suite.get_health_scores()
-memory = await suite.get_memory_stats()
-```
-
-#### Impact Level: **HIGH**
-
-All code using statistics methods must be updated to use async/await.
-
-#### Migration Path
-
-1. **Immediate**: Update all statistics calls to async
-2. **Use migration script**: `python migrate_to_v4.py --fix-stats`
-3. **Test thoroughly**: Ensure all async conversions work correctly
-
-#### Timeline
-
-- **v3.1.0**: New async methods introduced alongside sync versions
-- **v3.2.0**: Deprecation warnings added to sync methods
-- **v3.3.0**: Sync methods marked for removal
-- **v4.0.0**: Sync methods removed entirely
 
 ### DataFrame Library Changes
 

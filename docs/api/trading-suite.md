@@ -127,7 +127,7 @@ async def config_file_setup():
         "features": ["orderbook"],
         "initial_days": 5
     }
-    suite = await TradingSuite.from_dict(config)
+    suite = await TradingSuite.from_config("suite.json")
 
     await suite.disconnect()
 ```
@@ -511,7 +511,7 @@ async def statistics_monitoring():
     mnq_context = suite["MNQ"]
 
     # Get system statistics (async-first API)
-    stats = await suite.get_statistics()
+    stats = await suite.get_stats()
     print(f"System Health: {stats['health_score']:.1f}/100")
     print(f"API Success Rate: {stats['api_success_rate']:.1%}")
     print(f"Memory Usage: {stats['memory_usage_mb']:.1f} MB")
@@ -783,7 +783,7 @@ async def resource_management():
 
     # Periodic health checks
     while True:
-        stats = await suite.get_statistics()
+        stats = await suite.get_stats()
         memory_mb = stats.get('memory_usage_mb', 0)
 
         if memory_mb > 100:  # MB threshold

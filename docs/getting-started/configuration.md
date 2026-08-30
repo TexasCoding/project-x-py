@@ -21,7 +21,7 @@ PROJECT_X_USERNAME=your-username
 
 ```bash
 # API endpoint (for different environments)
-PROJECTX_API_URL=https://gateway.projectx.com
+PROJECTX_API_URL=https://api.topstepx.com/api
 
 # Request timeout in seconds (default: 30)
 PROJECTX_TIMEOUT_SECONDS=60
@@ -42,19 +42,16 @@ Create a configuration file at `~/.config/projectx/config.json`:
 
 ```json
 {
-  "api_key": "your-api-key"  # pragma: allowlist secret,
-  "username": "your-username",
-  "account_name": "optional-account-name",
-  "api_url": "https://gateway.projectx.com",
+  "api_url": "https://api.topstepx.com/api",
+  "user_hub_url": "https://rtc.topstepx.com/hubs/user",
+  "market_hub_url": "https://rtc.topstepx.com/hubs/market",
   "timeout_seconds": 30,
   "retry_attempts": 3,
-  "cache_ttl": 300,
-  "rate_limit": {
-    "max_requests": 100,
-    "window_seconds": 60
-  }
+  "timezone": "America/Chicago"
 }
 ```
+
+Credentials are **not** read from this file. Use `PROJECT_X_API_KEY` and `PROJECT_X_USERNAME`, or pass them to `TradingSuite.create(username=..., api_key=...)`.
 
 ## Programmatic Configuration
 
@@ -64,18 +61,18 @@ Create a configuration file at `~/.config/projectx/config.json`:
 from project_x_py import ProjectX, ProjectXConfig
 
 config = ProjectXConfig(
-    api_key="your-api-key",  # pragma: allowlist secret
-    username="your-username",
-    account_name="optional-account-name",
-    api_url="https://gateway.projectx.com",
+    api_url="https://api.topstepx.com/api",
+    user_hub_url="https://rtc.topstepx.com/hubs/user",
+    market_hub_url="https://rtc.topstepx.com/hubs/market",
     timeout_seconds=60,
     retry_attempts=5,
-    cache_ttl=300,
-    rate_limit_max_requests=100,
-    rate_limit_window_seconds=60
 )
 
-async with ProjectX(config=config) as client:
+async with ProjectX(
+    username="your-username",
+    api_key="your-api-key",  # pragma: allowlist secret
+    config=config,
+) as client:
     await client.authenticate()
 ```
 
@@ -242,7 +239,7 @@ logging.getLogger("project_x_py.order_manager").setLevel(logging.INFO)
 ```python
 # Development settings
 config = ProjectXConfig(
-    api_url="https://sandbox.projectx.com",
+    api_url="https://api.topstepx.com/api",
     timeout_seconds=60,
     retry_attempts=5,
     debug=True
@@ -254,7 +251,7 @@ config = ProjectXConfig(
 ```python
 # Production settings
 config = ProjectXConfig(
-    api_url="https://gateway.projectx.com",
+    api_url="https://api.topstepx.com/api",
     timeout_seconds=30,
     retry_attempts=3,
     debug=False,

@@ -29,8 +29,9 @@ async def invoke_maybe(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any
 class AsyncHubConnection:
     """Thin wrapper around pysignalr.SignalRClient with the legacy hub API."""
 
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, hub_name: str | None = None) -> None:
         self.url = url
+        self.hub_name = hub_name or "hub"
         self._client: Any | None = None
         self._run_task: asyncio.Task[None] | None = None
         self._open_handlers: list[Callable[[], Any]] = []
@@ -111,7 +112,9 @@ class AsyncHubConnection:
     async def start(self) -> None:
         client = self._ensure_client()
         if self._run_task is None or self._run_task.done():
-            self._run_task = asyncio.create_task(client.run(), name=f"hub:{self.url}")
+            self._run_task = asyncio.create_task(
+                client.run(), name=f"hub:{self.hub_name}"
+            )
 
     async def stop(self) -> None:
         if self._run_task is not None and not self._run_task.done():
@@ -130,9 +133,12 @@ class HubConnectionBuilder:
 
     def __init__(self) -> None:
         self._url = ""
+        self._hub_name = "hub"
 
-    def with_url(self, url: str) -> HubConnectionBuilder:
+    def with_url(self, url: str, hub_name: str | None = None) -> HubConnectionBuilder:
         self._url = url
+        if hub_name:
+            self._hub_name = hub_name
         return self
 
     def configure_logging(self, *args: Any, **kwargs: Any) -> HubConnectionBuilder:
@@ -144,4 +150,4 @@ class HubConnectionBuilder:
         return self
 
     def build(self) -> AsyncHubConnection:
-        return AsyncHubConnection(self._url)
+        return AsyncHubConnection(self._url, hub_name=self._hub_name)

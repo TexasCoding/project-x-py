@@ -1,8 +1,8 @@
-# ProjectX Python SDK Examples (v3.3.0)
+# ProjectX Python SDK Examples (v4.0.0)
 
-This directory contains comprehensive working examples demonstrating all major features of the ProjectX Python SDK v3.3.0. All examples use **MNQ (Micro E-mini NASDAQ)** contracts to minimize risk during testing.
+This directory contains working examples for the ProjectX Python SDK v4.0.0. All examples use **MNQ (Micro E-mini NASDAQ)** contracts to minimize risk during testing.
 
-**Note:** Version 3.3.0 introduces a major statistics system redesign with 100% async-first architecture, multi-format export capabilities (JSON, Prometheus, CSV, Datadog), and enhanced health monitoring with component-level statistics.
+**Note:** v4.0 is the TopstepX Gateway revival. Use `TradingSuite.create()`, `await suite.get_stats()` / `export_stats()`, and see `docs/migration/v3-to-v4.md` for breaking changes.
 
 ## ⚠️ Important Safety Notice
 

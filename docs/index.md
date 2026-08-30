@@ -7,11 +7,11 @@
 
 **project-x-py** is a high-performance **async Python SDK** for the [ProjectX Trading Platform](https://www.projectx.com/) Gateway API. This library enables developers to build sophisticated trading strategies and applications by providing comprehensive async access to futures trading operations, real-time market data, Level 2 orderbook analysis, and a complete technical analysis suite with 59+ TA-Lib compatible indicators including pattern recognition and chaos theory analysis.
 
-!!! note "Version 3.5.7 - Order Placement Serialization Fix"
-    **Latest Release**: Fixed JSON serialization error when placing orders with Decimal prices. All price values are now properly converted to float for API requests while maintaining internal Decimal precision for accurate tick size alignment. Full backward compatibility maintained with all existing APIs.
+!!! note "Version 4.0.0 - TopstepX Gateway Revival"
+    **Latest Release**: The SDK is TopstepX-only, with official `api.topstepx.com` / `rtc.topstepx.com` defaults, native Gateway brackets, pysignalr realtime hubs, `OrderSubmissionUncertainError`, `EventType.FEED_STALE`, and `TradingSuite.export_stats()`. See the [v3 → v4 migration guide](migration/v3-to-v4.md).
 
 !!! note "Stable Production Release"
-    Since v3.1.1, this project maintains strict semantic versioning with backward compatibility between minor versions. Breaking changes only occur in major version releases (4.0.0+). Deprecation warnings are provided for at least 2 minor versions before removal.
+    This project maintains strict semantic versioning. v4.0.0 is a major release with documented breaking changes. Deprecation warnings are provided for at least 2 minor versions before removal.
 
 !!! important "Client Library/SDK"
     This is a **client library/SDK**, not a trading strategy. It provides the tools and infrastructure to help developers create their own trading strategies that integrate with the ProjectX platform.

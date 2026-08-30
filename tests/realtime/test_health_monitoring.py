@@ -474,6 +474,24 @@ class TestAutomaticReconnection:
         assert not success
         assert health_client._connection_failures == 1
 
+    async def test_force_health_reconnect_restores_subscriptions(self, health_client):
+        """After a health reconnect, prior user and market subscriptions must return."""
+        health_client._last_health_score = 45.0
+        health_client.connect = AsyncMock(return_value=True)
+        health_client.disconnect = AsyncMock()
+        health_client._start_health_monitoring = AsyncMock()
+        health_client._stop_health_monitoring = AsyncMock()
+        health_client._user_updates_subscribed = True
+        health_client._subscribed_contracts = ["MNQ", "ES"]
+        health_client.subscribe_user_updates = AsyncMock(return_value=True)
+        health_client.subscribe_market_data = AsyncMock(return_value=True)
+
+        success = await health_client.force_health_reconnect()
+
+        assert success is True
+        health_client.subscribe_user_updates.assert_awaited()
+        health_client.subscribe_market_data.assert_awaited_once_with(["MNQ", "ES"])
+
 
 @pytest.mark.asyncio
 class TestIntegrationWithMixins:

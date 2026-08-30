@@ -32,6 +32,14 @@ class TestOrderManagerCore:
         assert order_manager.stats["orders_placed"] == start_count + 1
 
     @pytest.mark.asyncio
+    async def test_place_order_rejects_size_over_max(self, order_manager):
+        """enable_order_validation must reject sizes above max_order_size."""
+        order_manager.enable_order_validation = True
+        order_manager.max_order_size = 2
+        with pytest.raises(ProjectXOrderError, match="max_order_size"):
+            await order_manager.place_order("MGC", 2, 0, 5)
+
+    @pytest.mark.asyncio
     async def test_place_order_error_raises(self, order_manager, make_order_response):
         """place_order raises ProjectXOrderError when API fails."""
         order_manager.project_x._make_request = AsyncMock(

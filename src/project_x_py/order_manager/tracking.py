@@ -53,6 +53,7 @@ import logging
 import time
 from collections import defaultdict, deque
 from collections.abc import Callable, Coroutine
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 from cachetools import TTLCache
@@ -1767,8 +1768,18 @@ class OrderTrackingMixin:
                         "Cannot recover stale orders - no project_x client available"
                     )
                     continue
+                account_id = getattr(
+                    getattr(project_x, "account_info", None), "id", None
+                )
+                end_timestamp = datetime.now(UTC)
+                start_timestamp = end_timestamp - timedelta(days=30)
+                payload: dict[str, Any] = {
+                    "accountId": account_id,
+                    "startTimestamp": start_timestamp.isoformat(),
+                    "endTimestamp": end_timestamp.isoformat(),
+                }
                 response = await project_x._make_request(
-                    "GET", "/Order/search", params={"orderId": order_id}
+                    "POST", "/Order/search", data=payload
                 )
                 if response.get("success") and response.get("orders"):
                     for order in response["orders"]:

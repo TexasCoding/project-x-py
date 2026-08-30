@@ -145,7 +145,7 @@ class ConnectionManagementMixin:
                 )
                 self.user_connection = (
                     HubConnectionBuilder()
-                    .with_url(user_url_with_token)
+                    .with_url(user_url_with_token, hub_name="user")
                     .configure_logging(
                         logger.level,
                         socket_trace=False,
@@ -167,7 +167,7 @@ class ConnectionManagementMixin:
                 )
                 self.market_connection = (
                     HubConnectionBuilder()
-                    .with_url(market_url_with_token)
+                    .with_url(market_url_with_token, hub_name="market")
                     .configure_logging(
                         logger.level,
                         socket_trace=False,
@@ -406,6 +406,26 @@ class ConnectionManagementMixin:
                 logger.debug(LogMessages.WS_DISCONNECTED)
 
     # Connection event handlers
+    def _schedule_subscription_restore(
+        self: "ProjectXRealtimeClientProtocol",
+    ) -> None:
+        """Queue subscription restore after a hub reopen (not the first connect)."""
+        should_restore = getattr(self, "_user_updates_subscribed", False) or bool(
+            getattr(self, "_subscribed_contracts", [])
+        )
+        if not should_restore:
+            return
+        restore = getattr(self, "_restore_realtime_subscriptions", None)
+        if restore is None:
+            return
+        loop = getattr(self, "_loop", None)
+        if loop is None:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return
+        loop.create_task(restore())
+
     def _on_user_hub_open(self: "ProjectXRealtimeClientProtocol") -> None:
         """
         Handle user hub connection open.
@@ -420,6 +440,7 @@ class ConnectionManagementMixin:
         self.user_connected = True
         self.user_hub_ready.set()
         self.logger.info("✅ User hub connected")
+        self._schedule_subscription_restore()
 
     def _on_user_hub_close(self: "ProjectXRealtimeClientProtocol") -> None:
         """
@@ -453,6 +474,7 @@ class ConnectionManagementMixin:
         self.market_connected = True
         self.market_hub_ready.set()
         self.logger.info("✅ Market hub connected")
+        self._schedule_subscription_restore()
 
     def _on_market_hub_close(self: "ProjectXRealtimeClientProtocol") -> None:
         """

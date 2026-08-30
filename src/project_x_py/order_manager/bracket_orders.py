@@ -79,6 +79,7 @@ See Also:
 
 import asyncio
 import logging
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -97,6 +98,28 @@ if TYPE_CHECKING:
     from project_x_py.types import OrderManagerProtocol
 
 logger = logging.getLogger(__name__)
+
+
+def _unique_child_order_id(
+    orders: list[Any],
+    *,
+    entry_id: int,
+    side: int,
+    order_type: int,
+    size: int,
+) -> int | None:
+    """Return a child order id only when exactly one candidate matches."""
+    matches = [
+        order
+        for order in orders
+        if order.id != entry_id
+        and order.side == side
+        and order.type == order_type
+        and order.size == size
+    ]
+    if len(matches) == 1:
+        return matches[0].id
+    return None
 
 
 class BracketOrderMixin:
@@ -169,10 +192,18 @@ class BracketOrderMixin:
             # Absence from open orders is not proof of failure for a market
             # order that was accepted. Confirm via trades, then positions.
             filled_from_trades = await self._filled_size_from_trades(order_id)
-            if filled_from_trades > 0:
-                return True, filled_from_trades, 0
+            if filled_from_trades <= 0:
+                return False, 0, 0
 
-            return False, 0, 0
+            tracked = getattr(self, "tracked_orders", {}).get(str(order_id), {})
+            tracked_size = tracked.get("size") if isinstance(tracked, dict) else None
+            if isinstance(tracked_size, int) and tracked_size > 0:
+                remaining_size = max(0, tracked_size - filled_from_trades)
+                is_fully_filled = filled_from_trades >= tracked_size
+                return is_fully_filled, filled_from_trades, remaining_size
+
+            # Known fill, unknown original size — do not claim fully filled.
+            return False, filled_from_trades, 0
         except Exception as e:
             logger.warning(f"Failed to check order {order_id} fill status: {e}")
             return False, 0, 0
@@ -222,22 +253,40 @@ class BracketOrderMixin:
 
             stop_id: int | None = None
             target_id: int | None = None
-            try:
-                open_orders = await self.search_open_orders(
-                    contract_id=contract_id, account_id=account_id
+            protective_side = 1 if side == 0 else 0
+            for _attempt in range(3):
+                try:
+                    open_orders = await self.search_open_orders(
+                        contract_id=contract_id, account_id=account_id
+                    )
+                    stop_id = _unique_child_order_id(
+                        open_orders,
+                        entry_id=response.orderId,
+                        side=protective_side,
+                        order_type=4,
+                        size=size,
+                    )
+                    target_id = _unique_child_order_id(
+                        open_orders,
+                        entry_id=response.orderId,
+                        side=protective_side,
+                        order_type=1,
+                        size=size,
+                    )
+                except Exception as e:
+                    logger.debug(f"Could not resolve native bracket child orders: {e}")
+                    stop_id = None
+                    target_id = None
+                if stop_id is not None and target_id is not None:
+                    break
+                await asyncio.sleep(0)
+
+            if stop_id is None or target_id is None:
+                logger.info(
+                    "Native Gateway brackets placed but child orders were not "
+                    "uniquely resolved; falling back to client-side protection"
                 )
-                protective_side = 1 if side == 0 else 0
-                for order in open_orders:
-                    if order.id == response.orderId:
-                        continue
-                    if order.side != protective_side:
-                        continue
-                    if order.type == 4 and stop_id is None:
-                        stop_id = order.id
-                    elif order.type == 1 and target_id is None:
-                        target_id = order.id
-            except Exception as e:
-                logger.debug(f"Could not resolve native bracket child orders: {e}")
+                return None
 
             return BracketOrderResponse(
                 success=True,
@@ -263,7 +312,10 @@ class BracketOrderMixin:
         try:
             if not hasattr(self, "project_x") or self.project_x is None:
                 return 0
-            trades = await self.project_x.search_trades(limit=200)
+            trades = await self.project_x.search_trades(
+                start_date=datetime.now(UTC) - timedelta(days=1),
+                limit=200,
+            )
             return sum(trade.size for trade in trades if trade.orderId == order_id)
         except Exception as e:
             logger.debug(f"Trade-history fill check failed for {order_id}: {e}")

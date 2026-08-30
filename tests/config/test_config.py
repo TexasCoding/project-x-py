@@ -279,6 +279,20 @@ class TestConfigManager:
         with pytest.raises(ValueError, match="must be a valid URL"):
             manager.validate_config(config)
 
+    def test_validate_config_rejects_cleartext_remote_http(self):
+        """Remote http:// API URLs are a MITM footgun and must be rejected."""
+        manager = ConfigManager()
+        config = ProjectXConfig(api_url="http://api.topstepx.com/api")
+
+        with pytest.raises(ValueError, match="must use HTTPS"):
+            manager.validate_config(config)
+
+    def test_validate_config_allows_localhost_http(self):
+        """http://localhost remains valid for local development."""
+        manager = ConfigManager()
+        config = ProjectXConfig(api_url="http://localhost:8080/api")
+        assert manager.validate_config(config) is True
+
     def test_validate_config_empty_urls(self):
         """Test validating config with empty URLs."""
         manager = ConfigManager()

@@ -48,7 +48,7 @@ class TestHttpMixin:
         assert isinstance(client, httpx.AsyncClient)
         assert client.timeout.connect == 5.0
         assert client.timeout.read == 30
-        assert client.follow_redirects is True
+        assert client.follow_redirects is False
         # HTTP/2 is enabled via parameter but not exposed as attribute
 
         await client.aclose()

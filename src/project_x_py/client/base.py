@@ -108,8 +108,10 @@ class ProjectXBase(
         # Lazy initialization - don't authenticate immediately
         self.account_info: Account | None = None
 
-        # Rate limiting - 100 requests per minute by default
-        self.rate_limiter = RateLimiter(max_requests=100, window_seconds=60)
+        self.rate_limiter = RateLimiter(
+            max_requests=self.config.requests_per_minute,
+            window_seconds=60,
+        )
 
         self.logger = logging.getLogger(__name__)
 

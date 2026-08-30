@@ -26,9 +26,13 @@ class TestBracketOrderImplementation(BracketOrderMixin, OrderTypesMixin):
         self._wait_for_order_fill = AsyncMock()
         self._check_order_fill_status = AsyncMock()
         self.get_order_status = AsyncMock()
-        self.close_position = AsyncMock()  # Add close_position method for emergency closure
+        self.close_position = (
+            AsyncMock()
+        )  # Add close_position method for emergency closure
         # Additional attributes that may be accessed
-        self.stats = {"bracket_orders": 0}  # Initialize with the key that will be accessed
+        self.stats = {
+            "bracket_orders": 0
+        }  # Initialize with the key that will be accessed
         self.position_manager = None
         self.recovery_manager = None
 
@@ -49,7 +53,7 @@ class TestBracketOrderMixin:
         # Test buy order with stop loss above entry
         with pytest.raises(
             ProjectXOrderError,
-            match=r"Buy order stop loss \(101\.0\) must be below entry \(100\.0\)"
+            match=r"Buy order stop loss \(101\.0\) must be below entry \(100\.0\)",
         ):
             await mixin.place_bracket_order(
                 contract_id="MNQ",
@@ -103,11 +107,17 @@ class TestBracketOrderMixin:
         # Configure mocks
         mixin.place_order.side_effect = [
             # Entry order (market)
-            OrderPlaceResponse(orderId=10, success=True, errorCode=0, errorMessage=None),
+            OrderPlaceResponse(
+                orderId=10, success=True, errorCode=0, errorMessage=None
+            ),
             # Stop order
-            OrderPlaceResponse(orderId=11, success=True, errorCode=0, errorMessage=None),
+            OrderPlaceResponse(
+                orderId=11, success=True, errorCode=0, errorMessage=None
+            ),
             # Target order
-            OrderPlaceResponse(orderId=12, success=True, errorCode=0, errorMessage=None),
+            OrderPlaceResponse(
+                orderId=12, success=True, errorCode=0, errorMessage=None
+            ),
         ]
 
         mixin._wait_for_order_fill.return_value = True
@@ -139,10 +149,7 @@ class TestBracketOrderMixin:
         mixin._wait_for_order_fill.return_value = False
         mixin._check_order_fill_status.return_value = (False, 0, 1)  # Not filled
 
-        with pytest.raises(
-            ProjectXOrderError,
-            match=r"did not fill within timeout"
-        ):
+        with pytest.raises(ProjectXOrderError, match=r"did not fill within timeout"):
             await mixin.place_bracket_order(
                 contract_id="NQ",
                 side=0,
@@ -163,16 +170,15 @@ class TestBracketOrderMixin:
             # Entry order succeeds
             OrderPlaceResponse(orderId=1, success=True, errorCode=0, errorMessage=None),
             # Stop order fails
-            OrderPlaceResponse(orderId=2, success=False, errorCode=1, errorMessage="Stop order failed"),
+            OrderPlaceResponse(
+                orderId=2, success=False, errorCode=1, errorMessage="Stop order failed"
+            ),
         ]
 
         mixin._wait_for_order_fill.return_value = True
         mixin._check_order_fill_status.return_value = (True, 1, 0)
 
-        with pytest.raises(
-            ProjectXOrderError,
-            match=r"unprotected position"
-        ):
+        with pytest.raises(ProjectXOrderError, match=r"unprotected position"):
             await mixin.place_bracket_order(
                 contract_id="MNQ",
                 side=0,
@@ -193,8 +199,7 @@ class TestBracketOrderMixin:
 
         # CORRECT BEHAVIOR: Should raise error for invalid entry types
         with pytest.raises(
-            ProjectXOrderError,
-            match=r"Invalid entry_type.*Must be 'market' or 'limit'"
+            ProjectXOrderError, match=r"Invalid entry_type.*Must be 'market' or 'limit'"
         ):
             await mixin.place_bracket_order(
                 contract_id="MNQ",
@@ -207,14 +212,15 @@ class TestBracketOrderMixin:
             )
 
     @pytest.mark.asyncio
-    async def test_bracket_order_missing_entry_price_for_limit(self, mock_order_manager):
+    async def test_bracket_order_missing_entry_price_for_limit(
+        self, mock_order_manager
+    ):
         """Test bracket order should validate entry price for limit orders."""
         mixin = mock_order_manager
 
         # CORRECT BEHAVIOR: Should validate and raise proper error for None entry_price
         with pytest.raises(
-            ProjectXOrderError,
-            match=r"entry_price is required for limit orders"
+            ProjectXOrderError, match=r"entry_price is required for limit orders"
         ):
             await mixin.place_bracket_order(
                 contract_id="MNQ",
@@ -295,7 +301,7 @@ class TestBracketOrderMixin:
         # Test sell order with stop loss below entry (should fail)
         with pytest.raises(
             ProjectXOrderError,
-            match=r"Sell order stop loss \(95\.0\) must be above entry \(100\.0\)"
+            match=r"Sell order stop loss \(95\.0\) must be above entry \(100\.0\)",
         ):
             await mixin.place_bracket_order(
                 contract_id="MNQ",
@@ -377,9 +383,13 @@ class TestBracketOrderMixin:
             # Entry order succeeds
             OrderPlaceResponse(orderId=1, success=True, errorCode=0, errorMessage=None),
             # Stop order fails
-            OrderPlaceResponse(orderId=None, success=False, errorCode=1, errorMessage="Stop failed"),
+            OrderPlaceResponse(
+                orderId=None, success=False, errorCode=1, errorMessage="Stop failed"
+            ),
             # Target order fails
-            OrderPlaceResponse(orderId=None, success=False, errorCode=1, errorMessage="Target failed"),
+            OrderPlaceResponse(
+                orderId=None, success=False, errorCode=1, errorMessage="Target failed"
+            ),
         ]
 
         mixin._wait_for_order_fill.return_value = True
@@ -392,8 +402,7 @@ class TestBracketOrderMixin:
 
         # CORRECT BEHAVIOR: Should raise an error when protective orders fail
         with pytest.raises(
-            ProjectXOrderError,
-            match=r"CRITICAL.*position was unprotected"
+            ProjectXOrderError, match=r"CRITICAL.*position was unprotected"
         ):
             await mixin.place_bracket_order(
                 contract_id="MNQ",
@@ -418,9 +427,13 @@ class TestBracketOrderMixin:
             # Entry order succeeds
             OrderPlaceResponse(orderId=1, success=True, errorCode=0, errorMessage=None),
             # Stop order fails
-            OrderPlaceResponse(orderId=None, success=False, errorCode=1, errorMessage="Stop failed"),
+            OrderPlaceResponse(
+                orderId=None, success=False, errorCode=1, errorMessage="Stop failed"
+            ),
             # Target order fails
-            OrderPlaceResponse(orderId=None, success=False, errorCode=1, errorMessage="Target failed"),
+            OrderPlaceResponse(
+                orderId=None, success=False, errorCode=1, errorMessage="Target failed"
+            ),
         ]
 
         mixin._wait_for_order_fill.return_value = True
@@ -433,8 +446,7 @@ class TestBracketOrderMixin:
 
         # Should still raise error but with emergency closure failure noted
         with pytest.raises(
-            ProjectXOrderError,
-            match=r"CRITICAL.*position was unprotected"
+            ProjectXOrderError, match=r"CRITICAL.*position was unprotected"
         ):
             await mixin.place_bracket_order(
                 contract_id="MNQ",
@@ -459,7 +471,9 @@ class TestBracketOrderMixin:
             # Entry order succeeds
             OrderPlaceResponse(orderId=1, success=True, errorCode=0, errorMessage=None),
             # Stop order fails
-            OrderPlaceResponse(orderId=None, success=False, errorCode=1, errorMessage="Stop failed"),
+            OrderPlaceResponse(
+                orderId=None, success=False, errorCode=1, errorMessage="Stop failed"
+            ),
             # Target order succeeds (mixed failure scenario)
             OrderPlaceResponse(orderId=2, success=True, errorCode=0, errorMessage=None),
         ]
@@ -468,12 +482,13 @@ class TestBracketOrderMixin:
         mixin._check_order_fill_status.return_value = (True, 1, 0)
 
         # Emergency close throws exception
-        mixin.close_position.side_effect = Exception("Network error during emergency close")
+        mixin.close_position.side_effect = Exception(
+            "Network error during emergency close"
+        )
 
         # Should still raise error with emergency closure exception noted
         with pytest.raises(
-            ProjectXOrderError,
-            match=r"CRITICAL.*position was unprotected"
+            ProjectXOrderError, match=r"CRITICAL.*position was unprotected"
         ):
             await mixin.place_bracket_order(
                 contract_id="MNQ",
@@ -498,7 +513,9 @@ class TestBracketOrderMixin:
             # Entry order succeeds
             OrderPlaceResponse(orderId=1, success=True, errorCode=0, errorMessage=None),
             # Stop order fails
-            OrderPlaceResponse(orderId=None, success=False, errorCode=1, errorMessage="Stop failed"),
+            OrderPlaceResponse(
+                orderId=None, success=False, errorCode=1, errorMessage="Stop failed"
+            ),
             # Target order succeeds
             OrderPlaceResponse(orderId=2, success=True, errorCode=0, errorMessage=None),
         ]
@@ -514,7 +531,7 @@ class TestBracketOrderMixin:
         # Should raise error - position is still unprotected without stop loss
         with pytest.raises(
             ProjectXOrderError,
-            match=r"CRITICAL.*position was unprotected.*Stop: FAILED.*Target: OK"
+            match=r"CRITICAL.*position was unprotected.*Stop: FAILED.*Target: OK",
         ):
             await mixin.place_bracket_order(
                 contract_id="MNQ",
@@ -541,7 +558,9 @@ class TestBracketOrderMixin:
             # Stop order succeeds
             OrderPlaceResponse(orderId=2, success=True, errorCode=0, errorMessage=None),
             # Target order fails
-            OrderPlaceResponse(orderId=None, success=False, errorCode=1, errorMessage="Target failed"),
+            OrderPlaceResponse(
+                orderId=None, success=False, errorCode=1, errorMessage="Target failed"
+            ),
         ]
 
         mixin._wait_for_order_fill.return_value = True
@@ -555,7 +574,7 @@ class TestBracketOrderMixin:
         # Should raise error - position is not fully protected without target
         with pytest.raises(
             ProjectXOrderError,
-            match=r"CRITICAL.*position was unprotected.*Stop: OK.*Target: FAILED"
+            match=r"CRITICAL.*position was unprotected.*Stop: OK.*Target: FAILED",
         ):
             await mixin.place_bracket_order(
                 contract_id="MNQ",
@@ -571,7 +590,9 @@ class TestBracketOrderMixin:
         mixin.close_position.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_bracket_order_with_recovery_manager_rollback(self, mock_order_manager):
+    async def test_bracket_order_with_recovery_manager_rollback(
+        self, mock_order_manager
+    ):
         """Test recovery manager rollback when protective orders fail."""
         mixin = mock_order_manager
 
@@ -589,9 +610,13 @@ class TestBracketOrderMixin:
             # Entry order succeeds
             OrderPlaceResponse(orderId=1, success=True, errorCode=0, errorMessage=None),
             # Stop order fails
-            OrderPlaceResponse(orderId=None, success=False, errorCode=1, errorMessage="Stop failed"),
+            OrderPlaceResponse(
+                orderId=None, success=False, errorCode=1, errorMessage="Stop failed"
+            ),
             # Target order fails
-            OrderPlaceResponse(orderId=None, success=False, errorCode=1, errorMessage="Target failed"),
+            OrderPlaceResponse(
+                orderId=None, success=False, errorCode=1, errorMessage="Target failed"
+            ),
         ]
 
         mixin._wait_for_order_fill.return_value = True
@@ -604,8 +629,7 @@ class TestBracketOrderMixin:
 
         # Should raise error about unprotected position
         with pytest.raises(
-            ProjectXOrderError,
-            match=r"CRITICAL.*position was unprotected"
+            ProjectXOrderError, match=r"CRITICAL.*position was unprotected"
         ):
             await mixin.place_bracket_order(
                 contract_id="MNQ",
@@ -641,7 +665,9 @@ class TestBracketOrderMixin:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_get_recovery_manager_with_existing_attribute(self, mock_order_manager):
+    async def test_get_recovery_manager_with_existing_attribute(
+        self, mock_order_manager
+    ):
         """Test _get_recovery_manager returns existing recovery_manager attribute."""
         mixin = mock_order_manager
 
@@ -672,7 +698,9 @@ class TestBracketOrderMixin:
             delattr(mixin, "recovery_manager")
 
         # Mock the OperationRecoveryManager class
-        with patch("project_x_py.order_manager.bracket_orders.OperationRecoveryManager") as MockRecovery:
+        with patch(
+            "project_x_py.order_manager.bracket_orders.OperationRecoveryManager"
+        ) as MockRecovery:
             mock_instance = MagicMock(spec=OperationRecoveryManager)
             MockRecovery.return_value = mock_instance
 
@@ -696,7 +724,9 @@ class TestBracketOrderMixin:
             delattr(mixin, "recovery_manager")
 
         # Mock the OperationRecoveryManager to raise exception
-        with patch("project_x_py.order_manager.bracket_orders.OperationRecoveryManager") as MockRecovery:
+        with patch(
+            "project_x_py.order_manager.bracket_orders.OperationRecoveryManager"
+        ) as MockRecovery:
             MockRecovery.side_effect = Exception("Failed to create recovery manager")
 
             # Should return None and not raise
@@ -704,7 +734,9 @@ class TestBracketOrderMixin:
             assert result is None
 
     @pytest.mark.asyncio
-    async def test_bracket_order_no_recovery_manager_on_success(self, mock_order_manager):
+    async def test_bracket_order_no_recovery_manager_on_success(
+        self, mock_order_manager
+    ):
         """Test bracket order works without recovery manager when all orders succeed."""
         mixin = mock_order_manager
 
@@ -779,14 +811,30 @@ class TestBracketOrderMixin:
             mixin, 99
         )
 
-        assert is_filled is True
+        assert is_filled is False
         assert filled == 2
         assert remaining == 0
 
     @pytest.mark.asyncio
-    async def test_native_bracket_places_gateway_brackets(
+    async def test_fill_status_reports_partial_when_tracked_size_known(
         self, mock_order_manager
     ):
+        """Trade history of 1 fill against tracked size 2 is a partial fill."""
+        mixin = mock_order_manager
+        mixin.get_order_by_id = AsyncMock(return_value=None)
+        mixin._filled_size_from_trades = AsyncMock(return_value=1)
+        mixin.tracked_orders = {"99": {"size": 2}}
+
+        is_filled, filled, remaining = await BracketOrderMixin._check_order_fill_status(
+            mixin, 99
+        )
+
+        assert is_filled is False
+        assert filled == 1
+        assert remaining == 1
+
+    @pytest.mark.asyncio
+    async def test_native_bracket_places_gateway_brackets(self, mock_order_manager):
         """Native path converts price offsets to ticks and attaches Gateway brackets."""
         mixin = mock_order_manager
         mixin.project_x = MagicMock()
@@ -883,6 +931,113 @@ class TestBracketOrderMixin:
                 entry_price=100.0,
                 stop_loss_price=95.0,
                 take_profit_price=105.0,
+                entry_type="limit",
+                account_id=1,
+            )
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_native_bracket_falls_back_when_children_missing(
+        self, mock_order_manager
+    ):
+        """Place success without uniquely identified children must fall back."""
+        mixin = mock_order_manager
+        mixin.project_x = MagicMock()
+        mixin.place_order = AsyncMock(
+            return_value=OrderPlaceResponse(
+                orderId=10, success=True, errorCode=0, errorMessage=None
+            )
+        )
+        mixin.search_open_orders = AsyncMock(
+            return_value=[
+                Order.from_api(
+                    {
+                        "id": 10,
+                        "accountId": 1,
+                        "contractId": "MNQ",
+                        "creationTimestamp": "2024-01-01T00:00:00Z",
+                        "updateTimestamp": None,
+                        "status": 1,
+                        "type": 1,
+                        "side": 0,
+                        "size": 1,
+                    }
+                )
+            ]
+        )
+
+        with patch(
+            "project_x_py.order_manager.utils._get_cached_tick_size",
+            new=AsyncMock(return_value=0.25),
+        ):
+            result = await mixin._try_native_bracket_order(
+                contract_id="MNQ",
+                side=0,
+                size=1,
+                entry_price=100.0,
+                stop_loss_price=95.0,
+                take_profit_price=110.0,
+                entry_type="limit",
+                account_id=1,
+            )
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_native_bracket_does_not_steal_unrelated_working_orders(
+        self, mock_order_manager
+    ):
+        """An existing working stop of a different size is not the new bracket child."""
+        mixin = mock_order_manager
+        mixin.project_x = MagicMock()
+        mixin.place_order = AsyncMock(
+            return_value=OrderPlaceResponse(
+                orderId=10, success=True, errorCode=0, errorMessage=None
+            )
+        )
+        mixin.search_open_orders = AsyncMock(
+            return_value=[
+                Order.from_api(
+                    {
+                        "id": 10,
+                        "accountId": 1,
+                        "contractId": "MNQ",
+                        "creationTimestamp": "2024-01-01T00:00:00Z",
+                        "updateTimestamp": None,
+                        "status": 1,
+                        "type": 1,
+                        "side": 0,
+                        "size": 1,
+                    }
+                ),
+                Order.from_api(
+                    {
+                        "id": 99,
+                        "accountId": 1,
+                        "contractId": "MNQ",
+                        "creationTimestamp": "2024-01-01T00:00:00Z",
+                        "updateTimestamp": None,
+                        "status": 1,
+                        "type": 4,
+                        "side": 1,
+                        "size": 5,
+                    }
+                ),
+            ]
+        )
+
+        with patch(
+            "project_x_py.order_manager.utils._get_cached_tick_size",
+            new=AsyncMock(return_value=0.25),
+        ):
+            result = await mixin._try_native_bracket_order(
+                contract_id="MNQ",
+                side=0,
+                size=1,
+                entry_price=100.0,
+                stop_loss_price=95.0,
+                take_profit_price=110.0,
                 entry_type="limit",
                 account_id=1,
             )
