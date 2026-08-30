@@ -457,7 +457,7 @@ class TestEventStatistics:
         # Stats contain handler stats, not just an "enabled" flag
         assert len(stats) > 0
         # Each handler should have stats with expected keys
-        for handler_name, handler_stats in stats.items():
+        for _handler_name, handler_stats in stats.items():
             assert isinstance(handler_stats, dict)
             assert "batches_processed" in handler_stats
 

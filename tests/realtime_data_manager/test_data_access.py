@@ -423,7 +423,7 @@ class TestGetMTFData:
         assert set(result.keys()) == {"1min", "5min", "15min"}
 
         # Each timeframe should have valid DataFrame
-        for tf, df in result.items():
+        for _tf, df in result.items():
             assert isinstance(df, pl.DataFrame)
             assert len(df) == 5  # Each has 5 bars of sample data
 

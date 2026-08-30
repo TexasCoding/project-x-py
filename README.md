@@ -27,9 +27,9 @@ A **high-performance async Python SDK** for the [ProjectX Trading Platform](http
 
 This Python SDK acts as a bridge between your trading strategies and the ProjectX platform, handling all the complex API interactions, data processing, and real-time connectivity.
 
-## 🚀 v4.0.0 - TopstepX Gateway Revival
+## 🚀 v4.1.0 - Gateway coverage and live-trading hardening
 
-**Latest Version**: v4.0.0 — the SDK is TopstepX-only, aligned with the current Gateway HTTP and SignalR APIs.
+**Latest Version**: v4.1.0 — TopstepX-only, aligned with the current Gateway HTTP and SignalR APIs, with risk OCO, entry-order risk gating, and honest indicator/docs claims.
 
 **Key changes**:
 - Official defaults: `https://api.topstepx.com` and `https://rtc.topstepx.com`
@@ -98,7 +98,7 @@ Single-instrument `suite.data` / `suite.orders` / `suite.positions` are official
 - **Performance Optimized**: Connection pooling, intelligent caching, memory management
 - **Pattern Recognition**: Fair Value Gaps, Order Blocks, Waddah Attar Explosion, and Lorenz Formula indicators
 - **Order-flow heuristics**: Iceberg detection and experimental volume-change spoofing labels (`detect_spoofing`)
-- **Financial Precision**: All calculations use Decimal type for exact precision
+- **Financial Precision**: Order prices and risk sizing use `Decimal`; orderbook analytics still use float
 - **Enterprise Error Handling**: Production-ready error handling with decorators and structured logging
 - **Comprehensive Type Safety**: Full TypedDict and Protocol definitions for IDE support and static analysis
 - **Advanced Statistics & Analytics**: 100% async-first statistics system with comprehensive health monitoring and performance tracking
@@ -106,7 +106,7 @@ Single-instrument `suite.data` / `suite.orders` / `suite.positions` are official
 - **Component-Specific Tracking**: Enhanced statistics for OrderManager, PositionManager, OrderBook, and more
 - **Health Monitoring**: Intelligent 0-100 health scoring with configurable thresholds and degradation detection
 - **Performance Optimization**: TTL caching, parallel collection, and circular buffers for memory efficiency
-- **Comprehensive Testing**: 1,300+ tests with complete code quality compliance and extensive TDD methodology
+- **Comprehensive Testing**: 3,000+ pytest cases with ruff, mypy, and CI on Python 3.12/3.13
 
 ## 📦 Installation
 

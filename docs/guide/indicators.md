@@ -14,7 +14,7 @@ ProjectX includes a Polars-based technical analysis library for real-time analys
 - **Pattern Recognition**: Advanced patterns including Fair Value Gaps, Order Blocks, and Waddah Attar Explosion
 - **Dual Interface**: Both class-based and function-based APIs
 - **Polars Integration**: High-performance DataFrame operations with method chaining
-- **TA-Lib Compatibility**: Familiar naming and parameter conventions
+- **TA-Lib-style names**: Familiar function names; not numerical TA-Lib parity
 - **Real-time Updates**: Seamless integration with streaming data
 - **Caching and Validation**: Built-in performance optimizations
 

@@ -3,7 +3,7 @@ ProjectX Python SDK for Trading Applications
 
 Author: @TexasCoding
 Date: 2026-08-29
-Version: 4.0.1 - TopstepX Gateway Revival
+Version: 4.1.0 - Gateway coverage and live-trading hardening
 
 Overview:
     A comprehensive Python SDK for the ProjectX Trading Platform Gateway API, providing
@@ -96,7 +96,7 @@ Architecture Benefits:
 It provides the infrastructure to help developers create their own trading applications
 that integrate with the ProjectX platform.
 
-Version: 4.0.1
+Version: 4.1.0
 Author: TexasCoding
 
 See Also:
@@ -109,7 +109,7 @@ See Also:
     - `utils`: Utility functions and calculations
 """
 
-__version__ = "4.0.1"
+__version__ = "4.1.0"
 __author__ = "TexasCoding"
 
 # Core client classes - renamed from Async* to standard names

@@ -7,8 +7,8 @@
 
 **project-x-py** is a high-performance **async Python SDK** for the [ProjectX Trading Platform](https://www.projectx.com/) Gateway API. This library enables developers to build sophisticated trading strategies and applications by providing comprehensive async access to futures trading operations, real-time market data, Level 2 orderbook analysis, and 64 named indicators (Polars implementations; **not** a full TA-Lib port).
 
-!!! note "Version 4.0.0 - TopstepX Gateway Revival"
-    **Latest Release**: The SDK is TopstepX-only, with official `api.topstepx.com` / `rtc.topstepx.com` defaults, native Gateway brackets, pysignalr realtime hubs, `OrderSubmissionUncertainError`, `EventType.FEED_STALE`, and `TradingSuite.export_stats()`. See the [v3 → v4 migration guide](migration/v3-to-v4.md).
+!!! note "Version 4.1.0"
+    **Latest Release**: TopstepX-only Gateway SDK (`api.topstepx.com` / `rtc.topstepx.com`) with native brackets, risk OCO and entry-order gating, stale-feed watchdog, `OrderSubmissionUncertainError`, and 64 named Polars indicators (not a full TA-Lib port). See the [v3 → v4 migration guide](migration/v3-to-v4.md).
 
 !!! note "Stable Production Release"
     This project maintains strict semantic versioning. v4.0.0 is a major release with documented breaking changes. Deprecation warnings are provided for at least 2 minor versions before removal.
@@ -120,7 +120,7 @@ asyncio.run(main())
 - Automatic retry with exponential backoff
 - Rate limit management
 - Comprehensive type safety (mypy compliant)
-- **Financial Precision**: Decimal type for exact calculations
+- **Financial Precision**: Order prices and risk sizing use `Decimal`; orderbook analytics still use float
 - **Advanced Memory Management**: Bounded buffers, automatic cleanup
 - **Performance Optimized**: 80% faster algorithms, O(N log N) complexity
 
@@ -163,7 +163,7 @@ mnq_context = suite["MNQ"]  # Access specific instrument
 **Technical Analysis**
 - **64 named indicators**: Polars implementations; not a full TA-Lib port
 - **Pattern Recognition**: Fair Value Gaps, Order Blocks, Waddah Attar, Lorenz Formula
-- **Advanced Patterns**: Iceberg detection, market manipulation
+- **Advanced Patterns**: Iceberg detection and experimental volume-change spoofing heuristics
 
 **Statistics & Monitoring (v3.3.0)**
 - **100% Async Architecture**: All statistics methods use async/await
@@ -271,7 +271,7 @@ mnq_context = suite["MNQ"]  # Access specific instrument
 - **Fixed**: Order Manager module complete overhaul with protocol compliance
 - **Fixed**: TradingSuite duplicate subscription issues
 - **Added**: 100+ new comprehensive tests for edge cases
-- **Improved**: Complete test coverage with all 1,300+ tests passing
+- **Improved**: Complete test coverage with 3,000+ tests passing
 
 See the complete [changelog](changelog.md) for all version history.
 

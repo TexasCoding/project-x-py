@@ -1,6 +1,6 @@
 # Remaining SDK Audit Items
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
+> **Status:** Implemented on `fix/remaining-audit-items` and shipped as **v4.1.0**.
 
 **Goal:** Finish the leftover findings from the 2026-08-30 multi-agent SDK audit after the Gateway/live-money pass on `fix/sdk-audit-hardening`.
 
