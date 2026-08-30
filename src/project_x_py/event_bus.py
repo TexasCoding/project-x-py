@@ -5,6 +5,7 @@ replacing scattered callback systems with a centralized event bus.
 """
 
 import asyncio
+import contextvars
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Coroutine
@@ -123,6 +124,11 @@ class EventBus:
         self._legacy_handlers: dict[
             str, list[Callable[[Event], Coroutine[Any, Any, None]]]
         ] = defaultdict(list)
+
+        # Detect wait_for() called from inside emit() on this bus (deadlock).
+        self._in_emit_handler: contextvars.ContextVar[bool] = contextvars.ContextVar(
+            "eventbus_in_emit_handler", default=False
+        )
 
     # v3 primary API
     async def on(
@@ -300,6 +306,7 @@ class EventBus:
             handler: Async callable to execute
             event: Event object to pass to handler
         """
+        token = self._in_emit_handler.set(True)
         try:
             await handler(event)
         except Exception as e:
@@ -322,11 +329,18 @@ class EventBus:
                     },
                     source="EventBus",
                 )
+        finally:
+            self._in_emit_handler.reset(token)
 
     async def wait_for(
         self, event: EventType | str, timeout: float | None = None
     ) -> Event:
         """Wait for specific event to occur.
+
+        Handlers must not call ``wait_for`` on the same bus from inside ``emit``.
+        That nests ``asyncio.wait_for`` on a Future that cannot complete until
+        the current emit finishes, and deadlocks the bus. Re-entrant calls
+        raise ``RuntimeError`` immediately.
 
         Args:
             event: Event type to wait for
@@ -337,7 +351,13 @@ class EventBus:
 
         Raises:
             asyncio.TimeoutError: If timeout expires
+            RuntimeError: If called from an emit handler on this bus
         """
+        if self._in_emit_handler.get():
+            raise RuntimeError(
+                "EventBus.wait_for cannot be called from inside an emit handler "
+                "on the same bus (deadlock). Wait from outside the handler."
+            )
         event_type = event if isinstance(event, EventType) else EventType(event)
         future: asyncio.Future[Event] = asyncio.Future()
 

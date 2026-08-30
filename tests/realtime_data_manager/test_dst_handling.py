@@ -62,6 +62,21 @@ class TestDSTHandlingMixin:
         assert dst_mixin.timezone_str == "America/New_York"
         assert isinstance(dst_mixin.timezone, pytz.tzinfo.BaseTzInfo)
 
+    def test_spring_forward_2am_window_chicago_2026(self, chicago_mixin):
+        """America/Chicago spring-forward 02:00 is a transition, not only midnight."""
+        chicago_mixin.clear_dst_cache()
+        # 2026-03-08 02:00 America/Chicago does not exist (2 AM -> 3 AM).
+        spring_2am = datetime(2026, 3, 8, 2, 0, 0)
+        assert chicago_mixin.is_dst_transition_period(spring_2am) is True
+
+        around_1am = datetime(2026, 3, 8, 1, 30, 0)
+        around_3am = datetime(2026, 3, 8, 3, 0, 0)
+        assert chicago_mixin.is_dst_transition_period(around_1am) is True
+        assert chicago_mixin.is_dst_transition_period(around_3am) is True
+
+        june_noon = datetime(2026, 6, 15, 12, 0, 0)
+        assert chicago_mixin.is_dst_transition_period(june_noon) is False
+
     @freeze_time("2024-03-10 06:00:00")  # Just before spring forward
     def test_detect_spring_forward_transition(self, dst_mixin):
         """Should detect upcoming spring forward DST transition."""

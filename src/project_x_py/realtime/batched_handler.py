@@ -7,6 +7,7 @@ reducing overhead and improving throughput by processing messages in batches.
 
 import asyncio
 import contextlib
+import inspect
 import time
 from collections import deque
 from collections.abc import Callable, Coroutine
@@ -323,46 +324,67 @@ class OptimizedRealtimeHandler:
         await self.depth_handler.handle_message(data)
 
     async def _process_quote_batch(self, batch: list[dict[str, Any]]) -> None:
-        """Process a batch of quote messages."""
-        # Group quotes by contract for efficient processing
-        quotes_by_contract: dict[str, list[dict[str, Any]]] = {}
+        """Process a batch of quote messages.
+
+        Quotes are snapshots, so only the latest quote per contract is forwarded.
+        The unbatched processing path is used so batching cannot re-enter itself.
+        """
+        quotes_by_contract: dict[str, Any] = {}
         for quote in batch:
-            contract = quote.get("contract_id", "unknown")
-            if contract not in quotes_by_contract:
-                quotes_by_contract[contract] = []
-            quotes_by_contract[contract].append(quote)
+            quotes_by_contract[self._contract_key(quote)] = quote
 
-        # Process each contract's quotes
-        for _contract, quotes in quotes_by_contract.items():
-            # Use only the latest quote for each contract (others are stale)
-            latest_quote = quotes[-1]
-
-            # Forward to original handlers
-            if hasattr(self.client, "_forward_quote_update"):
-                await self.client._forward_quote_update(latest_quote)
+        for latest_quote in quotes_by_contract.values():
+            await self._forward_unbatched("quote_update", latest_quote)
 
     async def _process_trade_batch(self, batch: list[dict[str, Any]]) -> None:
         """Process a batch of trade messages."""
-        # All trades are important, process them all
         for trade in batch:
-            if hasattr(self.client, "_forward_market_trade"):
-                await self.client._forward_market_trade(trade)
+            await self._forward_unbatched("market_trade", trade)
 
     async def _process_depth_batch(self, batch: list[dict[str, Any]]) -> None:
-        """Process a batch of depth messages."""
-        # Group depth updates by contract
-        depth_by_contract: dict[str, list[dict[str, Any]]] = {}
-        for depth in batch:
-            contract = depth.get("contract_id", "unknown")
-            if contract not in depth_by_contract:
-                depth_by_contract[contract] = []
-            depth_by_contract[contract].append(depth)
+        """Process a batch of depth messages.
 
-        # Use only latest depth update per contract
-        for _contract, depths in depth_by_contract.items():
-            latest_depth = depths[-1]
-            if hasattr(self.client, "_forward_market_depth"):
-                await self.client._forward_market_depth(latest_depth)
+        GatewayDepth is per price level. Every row is forwarded; never collapse
+        a contract's batch to the last row only.
+        """
+        for depth in batch:
+            await self._forward_unbatched("market_depth", depth)
+
+    @staticmethod
+    def _contract_key(message: Any) -> str:
+        if isinstance(message, dict):
+            return str(
+                message.get("contract_id")
+                or message.get("symbol")
+                or message.get("symbolId")
+                or "unknown"
+            )
+        if isinstance(message, list | tuple) and message:
+            return str(message[0])
+        return "unknown"
+
+    async def _forward_unbatched(self, event_type: str, payload: Any) -> None:
+        """Forward a batched payload through the client's unbatched path."""
+        forward_async = getattr(self.client, "_forward_event_async", None)
+        if forward_async is not None:
+            result = forward_async(event_type, (payload,))
+            if inspect.isawaitable(result):
+                await result
+            return
+
+        forwarder_name = {
+            "quote_update": "_forward_quote_update",
+            "market_trade": "_forward_market_trade",
+            "market_depth": "_forward_market_depth",
+        }.get(event_type)
+        if not forwarder_name:
+            return
+        forwarder = getattr(self.client, forwarder_name, None)
+        if forwarder is None:
+            return
+        result = forwarder(payload)
+        if inspect.isawaitable(result):
+            await result
 
     def get_all_stats(self) -> dict[str, Any]:
         """Get statistics from all batch handlers."""

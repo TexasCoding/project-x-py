@@ -106,6 +106,30 @@ class TestSessionFilterMixin:
         assert result_hours == expected_hours
 
     @pytest.mark.asyncio
+    async def test_rth_filter_uses_per_bar_dst_offset(self, session_filter):
+        """Session filters must use each bar's DST offset, not bar 0's offset."""
+        timestamps = [
+            # Friday 2026-03-06 10:00 AM EST = 15:00 UTC (before spring-forward)
+            datetime(2026, 3, 6, 15, 0, tzinfo=timezone.utc),
+            # Monday 2026-03-09 10:00 AM EDT = 14:00 UTC (after spring-forward)
+            datetime(2026, 3, 9, 14, 0, tzinfo=timezone.utc),
+        ]
+        data = pl.DataFrame(
+            {
+                "timestamp": timestamps,
+                "open": [1.0, 2.0],
+                "high": [1.0, 2.0],
+                "low": [1.0, 2.0],
+                "close": [1.0, 2.0],
+                "volume": [1, 1],
+            }
+        )
+
+        result = await session_filter.filter_by_session(data, SessionType.RTH, "ES")
+
+        assert len(result) == 2
+
+    @pytest.mark.asyncio
     async def test_filter_by_eth_session(self, session_filter, sample_data):
         """ETH filtering should return all bars including RTH."""
         result = await session_filter.filter_by_session(
@@ -488,7 +512,9 @@ class TestSessionFilterCacheAndOptimization:
         assert result == ([], [])
 
         # Test with wrong tuple length
-        session_filter._session_boundary_cache[cache_key] = ([1, 2, 3],)  # Only one element
+        session_filter._session_boundary_cache[cache_key] = (
+            [1, 2, 3],
+        )  # Only one element
         result = session_filter._get_cached_session_boundaries("testhash", "ES", "RTH")
         assert result == ([], [])
 
@@ -506,14 +532,16 @@ class TestSessionFilterCacheAndOptimization:
     def test_use_lazy_evaluation(self, session_filter):
         """Test _use_lazy_evaluation method (line 47)."""
         # Create test data
-        data = pl.DataFrame({
-            "timestamp": [datetime(2024, 1, 15, 15, 0, tzinfo=timezone.utc)],
-            "open": [100.0],
-            "high": [101.0],
-            "low": [99.0],
-            "close": [100.5],
-            "volume": [1000]
-        })
+        data = pl.DataFrame(
+            {
+                "timestamp": [datetime(2024, 1, 15, 15, 0, tzinfo=timezone.utc)],
+                "open": [100.0],
+                "high": [101.0],
+                "low": [99.0],
+                "close": [100.5],
+                "volume": [1000],
+            }
+        )
 
         lazy_result = session_filter._use_lazy_evaluation(data)
 
@@ -533,14 +561,16 @@ class TestSessionFilterCacheAndOptimization:
             for i in range(n_rows)
         ]
 
-        large_data = pl.DataFrame({
-            "timestamp": timestamps,
-            "open": [100.0] * n_rows,
-            "high": [101.0] * n_rows,
-            "low": [99.0] * n_rows,
-            "close": [100.5] * n_rows,
-            "volume": [1000] * n_rows
-        })
+        large_data = pl.DataFrame(
+            {
+                "timestamp": timestamps,
+                "open": [100.0] * n_rows,
+                "high": [101.0] * n_rows,
+                "low": [99.0] * n_rows,
+                "close": [100.5] * n_rows,
+                "volume": [1000] * n_rows,
+            }
+        )
 
         result = session_filter._optimize_filtering(large_data)
 
@@ -551,14 +581,16 @@ class TestSessionFilterCacheAndOptimization:
     def test_optimize_filtering_small_dataset(self, session_filter):
         """Test _optimize_filtering with small dataset (standard path)."""
         # Create small dataset (<100k rows)
-        small_data = pl.DataFrame({
-            "timestamp": [datetime(2024, 1, 15, 15, 0, tzinfo=timezone.utc)],
-            "open": [100.0],
-            "high": [101.0],
-            "low": [99.0],
-            "close": [100.5],
-            "volume": [1000]
-        })
+        small_data = pl.DataFrame(
+            {
+                "timestamp": [datetime(2024, 1, 15, 15, 0, tzinfo=timezone.utc)],
+                "open": [100.0],
+                "high": [101.0],
+                "low": [99.0],
+                "close": [100.5],
+                "volume": [1000],
+            }
+        )
 
         result = session_filter._optimize_filtering(small_data)
 
@@ -576,10 +608,18 @@ class TestSessionFilterCacheInvalidation:
     def test_cache_key_uniqueness(self, session_filter):
         """Test that cache keys are properly unique."""
         # Different combinations should create different cache keys
-        boundaries1 = session_filter._get_cached_session_boundaries("hash1", "ES", "RTH")
-        boundaries2 = session_filter._get_cached_session_boundaries("hash1", "ES", "ETH")
-        boundaries3 = session_filter._get_cached_session_boundaries("hash1", "NQ", "RTH")
-        boundaries4 = session_filter._get_cached_session_boundaries("hash2", "ES", "RTH")
+        boundaries1 = session_filter._get_cached_session_boundaries(
+            "hash1", "ES", "RTH"
+        )
+        boundaries2 = session_filter._get_cached_session_boundaries(
+            "hash1", "ES", "ETH"
+        )
+        boundaries3 = session_filter._get_cached_session_boundaries(
+            "hash1", "NQ", "RTH"
+        )
+        boundaries4 = session_filter._get_cached_session_boundaries(
+            "hash2", "ES", "RTH"
+        )
 
         # All should be in cache with different keys
         assert len(session_filter._session_boundary_cache) >= 4
@@ -609,12 +649,25 @@ class TestSessionFilterMutationTesting:
         """Test off-by-one errors in boundary conditions."""
         # Test exactly at boundaries with different precisions
         market_open_exact = datetime(2024, 1, 15, 14, 30, 0, 0, tzinfo=timezone.utc)
-        market_open_plus_1ms = datetime(2024, 1, 15, 14, 30, 0, 1000, tzinfo=timezone.utc)
-        market_open_minus_1ms = datetime(2024, 1, 15, 14, 29, 59, 999000, tzinfo=timezone.utc)
+        market_open_plus_1ms = datetime(
+            2024, 1, 15, 14, 30, 0, 1000, tzinfo=timezone.utc
+        )
+        market_open_minus_1ms = datetime(
+            2024, 1, 15, 14, 29, 59, 999000, tzinfo=timezone.utc
+        )
 
-        assert session_filter.is_in_session(market_open_exact, SessionType.RTH, "ES") is True
-        assert session_filter.is_in_session(market_open_plus_1ms, SessionType.RTH, "ES") is True
-        assert session_filter.is_in_session(market_open_minus_1ms, SessionType.RTH, "ES") is False
+        assert (
+            session_filter.is_in_session(market_open_exact, SessionType.RTH, "ES")
+            is True
+        )
+        assert (
+            session_filter.is_in_session(market_open_plus_1ms, SessionType.RTH, "ES")
+            is True
+        )
+        assert (
+            session_filter.is_in_session(market_open_minus_1ms, SessionType.RTH, "ES")
+            is False
+        )
 
     def test_type_safety_at_runtime(self, session_filter):
         """Test type safety with various input types."""
@@ -624,7 +677,9 @@ class TestSessionFilterMutationTesting:
 
         # Test with integer timestamp
         with pytest.raises((ValueError, TypeError)):
-            session_filter.is_in_session(1705324800, SessionType.RTH, "ES")  # Unix timestamp
+            session_filter.is_in_session(
+                1705324800, SessionType.RTH, "ES"
+            )  # Unix timestamp
 
         # Test with None
         with pytest.raises((ValueError, TypeError)):
@@ -647,10 +702,16 @@ class TestSessionFilterErrorRecovery:
         session_filter._session_boundary_cache["corrupt3"] = {"invalid": "dict"}
 
         # Operations should still work despite corrupted cache
-        data = pl.DataFrame({
-            "timestamp": [datetime(2024, 1, 15, 15, 0, tzinfo=timezone.utc)],
-            "open": [100.0], "high": [101.0], "low": [99.0], "close": [100.5], "volume": [1000]
-        })
+        data = pl.DataFrame(
+            {
+                "timestamp": [datetime(2024, 1, 15, 15, 0, tzinfo=timezone.utc)],
+                "open": [100.0],
+                "high": [101.0],
+                "low": [99.0],
+                "close": [100.5],
+                "volume": [1000],
+            }
+        )
 
         result = await session_filter.filter_by_session(data, SessionType.RTH, "ES")
         assert len(result) >= 0  # Should not crash
@@ -660,20 +721,25 @@ class TestSessionFilterErrorRecovery:
         """Test behavior under memory pressure."""
         # Create data that might stress memory
         n_rows = 10_000
-        large_data = pl.DataFrame({
-            "timestamp": [
-                datetime(2024, 1, 15, 15, 0, tzinfo=timezone.utc) + timedelta(seconds=i)
-                for i in range(n_rows)
-            ],
-            "open": [100.0 + i * 0.001 for i in range(n_rows)],
-            "high": [101.0 + i * 0.001 for i in range(n_rows)],
-            "low": [99.0 + i * 0.001 for i in range(n_rows)],
-            "close": [100.5 + i * 0.001 for i in range(n_rows)],
-            "volume": [1000 + i for i in range(n_rows)]
-        })
+        large_data = pl.DataFrame(
+            {
+                "timestamp": [
+                    datetime(2024, 1, 15, 15, 0, tzinfo=timezone.utc)
+                    + timedelta(seconds=i)
+                    for i in range(n_rows)
+                ],
+                "open": [100.0 + i * 0.001 for i in range(n_rows)],
+                "high": [101.0 + i * 0.001 for i in range(n_rows)],
+                "low": [99.0 + i * 0.001 for i in range(n_rows)],
+                "close": [100.5 + i * 0.001 for i in range(n_rows)],
+                "volume": [1000 + i for i in range(n_rows)],
+            }
+        )
 
         # Should handle large datasets without error
-        result = await session_filter.filter_by_session(large_data, SessionType.RTH, "ES")
+        result = await session_filter.filter_by_session(
+            large_data, SessionType.RTH, "ES"
+        )
         assert isinstance(result, pl.DataFrame)
 
 
@@ -691,11 +757,17 @@ class TestSessionFilterBoundaryValidation:
         # Test on the Monday after DST transitions when markets are open
 
         # Monday after spring DST transition (March 11, 2024)
-        spring_monday = datetime(2024, 3, 11, 15, 0, tzinfo=timezone.utc)  # 11:00 AM EDT - Should be RTH
-        assert session_filter.is_in_session(spring_monday, SessionType.RTH, "ES") is True
+        spring_monday = datetime(
+            2024, 3, 11, 15, 0, tzinfo=timezone.utc
+        )  # 11:00 AM EDT - Should be RTH
+        assert (
+            session_filter.is_in_session(spring_monday, SessionType.RTH, "ES") is True
+        )
 
         # Monday after fall DST transition (November 4, 2024)
-        fall_monday = datetime(2024, 11, 4, 15, 0, tzinfo=timezone.utc)  # 10:00 AM EST - Should be RTH
+        fall_monday = datetime(
+            2024, 11, 4, 15, 0, tzinfo=timezone.utc
+        )  # 10:00 AM EST - Should be RTH
         assert session_filter.is_in_session(fall_monday, SessionType.RTH, "ES") is True
 
     def test_leap_second_handling(self, session_filter):
