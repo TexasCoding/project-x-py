@@ -213,3 +213,38 @@ class TestExportCoverage:
         lines = csv_minimal.strip().split("\n")
         assert len(lines) == 2  # Header + 1 data row
         assert "health,overall_score,100.0,system" in lines[1]
+
+    @pytest.mark.asyncio
+    async def test_prometheus_redacts_secrets(self):
+        exporter = StatsExporter(sanitize_sensitive=True)
+        stats = {
+            "health": {"overall_score": 80.0, "component_scores": {}, "issues": []},
+            "account_id": "ACC-PLACEHOLDER-1",
+            "account_number": "ACC-PLACEHOLDER-2",
+        }
+        output = await exporter.to_prometheus(stats)
+        assert "ACC-PLACEHOLDER-1" not in output
+        assert "ACC-PLACEHOLDER-2" not in output
+
+    @pytest.mark.asyncio
+    async def test_csv_redacts_secrets(self):
+        exporter = StatsExporter(sanitize_sensitive=True)
+        stats = {
+            "account_id": "ACC-PLACEHOLDER-1",
+            "account_number": "ACC-PLACEHOLDER-2",
+        }
+        output = await exporter.to_csv(stats)
+        assert "ACC-PLACEHOLDER-1" not in output
+        assert "ACC-PLACEHOLDER-2" not in output
+        assert "***REDACTED***" in output
+
+    @pytest.mark.asyncio
+    async def test_datadog_redacts_secrets(self):
+        exporter = StatsExporter(sanitize_sensitive=True)
+        stats = {
+            "health": {"overall_score": 80.0, "component_scores": {}, "issues": []},
+            "account_id": "ACC-PLACEHOLDER-3",
+        }
+        output = await exporter.to_datadog(stats)
+        blob = json.dumps(output)
+        assert "ACC-PLACEHOLDER-3" not in blob

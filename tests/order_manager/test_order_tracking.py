@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+import warnings
 from collections import deque
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -280,7 +281,9 @@ class TestOrderTrackingMixin:
         assert 101 not in om._cancellation_failures
         assert "101_last_failure" not in om._cancellation_failures
 
-    def test_extract_order_data_direct_dict(self, mock_order_manager, sample_order_data):
+    def test_extract_order_data_direct_dict(
+        self, mock_order_manager, sample_order_data
+    ):
         """Test order data extraction from direct dictionary."""
         om = mock_order_manager
 
@@ -289,7 +292,9 @@ class TestOrderTrackingMixin:
         assert extracted == sample_order_data
         assert extracted["id"] == 12345
 
-    def test_extract_order_data_list_format(self, mock_order_manager, sample_order_data):
+    def test_extract_order_data_list_format(
+        self, mock_order_manager, sample_order_data
+    ):
         """Test order data extraction from list formats."""
         om = mock_order_manager
 
@@ -305,7 +310,9 @@ class TestOrderTrackingMixin:
         extracted = om._extract_order_data([sample_order_data, "other"])
         assert extracted == sample_order_data
 
-    def test_extract_order_data_nested_format(self, mock_order_manager, sample_order_data):
+    def test_extract_order_data_nested_format(
+        self, mock_order_manager, sample_order_data
+    ):
         """Test order data extraction from nested formats."""
         om = mock_order_manager
 
@@ -392,18 +399,14 @@ class TestOrderTrackingMixin:
         om = mock_order_manager
 
         # Valid fills array
-        validated = om._validate_order_data({
-            "id": 123,
-            "fills": [{"size": 1, "price": 100.0}]
-        })
+        validated = om._validate_order_data(
+            {"id": 123, "fills": [{"size": 1, "price": 100.0}]}
+        )
         assert validated is not None
         assert isinstance(validated["fills"], list)
 
         # Invalid fills type - should be converted to empty list
-        validated = om._validate_order_data({
-            "id": 123,
-            "fills": "invalid"
-        })
+        validated = om._validate_order_data({"id": 123, "fills": "invalid"})
         assert validated is not None
         assert validated["fills"] == []
 
@@ -456,7 +459,7 @@ class TestOrderTrackingMixin:
             "updateTimestamp": "2024-01-01T00:00:01Z",
             "type": 1,  # Limit
             "side": 0,  # Buy
-            "size": 1
+            "size": 1,
         }
         await om._on_order_update(order_data)
 
@@ -487,7 +490,7 @@ class TestOrderTrackingMixin:
             "updateTimestamp": "2024-01-01T00:00:01Z",
             "type": 1,  # Limit
             "side": 0,  # Buy
-            "size": 1
+            "size": 1,
         }
         await om._on_order_update(order_data)
 
@@ -511,10 +514,7 @@ class TestOrderTrackingMixin:
             "id": 123,
             "status": 1,  # Partially filled
             "size": 10,
-            "fills": [
-                {"size": 3, "price": 100.0},
-                {"size": 2, "price": 100.5}
-            ]
+            "fills": [{"size": 3, "price": 100.0}, {"size": 2, "price": 100.5}],
         }
 
         await om._on_order_update(order_data)
@@ -545,7 +545,9 @@ class TestOrderTrackingMixin:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_get_tracked_order_status_populated_during_wait(self, mock_order_manager):
+    async def test_get_tracked_order_status_populated_during_wait(
+        self, mock_order_manager
+    ):
         """Test order status populated during wait."""
         om = mock_order_manager
         om._realtime_enabled = True
@@ -708,9 +710,7 @@ class TestOrderTrackingMixin:
 
         # Configure new limits
         await om.configure_memory_limits(
-            max_tracked_orders=3,
-            order_ttl_seconds=1800,
-            cleanup_interval=150
+            max_tracked_orders=3, order_ttl_seconds=1800, cleanup_interval=150
         )
 
         assert om._max_tracked_orders == 3
@@ -783,11 +783,7 @@ class TestOrderTrackingMixin:
         async def trigger_fill():
             await asyncio.sleep(0.1)
             # Simulate fill event
-            event_data = {
-                "order_id": 123,
-                "order": {"id": 123},
-                "status": 2
-            }
+            event_data = {"order_id": 123, "order": {"id": 123}, "status": 2}
             await om.event_bus.emit(EventType.ORDER_FILLED, event_data)
 
         # Start background task to trigger fill event
@@ -804,11 +800,7 @@ class TestOrderTrackingMixin:
         async def trigger_cancel():
             await asyncio.sleep(0.1)
             # Simulate cancel event
-            event_data = {
-                "order_id": 123,
-                "order": {"id": 123},
-                "status": 3
-            }
+            event_data = {"order_id": 123, "order": {"id": 123}, "status": 3}
             await om.event_bus.emit(EventType.ORDER_CANCELLED, event_data)
 
         # Start background task to trigger cancel event
@@ -833,7 +825,7 @@ class TestOrderTrackingMixin:
             "orderId": 123,
             "size": 2,
             "price": 100.0,
-            "timestamp": "2023-01-01T12:00:00Z"
+            "timestamp": "2023-01-01T12:00:00Z",
         }
 
         extracted = om._extract_trade_data(trade_data)
@@ -919,7 +911,9 @@ class TestOrderTrackingMixin:
         await om._on_trade_execution({})
 
     @pytest.mark.asyncio
-    async def test_process_order_update_compat(self, mock_order_manager, sample_order_data):
+    async def test_process_order_update_compat(
+        self, mock_order_manager, sample_order_data
+    ):
         """Test backward compatibility wrapper for _process_order_update."""
         om = mock_order_manager
 
@@ -929,15 +923,17 @@ class TestOrderTrackingMixin:
         order_id_str = str(sample_order_data["id"])
         assert order_id_str in om.tracked_orders
 
-    def test_deprecated_add_callback(self, mock_order_manager):
-        """Test deprecated add_callback method."""
+    @pytest.mark.asyncio
+    async def test_deprecated_add_callback(self, mock_order_manager):
+        """Test deprecated add_callback method still registers."""
         om = mock_order_manager
 
-        def dummy_callback(data):
+        async def dummy_callback(data):
             pass
 
-        # Should not raise an exception (deprecation warning only)
-        om.add_callback("order_filled", dummy_callback)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            await om.add_callback("order_filled", dummy_callback)
 
     @pytest.mark.asyncio
     async def test_setup_realtime_callbacks_no_client(self, mock_order_manager):
@@ -1002,7 +998,9 @@ class TestOrderTrackingEdgeCases:
         om = mock_order_manager
 
         # Mock validate_order_data to raise exception
-        with patch.object(om, '_validate_order_data', side_effect=Exception("Test error")):
+        with patch.object(
+            om, "_validate_order_data", side_effect=Exception("Test error")
+        ):
             # Should not raise exception, just log error
             await om._on_order_update({"id": 123, "status": 1})
 
@@ -1030,7 +1028,7 @@ class TestOrderTrackingEdgeCases:
             "updateTimestamp": "2024-01-01T00:00:01Z",
             "type": 1,  # Limit
             "side": 0,  # Buy
-            "size": 1
+            "size": 1,
         }
         await om._on_order_update(order_data)
 

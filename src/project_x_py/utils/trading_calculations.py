@@ -236,9 +236,14 @@ def calculate_position_sizing(
     entry_price: float,
     stop_loss_price: float,
     tick_value: float = 1.0,
+    tick_size: float = 1.0,
 ) -> dict[str, Any]:
     """
     Calculate optimal position size based on risk management.
+
+    Dollar risk per contract is ``(price_risk / tick_size) * tick_value``.
+    ``tick_size`` defaults to 1.0 so callers that pass dollars-per-point as
+    ``tick_value`` keep working. For MNQ use tick_size=0.25, tick_value=0.50.
 
     Args:
         account_balance: Current account balance
@@ -246,6 +251,7 @@ def calculate_position_sizing(
         entry_price: Entry price for the trade
         stop_loss_price: Stop loss price
         tick_value: Dollar value per tick
+        tick_size: Minimum price increment (default 1.0 for compatibility)
 
     Returns:
         Dict with position sizing information
@@ -267,6 +273,8 @@ def calculate_position_sizing(
         raise ValueError(f"stop_loss_price must be positive, got {stop_loss_price}")
     if tick_value <= 0:
         raise ValueError(f"tick_value must be positive, got {tick_value}")
+    if tick_size <= 0:
+        raise ValueError(f"tick_size must be positive, got {tick_size}")
 
     try:
         # Calculate risk per share/contract
@@ -275,8 +283,9 @@ def calculate_position_sizing(
         if price_risk == 0:
             return {"error": "No price risk (entry equals stop loss)"}
 
-        # Calculate dollar risk
-        dollar_risk_per_contract = price_risk * tick_value
+        # ticks * tick_value, not price_risk * tick_value (MNQ is 4 ticks/point)
+        ticks = price_risk / tick_size
+        dollar_risk_per_contract = ticks * tick_value
 
         # Calculate maximum dollar risk for this trade
         max_dollar_risk = account_balance * risk_per_trade

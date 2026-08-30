@@ -68,13 +68,17 @@ class WAE(BaseIndicator):
         that indicates strong momentum and a dead zone line that filters out
         ranging/consolidating markets.
 
-        Formula:
+        Formula (implemented):
         - MACD Line = EMA(fast) - EMA(slow)
         - BB Upper = SMA(bb_period) + (bb_mult * StdDev)
         - BB Lower = SMA(bb_period) - (bb_mult * StdDev)
-        - Explosion = MACD Line * Sensitivity
+        - Explosion = (BB_upper - BB_lower) * abs(MACD) * sensitivity / bb_period
         - Trend = 1 if MACD > 0, -1 if MACD < 0
         - Dead Zone = ATR(dead_zone_period) * dead_zone_mult
+
+        This is a MACD × Bollinger-width explosion, not a Hilbert/TA-Lib port.
+        Short frames are accepted; ATR dead-zone values stay null until enough
+        bars exist for the ATR window.
 
         Args:
             data: DataFrame with OHLC data
@@ -118,7 +122,8 @@ class WAE(BaseIndicator):
 
         required_cols: list[str] = [close_column, high_column, low_column]
         self.validate_data(data, required_cols)
-        self.validate_data_length(data, max(slow_period, bb_period, dead_zone_period))
+        # Do not require dead_zone_period bars; ATR simply warms up in-place.
+        self.validate_data_length(data, max(slow_period, bb_period, 2))
 
         # Calculate MACD components
         result = data.with_columns(

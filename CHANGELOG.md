@@ -29,6 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.grok/` layout (`AGENTS.md`, project agents, skills, hooks, and MCP).
 - Remove the Codecov GitHub Action, `codecov.yml`, and README badge.
   Coverage still runs locally via pytest-cov.
+- Indicator docs now say 64 named Polars indicators, not a full TA-Lib port.
+  Package-level `RSI`/`SMA`/`MACD`/`ATR` are functions; classes are
+  `RSIIndicator` and siblings. Hilbert-style names are documented as stubs.
+- `OrderTracker` / `OrderChainBuilder` are the official suite APIs (no class
+  deprecation). Standalone `track_order()` remains deprecated until 5.0.0.
+- `Features.TRADE_JOURNAL` / `AUTO_RECONNECT` stay as warn-and-noop flags;
+  `PERFORMANCE_ANALYTICS` is documented as unused config flags. Statistics
+  aggregator is single-instrument (first symbol).
 
 ### Added
 
@@ -66,6 +74,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - pysignalr hub receive buffer is capped at `HUB_RECEIVE_MAX_SIZE` (10_000).
 - REST price fallback copies bar state and releases the data lock before HTTP.
 - `EventBus.wait_for` rejects re-entrant calls from inside `emit` handlers.
+- Deprecated `add_callback` shims on OrderManager, OrderBook, PositionManager,
+  and RealtimeDataManager forward to EventBus (unknown names raise
+  `ValueError`). Removal version is 5.0.0.
+- FVG requires the middle candle not to fill the zone and keeps historical
+  `fvg_bullish` when mitigated (`fvg_mitigated` is added). Order Block types
+  are mutually exclusive. WAE explosion formula is documented and no longer
+  rejects frames shorter than the ATR dead-zone period.
+- `is_market_open` / `get_current_session` treat overnight Globex as ETH, not
+  BREAK; 17:00–18:00 ET is maintenance.
+- `calculate_position_sizing` and `RiskRewardTemplate` use
+  `ticks = price_risk / tick_size` (MNQ tick_size=0.25, tick_value=0.50).
+- Stats export redacts secrets in Prometheus/CSV/Datadog. Missing health
+  inputs no longer score a perfect 100.
 
 - Query-cache LRU recency uses a monotonic counter so ties in wall-clock
   `time.time()` do not evict the wrong entry.

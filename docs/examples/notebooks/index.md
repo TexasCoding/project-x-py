@@ -19,7 +19,7 @@ The links below are historical placeholders and may 404 until notebooks are repu
 - **[Volume Profile Trading](https://github.com/TexasCoding/project-x-py/blob/main/notebooks/12_volume_profile.ipynb)** - Key level identification
 
 ### Technical Analysis
-- **[Indicator Showcase](https://github.com/TexasCoding/project-x-py/blob/main/notebooks/20_indicators.ipynb)** - All 59+ indicators demonstrated
+- **[Indicator Showcase](https://github.com/TexasCoding/project-x-py/blob/main/notebooks/20_indicators.ipynb)** - Named indicators demonstrated
 - **[Pattern Recognition](https://github.com/TexasCoding/project-x-py/blob/main/notebooks/21_patterns.ipynb)** - FVG and Order Block detection
 - **[Multi-Timeframe Analysis](https://github.com/TexasCoding/project-x-py/blob/main/notebooks/22_mtf_analysis.ipynb)** - Confluence across timeframes
 

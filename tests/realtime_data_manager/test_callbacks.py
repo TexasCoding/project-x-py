@@ -62,6 +62,7 @@ class TestCallbackMixinBasicFunctionality:
     @pytest.mark.asyncio
     async def test_add_callback_new_bar_event(self, callback_manager):
         """Test adding callback for new_bar event type."""
+
         async def test_callback(data):
             pass
 
@@ -76,6 +77,7 @@ class TestCallbackMixinBasicFunctionality:
     @pytest.mark.asyncio
     async def test_add_callback_data_update_event(self, callback_manager):
         """Test adding callback for data_update event type."""
+
         def test_callback(data):
             pass
 
@@ -89,24 +91,20 @@ class TestCallbackMixinBasicFunctionality:
 
     @pytest.mark.asyncio
     async def test_add_callback_invalid_event_type(self, callback_manager):
-        """Test handling of invalid event type."""
+        """Unknown event names raise ValueError instead of silently warning."""
+
         async def test_callback(data):
             pass
 
-        # Should log warning for invalid event type
-        await callback_manager.add_callback("invalid_event", test_callback)
+        with pytest.raises(ValueError, match="Unknown event type"):
+            await callback_manager.add_callback("invalid_event", test_callback)
 
-        # Should not call event_bus.on
         callback_manager.event_bus.on.assert_not_called()
-
-        # Should log warning
-        callback_manager.logger.warning.assert_called_once_with(
-            "Unknown event type: invalid_event"
-        )
 
     @pytest.mark.asyncio
     async def test_add_callback_multiple_callbacks_same_event(self, callback_manager):
         """Test adding multiple callbacks for the same event type."""
+
         async def callback1(data):
             pass
 
@@ -120,13 +118,14 @@ class TestCallbackMixinBasicFunctionality:
         # Should register both callbacks
         expected_calls = [
             call(EventType.NEW_BAR, callback1),
-            call(EventType.NEW_BAR, callback2)
+            call(EventType.NEW_BAR, callback2),
         ]
         callback_manager.event_bus.on.assert_has_calls(expected_calls)
 
     @pytest.mark.asyncio
     async def test_add_callback_async_and_sync_callbacks(self, callback_manager):
         """Test support for both async and sync callbacks."""
+
         # Async callback
         async def async_callback(data):
             pass
@@ -142,7 +141,7 @@ class TestCallbackMixinBasicFunctionality:
         # Should register both callbacks
         expected_calls = [
             call(EventType.NEW_BAR, async_callback),
-            call(EventType.DATA_UPDATE, sync_callback)
+            call(EventType.DATA_UPDATE, sync_callback),
         ]
         callback_manager.event_bus.on.assert_has_calls(expected_calls)
 
@@ -169,8 +168,8 @@ class TestCallbackMixinEventTriggering:
                 "high": 19010.0,
                 "low": 18995.0,
                 "close": 19005.0,
-                "volume": 1500
-            }
+                "volume": 1500,
+            },
         }
 
         # Trigger callbacks
@@ -187,7 +186,7 @@ class TestCallbackMixinEventTriggering:
         tick_data = {
             "timestamp": datetime(2025, 1, 1, 10, 0, 15, tzinfo=timezone.utc),
             "price": 19001.50,
-            "volume": 100
+            "volume": 100,
         }
 
         # Trigger callbacks
@@ -213,15 +212,26 @@ class TestCallbackMixinEventTriggering:
         )
 
     @pytest.mark.asyncio
-    async def test_trigger_callbacks_multiple_events_sequentially(self, callback_manager):
+    async def test_trigger_callbacks_multiple_events_sequentially(
+        self, callback_manager
+    ):
         """Test triggering multiple events sequentially."""
         bar_data = {
-            "timeframe": "1min", "bar_time": datetime.now(timezone.utc),
-            "data": {"timestamp": datetime.now(timezone.utc), "open": 19000.0,
-                    "high": 19005.0, "low": 18995.0, "close": 19002.0, "volume": 500}
+            "timeframe": "1min",
+            "bar_time": datetime.now(timezone.utc),
+            "data": {
+                "timestamp": datetime.now(timezone.utc),
+                "open": 19000.0,
+                "high": 19005.0,
+                "low": 18995.0,
+                "close": 19002.0,
+                "volume": 500,
+            },
         }
         tick_data = {
-            "timestamp": datetime.now(timezone.utc), "price": 19003.0, "volume": 50
+            "timestamp": datetime.now(timezone.utc),
+            "price": 19003.0,
+            "volume": 50,
         }
 
         # Trigger multiple events
@@ -231,7 +241,7 @@ class TestCallbackMixinEventTriggering:
         # Should emit both events
         expected_calls = [
             call(EventType.NEW_BAR, bar_data, source="RealtimeDataManager"),
-            call(EventType.DATA_UPDATE, tick_data, source="RealtimeDataManager")
+            call(EventType.DATA_UPDATE, tick_data, source="RealtimeDataManager"),
         ]
         callback_manager.event_bus.emit.assert_has_calls(expected_calls)
 
@@ -254,10 +264,10 @@ class TestCallbackMixinEventDataStructures:
                 "timestamp": datetime,  # Bar timestamp
                 "open": (int, float),  # Opening price
                 "high": (int, float),  # High price
-                "low": (int, float),   # Low price
-                "close": (int, float), # Closing price
-                "volume": int          # Bar volume
-            }
+                "low": (int, float),  # Low price
+                "close": (int, float),  # Closing price
+                "volume": int,  # Bar volume
+            },
         }
 
         # Test data should match expected structure
@@ -270,8 +280,8 @@ class TestCallbackMixinEventDataStructures:
                 "high": 19010.0,
                 "low": 18995.0,
                 "close": 19005.0,
-                "volume": 1500
-            }
+                "volume": 1500,
+            },
         }
 
         # Validate structure
@@ -299,12 +309,14 @@ class TestCallbackMixinEventDataStructures:
         test_tick_data = {
             "timestamp": datetime(2025, 1, 1, 10, 0, 15, tzinfo=timezone.utc),
             "price": 19001.50,
-            "volume": 100
+            "volume": 100,
         }
 
         # Validate structure
         assert isinstance(test_tick_data["timestamp"], datetime)
-        assert test_tick_data["timestamp"].tzinfo is not None  # Should be timezone-aware
+        assert (
+            test_tick_data["timestamp"].tzinfo is not None
+        )  # Should be timezone-aware
         assert isinstance(test_tick_data["price"], (int, float))
         assert isinstance(test_tick_data["volume"], int)
         assert test_tick_data["volume"] > 0  # Volume should be positive
@@ -324,23 +336,32 @@ class TestCallbackMixinErrorHandling:
         return MockRealtimeDataManager(event_bus=mock_event_bus, logger=mock_logger)
 
     @pytest.mark.asyncio
-    async def test_add_callback_event_bus_failure(self, callback_manager_with_failing_event_bus):
+    async def test_add_callback_event_bus_failure(
+        self, callback_manager_with_failing_event_bus
+    ):
         """Test handling of EventBus failures during callback registration."""
+
         async def test_callback(data):
             pass
 
         # Should raise the exception from EventBus
         with pytest.raises(Exception, match="EventBus error"):
-            await callback_manager_with_failing_event_bus.add_callback("new_bar", test_callback)
+            await callback_manager_with_failing_event_bus.add_callback(
+                "new_bar", test_callback
+            )
 
     @pytest.mark.asyncio
-    async def test_trigger_callbacks_event_bus_failure(self, callback_manager_with_failing_event_bus):
+    async def test_trigger_callbacks_event_bus_failure(
+        self, callback_manager_with_failing_event_bus
+    ):
         """Test handling of EventBus failures during event emission."""
         test_data = {"timeframe": "1min", "data": {}}
 
         # Should raise the exception from EventBus
         with pytest.raises(Exception, match="EventBus emit error"):
-            await callback_manager_with_failing_event_bus._trigger_callbacks("new_bar", test_data)
+            await callback_manager_with_failing_event_bus._trigger_callbacks(
+                "new_bar", test_data
+            )
 
     @pytest.mark.asyncio
     async def test_concurrent_callback_operations(self):
@@ -363,14 +384,25 @@ class TestCallbackMixinErrorHandling:
             callback_manager.add_callback("new_bar", callback1),
             callback_manager.add_callback("new_bar", callback2),
             callback_manager.add_callback("data_update", sync_callback),
-            callback_manager._trigger_callbacks("new_bar", {
-                "timeframe": "1min", "bar_time": datetime.now(timezone.utc),
-                "data": {"timestamp": datetime.now(timezone.utc), "open": 100.0,
-                        "high": 105.0, "low": 95.0, "close": 102.0, "volume": 1000}
-            }),
-            callback_manager._trigger_callbacks("data_update", {
-                "timestamp": datetime.now(timezone.utc), "price": 103.0, "volume": 50
-            })
+            callback_manager._trigger_callbacks(
+                "new_bar",
+                {
+                    "timeframe": "1min",
+                    "bar_time": datetime.now(timezone.utc),
+                    "data": {
+                        "timestamp": datetime.now(timezone.utc),
+                        "open": 100.0,
+                        "high": 105.0,
+                        "low": 95.0,
+                        "close": 102.0,
+                        "volume": 1000,
+                    },
+                },
+            ),
+            callback_manager._trigger_callbacks(
+                "data_update",
+                {"timestamp": datetime.now(timezone.utc), "price": 103.0, "volume": 50},
+            ),
         ]
 
         # Should complete without errors
@@ -456,9 +488,12 @@ class TestCallbackMixinIntegration:
             "bar_time": datetime.now(timezone.utc),
             "data": {
                 "timestamp": datetime.now(timezone.utc),
-                "open": 19000.0, "high": 19005.0, "low": 18995.0,
-                "close": 19002.0, "volume": 500
-            }
+                "open": 19000.0,
+                "high": 19005.0,
+                "low": 18995.0,
+                "close": 19002.0,
+                "volume": 500,
+            },
         }
         await callback_manager._trigger_callbacks("new_bar", test_data)
 

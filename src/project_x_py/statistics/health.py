@@ -234,23 +234,7 @@ class HealthMonitor:
             if cached_score is not None:
                 return float(cached_score)
 
-        # Calculate scores for each category
-        error_score = await self._score_errors(stats)
-        performance_score = await self._score_performance(stats)
-        connection_score = await self._score_connection(stats)
-        resources_score = await self._score_resources(stats)
-        data_quality_score = await self._score_data_quality(stats)
-        component_status_score = await self._score_component_status(stats)
-
-        # Calculate weighted average
-        weighted_score = (
-            error_score * self.weights["errors"]
-            + performance_score * self.weights["performance"]
-            + connection_score * self.weights["connection"]
-            + resources_score * self.weights["resources"]
-            + data_quality_score * self.weights["data_quality"]
-            + component_status_score * self.weights["component_status"]
-        )
+        weighted_score, _scores, _missing = await self._weighted_health(stats)
 
         # Ensure score is within bounds
         final_score = max(0.0, min(100.0, weighted_score))
@@ -273,36 +257,13 @@ class HealthMonitor:
         """
         start_time = time.time()
 
-        # Calculate scores for each category
-        error_score = await self._score_errors(stats)
-        performance_score = await self._score_performance(stats)
-        connection_score = await self._score_connection(stats)
-        resources_score = await self._score_resources(stats)
-        data_quality_score = await self._score_data_quality(stats)
-        component_status_score = await self._score_component_status(stats)
-
-        # Calculate weighted total
-        weighted_total = (
-            error_score * self.weights["errors"]
-            + performance_score * self.weights["performance"]
-            + connection_score * self.weights["connection"]
-            + resources_score * self.weights["resources"]
-            + data_quality_score * self.weights["data_quality"]
-            + component_status_score * self.weights["component_status"]
-        )
-
-        # Track missing categories
-        missing_categories = []
-        if not self._has_error_data(stats):
-            missing_categories.append("errors")
-        if not self._has_performance_data(stats):
-            missing_categories.append("performance")
-        if not self._has_connection_data(stats):
-            missing_categories.append("connection")
-        if not self._has_resource_data(stats):
-            missing_categories.append("resources")
-        if not self._has_data_quality_data(stats):
-            missing_categories.append("data_quality")
+        weighted_total, scores, missing_categories = await self._weighted_health(stats)
+        error_score = scores.get("errors", 0.0)
+        performance_score = scores.get("performance", 0.0)
+        connection_score = scores.get("connection", 0.0)
+        resources_score = scores.get("resources", 0.0)
+        data_quality_score = scores.get("data_quality", 0.0)
+        component_status_score = scores.get("component_status", 0.0)
 
         calculation_time = (time.time() - start_time) * 1000  # Convert to ms
 
@@ -363,6 +324,56 @@ class HealthMonitor:
         alerts.sort(key=lambda x: severity_order.get(x["level"], 3))
 
         return alerts
+
+    async def _weighted_health(
+        self, stats: ComprehensiveStats
+    ) -> tuple[float, dict[str, float], list[str]]:
+        """Score available categories and omit missing ones from the average.
+
+        Missing inputs must not count as a perfect 100. If nothing can be
+        scored, return 0.0 (unknown), not 100.
+        """
+        checkers: list[tuple[str, Any]] = [
+            ("errors", self._has_error_data),
+            ("performance", self._has_performance_data),
+            ("connection", self._has_connection_data),
+            ("resources", self._has_resource_data),
+            ("data_quality", self._has_data_quality_data),
+            ("component_status", self._has_component_status_data),
+        ]
+        scorers = {
+            "errors": self._score_errors,
+            "performance": self._score_performance,
+            "connection": self._score_connection,
+            "resources": self._score_resources,
+            "data_quality": self._score_data_quality,
+            "component_status": self._score_component_status,
+        }
+
+        scores: dict[str, float] = {}
+        missing: list[str] = []
+        for name, has_fn in checkers:
+            if has_fn(stats):
+                scores[name] = await scorers[name](stats)
+            else:
+                missing.append(name)
+
+        if not scores:
+            return 0.0, scores, missing
+
+        total_weight = sum(self.weights[name] for name in scores)
+        if total_weight <= 0:
+            return 0.0, scores, missing
+        weighted = sum(scores[name] * self.weights[name] for name in scores) / (
+            total_weight
+        )
+        return weighted, scores, missing
+
+    def _has_component_status_data(self, stats: ComprehensiveStats) -> bool:
+        components = (
+            stats.get("suite", {}).get("components") if "suite" in stats else None
+        )
+        return bool(components)
 
     async def _score_errors(self, stats: ComprehensiveStats) -> float:
         """
@@ -716,7 +727,7 @@ class HealthMonitor:
             total_components = len(stats["suite"]["components"])
 
         if total_components == 0:
-            return 100.0
+            return 0.0
 
         healthy_components = 0.0
         if "suite" in stats and "components" in stats["suite"]:

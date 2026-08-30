@@ -250,9 +250,9 @@ class TestRoundToTickSize:
 
     def test_fractional_tick_sizes(self):
         """Test with fractional tick sizes."""
-        result = round_to_tick_size(100.333, 1/3)
+        result = round_to_tick_size(100.333, 1 / 3)
         # Should round to nearest 1/3: 100 1/3 = 100.3333...
-        expected = round(100.333 / (1/3)) * (1/3)
+        expected = round(100.333 / (1 / 3)) * (1 / 3)
         assert_float_equal(result, expected)
 
     def test_scientific_notation_inputs(self):
@@ -265,8 +265,12 @@ class TestRoundToTickSize:
         # Test cases that might trigger floating point precision issues
         test_cases = [
             (100.15, 0.1, 100.2),  # 100.15/0.1 = 1001.5 -> rounds to 1002 -> 100.2
-            (100.05, 0.1, 100.0),  # 100.05/0.1 = 1000.4999999999999 -> rounds to 1000 -> 100.0
-            (99.95, 0.1, 100.0),   # 99.95/0.1 = 999.5 -> rounds to 1000 -> 100.0
+            (
+                100.05,
+                0.1,
+                100.0,
+            ),  # 100.05/0.1 = 1000.4999999999999 -> rounds to 1000 -> 100.0
+            (99.95, 0.1, 100.0),  # 99.95/0.1 = 999.5 -> rounds to 1000 -> 100.0
             (2050.375, 0.25, 2050.5),  # Should work as expected
             (2050.125, 0.25, 2050.0),  # Should work as expected
         ]
@@ -304,31 +308,45 @@ class TestCalculateRiskRewardRatio:
 
     def test_zero_risk(self):
         """Test with zero risk (entry equals stop)."""
-        with pytest.raises(ValueError, match="Entry price and stop price cannot be equal"):
+        with pytest.raises(
+            ValueError, match="Entry price and stop price cannot be equal"
+        ):
             calculate_risk_reward_ratio(100.0, 100.0, 110.0)
 
     def test_invalid_long_position_target(self):
         """Test invalid target for long position."""
-        with pytest.raises(ValueError, match="For long positions, target must be above entry"):
-            calculate_risk_reward_ratio(100.0, 95.0, 95.0)  # target below entry for long
+        with pytest.raises(
+            ValueError, match="For long positions, target must be above entry"
+        ):
+            calculate_risk_reward_ratio(
+                100.0, 95.0, 95.0
+            )  # target below entry for long
 
     def test_invalid_short_position_target(self):
         """Test invalid target for short position."""
-        with pytest.raises(ValueError, match="For short positions, target must be below entry"):
-            calculate_risk_reward_ratio(100.0, 105.0, 105.0)  # target above entry for short
+        with pytest.raises(
+            ValueError, match="For short positions, target must be below entry"
+        ):
+            calculate_risk_reward_ratio(
+                100.0, 105.0, 105.0
+            )  # target above entry for short
 
     def test_zero_reward_long_position(self):
         """Test zero reward scenario for long position."""
         # Long position: entry=100, stop=95, target=100 (zero reward)
         # This should raise ValueError because target must be above entry for long
-        with pytest.raises(ValueError, match="For long positions, target must be above entry"):
+        with pytest.raises(
+            ValueError, match="For long positions, target must be above entry"
+        ):
             calculate_risk_reward_ratio(100.0, 95.0, 100.0)
 
     def test_zero_reward_short_position(self):
         """Test zero reward scenario for short position."""
         # Short position: entry=100, stop=105, target=100 (zero reward)
         # This should raise ValueError because target must be below entry for short
-        with pytest.raises(ValueError, match="For short positions, target must be below entry"):
+        with pytest.raises(
+            ValueError, match="For short positions, target must be below entry"
+        ):
             calculate_risk_reward_ratio(100.0, 105.0, 100.0)
 
     def test_negative_prices(self):
@@ -492,3 +510,17 @@ class TestCalculatePositionSizing:
         # Very large risk per contract
         result = calculate_position_sizing(50000, 0.02, 1000, 900, 1.0)
         assert result["position_size"] == 10  # 1000 / 100 = 10
+
+    def test_mnq_tick_size_does_not_oversize(self):
+        """MNQ: 10 points, tick_size=0.25, tick_value=0.50 → $20/contract, not $5."""
+        result = calculate_position_sizing(
+            50000, 0.02, 20500, 20490, tick_value=0.50, tick_size=0.25
+        )
+        # ticks = 10 / 0.25 = 40; dollar = 40 * 0.50 = 20; size = 1000 / 20 = 50
+        assert result["position_size"] == 50
+        assert_float_equal(result["dollar_risk_per_contract"], 20.0)
+
+    def test_tick_size_default_keeps_old_callers(self):
+        """tick_size defaults to 1.0 so dollars-per-point callers still work."""
+        result = calculate_position_sizing(50000, 0.02, 2050, 2040, 1.0)
+        assert result["position_size"] == 100

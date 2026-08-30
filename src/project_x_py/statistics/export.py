@@ -89,6 +89,9 @@ class StatsExporter:
         Returns:
             Prometheus format string
         """
+        if self.sanitize_sensitive:
+            stats = self._sanitize_data(dict(stats))
+
         lines = []
         timestamp = int(datetime.now(UTC).timestamp() * 1000)
 
@@ -219,6 +222,9 @@ class StatsExporter:
         Returns:
             CSV string representation of stats
         """
+        if self.sanitize_sensitive:
+            stats = self._sanitize_data(dict(stats))
+
         output = StringIO()
         writer = csv.writer(output)
 
@@ -381,6 +387,9 @@ class StatsExporter:
         Returns:
             Dictionary formatted for Datadog API
         """
+        if self.sanitize_sensitive:
+            stats = self._sanitize_data(dict(stats))
+
         metrics = []
         timestamp = int(datetime.now(UTC).timestamp())
 

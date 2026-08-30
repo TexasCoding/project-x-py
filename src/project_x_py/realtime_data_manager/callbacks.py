@@ -113,6 +113,7 @@ from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any
 
 from project_x_py.event_bus import EventType
+from project_x_py.utils.deprecation import deprecated
 
 if TYPE_CHECKING:
     from project_x_py.types import RealtimeDataManagerProtocol
@@ -132,6 +133,12 @@ _EVENT_TYPE_MAPPING = {
 class CallbackMixin:
     """Mixin for event handling through EventBus."""
 
+    @deprecated(
+        reason="Use TradingSuite.on() with EventType enum for event handling",
+        version="3.1.0",
+        removal_version="5.0.0",
+        replacement="TradingSuite.on(EventType.NEW_BAR, callback)",
+    )
     async def add_callback(
         self: "RealtimeDataManagerProtocol",
         event_type: str,
@@ -140,7 +147,7 @@ class CallbackMixin:
         """
         DEPRECATED: Use TradingSuite.on() with EventType enum instead.
 
-        This method is provided for backward compatibility only and will be removed in v4.0.
+        This method is provided for backward compatibility only and will be removed in v5.0.0.
         Please migrate to the new EventBus system:
 
         ```python
@@ -217,10 +224,9 @@ class CallbackMixin:
             - Exceptions in callbacks are caught and logged, preventing them from
               affecting the data manager's operation
         """
-        if event_type in _EVENT_TYPE_MAPPING:
-            await self.event_bus.on(_EVENT_TYPE_MAPPING[event_type], callback)
-        else:
-            self.logger.warning(f"Unknown event type: {event_type}")
+        if event_type not in _EVENT_TYPE_MAPPING:
+            raise ValueError(f"Unknown event type: {event_type}")
+        await self.event_bus.on(_EVENT_TYPE_MAPPING[event_type], callback)
 
     async def _trigger_callbacks(
         self: "RealtimeDataManagerProtocol", event_type: str, data: dict[str, Any]

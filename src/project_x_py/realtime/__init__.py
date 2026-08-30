@@ -67,8 +67,8 @@ Example Usage:
                 print(f"{suite.instrument}: {data['bid']} x {data['ask']}")
 
         # V3.1: Add event handlers via suite's event bus
-        await suite.on(EventType.POSITION_UPDATE, on_position_update)
-        await suite.on(EventType.QUOTE, on_quote_update)
+        await suite.on(EventType.POSITION_UPDATED, on_position_update)
+        await suite.on(EventType.QUOTE_UPDATE, on_quote_update)
 
         # V3.1: Real-time connection and subscriptions are automatic
         print(f"Connected to {suite.instrument} real-time feeds")

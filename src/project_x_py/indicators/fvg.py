@@ -17,10 +17,10 @@ Key Features:
 
 Example Usage:
     ```python
-    from project_x_py.indicators import FVG
+    from project_x_py.indicators import FVG, FVGIndicator
 
-    fvg = FVG()
-    data_with_fvg = fvg.calculate(ohlcv_data, min_gap_size=0.001)
+    data_with_fvg = FVG(ohlcv_data, min_gap_size=0.001)
+    # or FVGIndicator().calculate(ohlcv_data, min_gap_size=0.001)
     gaps = data_with_fvg.filter(pl.col("fvg_bullish"))
     ```
 
@@ -64,11 +64,13 @@ class FVG(BaseIndicator):
 
         A bullish FVG occurs when:
         - Candle 3's low > Candle 1's high (creating an unfilled gap)
-        - This gap represents an area of imbalance
+        - Candle 2 (the middle candle) does not fill that zone
+          (candle 2's low stays above candle 1's high)
 
         A bearish FVG occurs when:
         - Candle 3's high < Candle 1's low (creating an unfilled gap)
-        - This gap represents an area of imbalance
+        - Candle 2 does not fill that zone
+          (candle 2's high stays below candle 1's low)
 
         Args:
             data: DataFrame with OHLC data
@@ -124,13 +126,20 @@ class FVG(BaseIndicator):
             ]
         )
 
-        # Identify FVGs using three-candle pattern
+        # Identify FVGs using three-candle pattern. The middle candle must not
+        # fill the imbalance between candle 1 and candle 3.
         result = result.with_columns(
             [
-                # Bullish FVG: current low > candle 1 high
-                (pl.col(low_column) > pl.col("candle1_high")).alias("fvg_bullish_raw"),
-                # Bearish FVG: current high < candle 1 low
-                (pl.col(high_column) < pl.col("candle1_low")).alias("fvg_bearish_raw"),
+                # Bullish: c3.low > c1.high AND c2.low > c1.high (middle did not fill)
+                (
+                    (pl.col(low_column) > pl.col("candle1_high"))
+                    & (pl.col("candle2_low") > pl.col("candle1_high"))
+                ).alias("fvg_bullish_raw"),
+                # Bearish: c3.high < c1.low AND c2.high < c1.low (middle did not fill)
+                (
+                    (pl.col(high_column) < pl.col("candle1_low"))
+                    & (pl.col("candle2_high") < pl.col("candle1_low"))
+                ).alias("fvg_bearish_raw"),
             ]
         )
 
@@ -257,18 +266,7 @@ class FVG(BaseIndicator):
 
             result = result.with_columns(mitigated)
             result = result.drop("_row_idx")
-
-            # Update gap columns to exclude mitigated gaps if requested
-            result = result.with_columns(
-                [
-                    (pl.col("fvg_bullish") & ~pl.col("fvg_mitigated")).alias(
-                        "fvg_bullish"
-                    ),
-                    (pl.col("fvg_bearish") & ~pl.col("fvg_mitigated")).alias(
-                        "fvg_bearish"
-                    ),
-                ]
-            )
+            # Keep historical fvg_bullish / fvg_bearish; callers use fvg_mitigated.
 
         # Clean up intermediate columns
         columns_to_drop: list[str] = [
