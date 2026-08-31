@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 from unittest.mock import AsyncMock
 
+import polars as pl
 import pytest
 import pytz
 
@@ -87,3 +88,158 @@ async def test_get_bars_pages_when_first_response_is_full(history_client):
     assert second_end.startswith("2026-08-01")
     assert len(bars) == 3
     assert bars["timestamp"].min() is not None
+
+
+@pytest.mark.asyncio
+async def test_get_bars_does_not_stitch_full_contract_id(history_client):
+    history_client._make_request = AsyncMock(
+        return_value={
+            "success": True,
+            "bars": [_bar("2026-08-01T00:00:00+00:00")],
+        }
+    )
+    start = datetime.datetime(2026, 3, 31, tzinfo=pytz.UTC)
+    end = datetime.datetime(2026, 8, 1, tzinfo=pytz.UTC)
+    await history_client.get_bars(
+        "CON.F.US.MNQ.U26",
+        interval=1,
+        unit=3,
+        start_time=start,
+        end_time=end,
+        partial=False,
+    )
+    endpoints = [call.args[1] for call in history_client._make_request.await_args_list]
+    assert "/Contract/searchById" not in endpoints
+
+
+@pytest.mark.asyncio
+async def test_get_bars_does_not_stitch_15_minute(history_client):
+    history_client._make_request = AsyncMock(
+        return_value={
+            "success": True,
+            "bars": [_bar("2026-07-02T22:30:00+00:00")],
+        }
+    )
+    start = datetime.datetime(2026, 3, 31, tzinfo=pytz.UTC)
+    end = datetime.datetime(2026, 8, 23, tzinfo=pytz.UTC)
+    await history_client.get_bars(
+        "MNQ",
+        interval=15,
+        unit=2,
+        start_time=start,
+        end_time=end,
+        partial=False,
+    )
+    endpoints = [call.args[1] for call in history_client._make_request.await_args_list]
+    assert "/Contract/searchById" not in endpoints
+
+
+@pytest.mark.asyncio
+async def test_get_bars_stitches_hourly_prior_month(history_client):
+    async def make_request(
+        method: str, endpoint: str, data: dict | None = None, **_kwargs
+    ):
+        if endpoint == "/History/retrieveBars":
+            cid = (data or {}).get("contractId")
+            if cid == "CON.F.US.MNQ.U26":
+                return {
+                    "success": True,
+                    "bars": [_bar("2026-07-02T00:00:00+00:00", 2.0)],
+                }
+            if cid == "CON.F.US.MNQ.M26":
+                return {
+                    "success": True,
+                    "bars": [_bar("2026-06-01T00:00:00+00:00", 1.0)],
+                }
+            return {"success": True, "bars": []}
+        if endpoint == "/Contract/searchById":
+            cid = (data or {}).get("contractId")
+            if cid == "CON.F.US.MNQ.M26":
+                return {
+                    "success": True,
+                    "contract": {
+                        "id": cid,
+                        "name": "MNQM6",
+                        "description": "June",
+                        "tickSize": 0.25,
+                        "tickValue": 0.5,
+                        "activeContract": False,
+                    },
+                }
+            return {"success": True, "contract": None}
+        raise AssertionError(f"unexpected {endpoint}")
+
+    history_client._make_request = AsyncMock(side_effect=make_request)
+    history_client.HISTORY_BAR_LIMIT = 20_000
+    start = datetime.datetime(2026, 6, 1, tzinfo=pytz.UTC)
+    end = datetime.datetime(2026, 7, 2, tzinfo=pytz.UTC)
+    bars = await history_client.get_bars(
+        "MNQ",
+        interval=1,
+        unit=3,
+        start_time=start,
+        end_time=end,
+        partial=False,
+    )
+    endpoints = [call.args[1] for call in history_client._make_request.await_args_list]
+    assert "/Contract/searchById" in endpoints
+    assert len(bars) == 2
+    closes = bars.sort("timestamp")["close"].to_list()
+    assert closes == [1.0, 2.0]
+
+
+@pytest.mark.asyncio
+async def test_get_bars_overlap_keeps_later_month(history_client):
+    overlap_ts = "2026-06-18T00:00:00+00:00"
+
+    async def make_request(
+        method: str, endpoint: str, data: dict | None = None, **_kwargs
+    ):
+        if endpoint == "/History/retrieveBars":
+            cid = (data or {}).get("contractId")
+            if cid == "CON.F.US.MNQ.U26":
+                return {
+                    "success": True,
+                    "bars": [
+                        _bar(overlap_ts, 9.0),
+                        _bar("2026-07-01T00:00:00+00:00", 10.0),
+                    ],
+                }
+            if cid == "CON.F.US.MNQ.M26":
+                return {
+                    "success": True,
+                    "bars": [_bar(overlap_ts, 1.0)],
+                }
+            return {"success": True, "bars": []}
+        if endpoint == "/Contract/searchById":
+            cid = (data or {}).get("contractId")
+            if cid == "CON.F.US.MNQ.M26":
+                return {
+                    "success": True,
+                    "contract": {
+                        "id": cid,
+                        "name": "MNQM6",
+                        "description": "June",
+                        "tickSize": 0.25,
+                        "tickValue": 0.5,
+                        "activeContract": False,
+                    },
+                }
+            return {"success": True, "contract": None}
+        raise AssertionError(f"unexpected {endpoint}")
+
+    history_client._make_request = AsyncMock(side_effect=make_request)
+    history_client.HISTORY_BAR_LIMIT = 20_000
+    start = datetime.datetime(2026, 6, 1, tzinfo=pytz.UTC)
+    end = datetime.datetime(2026, 7, 1, tzinfo=pytz.UTC)
+    bars = await history_client.get_bars(
+        "MNQ",
+        interval=1,
+        unit=3,
+        start_time=start,
+        end_time=end,
+        partial=False,
+    )
+    overlap = bars.filter(pl.col("close") == 9.0)
+    assert len(overlap) == 1
+    assert len(bars.filter(pl.col("close") == 1.0)) == 0

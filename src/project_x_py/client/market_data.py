@@ -547,6 +547,93 @@ class MarketDataMixin:
         data = pl.concat(frames).unique(subset=["timestamp"], keep="last")
         return data.sort("timestamp"), True
 
+    @staticmethod
+    def _should_stitch_contracts(symbol: str, unit: int, interval: int) -> bool:
+        if symbol.startswith("CON."):
+            return False
+        if unit >= 3:
+            return True
+        return unit == 2 and interval >= 60
+
+    async def _stitch_prior_contract_bars(
+        self,
+        active_contract_id: str,
+        existing: pl.DataFrame,
+        start_date: datetime.datetime,
+        end_date: datetime.datetime,
+        interval: int,
+        unit: int,
+        live: bool,
+        partial: bool,
+        page_limit: int,
+    ) -> pl.DataFrame:
+        from project_x_py.client.contract_calendar import iter_prior_contract_ids
+
+        if existing.is_empty():
+            current_earliest: datetime.datetime = end_date
+        else:
+            earliest_existing = existing["timestamp"].min()
+            if isinstance(earliest_existing, datetime.datetime):
+                current_earliest = earliest_existing
+            else:
+                current_earliest = end_date
+        collected: list[pl.DataFrame] = []
+        misses = 0
+        attempts = 0
+        for prior_id in iter_prior_contract_ids(active_contract_id, max_count=16):
+            attempts += 1
+            if attempts > 16:
+                break
+            if current_earliest <= start_date:
+                break
+            try:
+                by_id = await self._make_request(
+                    "POST", "/Contract/searchById", data={"contractId": prior_id}
+                )
+            except Exception:
+                misses += 1
+                if misses >= 4:
+                    break
+                continue
+            contract = (
+                by_id.get("contract")
+                if isinstance(by_id, dict) and by_id.get("success")
+                else None
+            )
+            if not isinstance(contract, dict):
+                misses += 1
+                if misses >= 4:
+                    break
+                continue
+            misses = 0
+            chunk, chunk_ok = await self._retrieve_bars_paged(
+                prior_id,
+                start_date,
+                current_earliest,
+                interval,
+                unit,
+                live,
+                partial,
+                page_limit,
+            )
+            if not chunk_ok or chunk.is_empty():
+                continue
+            collected.append(chunk)
+            earliest = chunk["timestamp"].min()
+            if isinstance(earliest, datetime.datetime) and earliest < current_earliest:
+                current_earliest = earliest
+        collected.reverse()
+        frames = [frame for frame in collected if not frame.is_empty()]
+        if not existing.is_empty():
+            frames.append(existing)
+        if not frames:
+            return existing
+        return (
+            pl.concat(frames)
+            .unique(subset=["timestamp"], keep="last")
+            .sort("timestamp")
+        )
+
     @handle_errors("get bars")
     async def get_bars(
         self,
@@ -704,6 +791,22 @@ class MarketDataMixin:
         )
         if not gateway_ok:
             return pl.DataFrame()
+        earliest_ts = None if data.is_empty() else data["timestamp"].min()
+        if self._should_stitch_contracts(symbol, unit, interval) and (
+            data.is_empty()
+            or (isinstance(earliest_ts, datetime.datetime) and earliest_ts > start_date)
+        ):
+            data = await self._stitch_prior_contract_bars(
+                instrument.id,
+                data,
+                start_date,
+                end_date,
+                interval,
+                unit,
+                live,
+                partial,
+                limit,
+            )
         if data.is_empty():
             return data
         self.cache_market_data(cache_key, data)
