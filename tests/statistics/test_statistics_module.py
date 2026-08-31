@@ -878,6 +878,61 @@ class TestStatisticsAggregator:
         assert calls["n"] == 1
         assert stats is not None
 
+    @pytest.mark.asyncio
+    async def test_collection_timeout_cancels_pending_tasks(self):
+        """Issue #133: timeout must cancel children so they do not leak."""
+        aggregator = StatisticsAggregator(component_timeout=0.05)
+
+        class Slow:
+            async def get_stats(self) -> dict:
+                await asyncio.sleep(30)
+                return {"slow": True}
+
+        await aggregator.register_component("slow", Slow())
+        aggregator._collector = None
+
+        async def invoke_without_inner_timeout(method: object) -> object:
+            return await method()  # type: ignore[misc,operator]
+
+        aggregator._invoke_stats_method = invoke_without_inner_timeout  # type: ignore[method-assign]
+
+        before = {id(task) for task in asyncio.all_tasks()}
+        await aggregator._collect_all_components()
+        await asyncio.sleep(0)
+        leaked = [
+            task
+            for task in asyncio.all_tasks()
+            if id(task) not in before and not task.done()
+        ]
+        assert leaked == []
+
+    @pytest.mark.asyncio
+    async def test_collection_timeout_keeps_finished_results(self):
+        """Issue #133: timed-out gather must still return finished components."""
+        aggregator = StatisticsAggregator(component_timeout=0.05)
+
+        class Fast:
+            async def get_stats(self) -> dict:
+                return {"status": "fast"}
+
+        class Slow:
+            async def get_stats(self) -> dict:
+                await asyncio.sleep(30)
+                return {"status": "slow"}
+
+        await aggregator.register_component("fast", Fast())
+        await aggregator.register_component("slow", Slow())
+        aggregator._collector = None
+
+        async def invoke_without_inner_timeout(method: object) -> object:
+            return await method()  # type: ignore[misc,operator]
+
+        aggregator._invoke_stats_method = invoke_without_inner_timeout  # type: ignore[method-assign]
+
+        stats = await aggregator._collect_all_components()
+        assert stats.get("fast") == {"status": "fast"}
+        assert "slow" not in stats
+
 
 class TestHealthMonitor:
     """Test cases for HealthMonitor class."""
