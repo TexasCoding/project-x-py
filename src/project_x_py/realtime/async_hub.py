@@ -3,8 +3,10 @@
 Keeps a signalrcore-compatible builder/connection surface so existing tests
 and call sites can keep using HubConnectionBuilder, on/on_open/start/stop/send.
 
-The pysignalr receive buffer is capped at ``HUB_RECEIVE_MAX_SIZE`` (10_000)
-messages so a stalled consumer cannot grow memory without bound.
+Incoming WebSocket frames are capped at ``HUB_RECEIVE_MAX_SIZE`` bytes
+(pysignalr / websockets default: 1 MiB). This is a frame-size limit, not a
+message-count buffer. A 10 KB cap close-loops TopstepX DOM snapshots with
+WS 1009 (message too big).
 """
 
 from __future__ import annotations
@@ -20,7 +22,8 @@ from project_x_py.utils import ProjectXLogger
 
 logger = ProjectXLogger.get_logger(__name__)
 
-HUB_RECEIVE_MAX_SIZE = 10_000
+# pysignalr.transport.websocket.DEFAULT_MAX_SIZE — incoming frame size in bytes.
+HUB_RECEIVE_MAX_SIZE = 2**20
 
 
 async def invoke_maybe(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
@@ -116,11 +119,12 @@ class AsyncHubConnection:
         self._error_handlers.append(handler)
 
     async def start(self) -> None:
+        if self._run_task is not None and not self._run_task.done():
+            return
+        # Drop a finished client so run() is not reused after stop/error.
+        self._client = None
         client = self._ensure_client()
-        if self._run_task is None or self._run_task.done():
-            self._run_task = asyncio.create_task(
-                client.run(), name=f"hub:{self.hub_name}"
-            )
+        self._run_task = asyncio.create_task(client.run(), name=f"hub:{self.hub_name}")
 
     async def stop(self) -> None:
         if self._run_task is not None and not self._run_task.done():
@@ -128,6 +132,7 @@ class AsyncHubConnection:
             with suppress(asyncio.CancelledError):
                 await self._run_task
         self._run_task = None
+        self._client = None
 
     async def send(self, method: str, arguments: list[Any] | None = None) -> None:
         client = self._ensure_client()

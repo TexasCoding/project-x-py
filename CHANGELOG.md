@@ -18,6 +18,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 None.
 
+## [4.1.2] - 2026-08-30
+
+### Fixed
+
+- Market hub no longer close-loops with WebSocket 1009. `HUB_RECEIVE_MAX_SIZE`
+  is the pysignalr/websockets **incoming frame size in bytes** (1 MiB default),
+  not a 10,000-message queue. TopstepX MNQ/MES DOM snapshots exceeded the
+  accidental 10 KB cap (#128).
+- Stale-feed watchdog no longer treats 30s of **user-hub** silence as a dead
+  feed. Order/position hubs are quiet while flat. Market-hub freeze detection
+  is unchanged. Health reconnect waits until hub `run()` has stopped and
+  recreates the pysignalr client so connect cannot raise
+  `Cannot connect while not disconnected` (#129).
+- `StatisticsAggregator` awaits async `get_stats()` / `get_statistics()` /
+  `get_memory_stats()` instead of dropping the coroutine on every snapshot
+  (`RuntimeWarning: coroutine was never awaited`) (#130).
+- `get_instrument(symbol, live=True)` falls back to `live=False` with a
+  warning when Gateway returns no live/active listed contracts. Practice/sim
+  MNQ/MES were raising `Instrument not found` (#131).
+
 ## [4.1.1] - 2026-08-30
 
 ### Fixed

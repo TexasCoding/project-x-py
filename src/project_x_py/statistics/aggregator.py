@@ -71,6 +71,7 @@ See Also:
 """
 
 import asyncio
+import inspect
 import time
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -415,6 +416,15 @@ class StatisticsAggregator(BaseStatisticsTracker):
             )
             return {}
 
+    async def _invoke_stats_method(self, method: Any) -> Any:
+        """Call a stats method, awaiting it when it is async or returns a coroutine."""
+        if asyncio.iscoroutinefunction(method):
+            return await asyncio.wait_for(method(), timeout=self.component_timeout)
+        result = method()
+        if inspect.isawaitable(result):
+            return await asyncio.wait_for(result, timeout=self.component_timeout)
+        return result
+
     async def _collect_component_stats(
         self, name: str, component: Any
     ) -> dict[str, Any] | None:
@@ -422,9 +432,9 @@ class StatisticsAggregator(BaseStatisticsTracker):
         Collect statistics from a single component with timeout protection.
 
         Tries multiple methods to get statistics from the component:
-        1. get_statistics() (async)
-        2. get_stats() (sync)
-        3. get_memory_stats() (sync)
+        1. get_statistics() (async or sync)
+        2. get_stats() (async or sync)
+        3. get_memory_stats() (async or sync)
         4. Direct stats attribute access
 
         Args:
@@ -437,45 +447,60 @@ class StatisticsAggregator(BaseStatisticsTracker):
         try:
             start_time = time.time()
 
-            # Try async get_statistics() first
+            # Try get_statistics() first (async or sync)
             if hasattr(component, "get_statistics"):
                 try:
-                    if asyncio.iscoroutinefunction(component.get_statistics):
-                        result = await asyncio.wait_for(
-                            component.get_statistics(), timeout=self.component_timeout
-                        )
-                    else:
-                        result = component.get_statistics()
-
+                    result = await self._invoke_stats_method(component.get_statistics)
                     if result:
                         await self.record_timing(
                             f"{name}_collection", (time.time() - start_time) * 1000
                         )
                         return dict(result) if isinstance(result, dict) else None
-                except (AttributeError, TypeError, TimeoutError):
-                    pass
-
-            # Try sync get_stats()
-            if hasattr(component, "get_stats"):
-                try:
-                    result = component.get_stats()
-                    if result:
-                        await self.record_timing(
-                            f"{name}_collection", (time.time() - start_time) * 1000
-                        )
-                        return dict(result) if isinstance(result, dict) else None
+                except TimeoutError:
+                    await self.track_error(
+                        TimeoutError("Component statistics timed out"),
+                        f"get_statistics timeout for {name}",
+                        {"component_name": name},
+                    )
+                    return None
                 except (AttributeError, TypeError):
                     pass
 
-            # Try async get_memory_stats()
-            if hasattr(component, "get_memory_stats"):
+            # Try get_stats() (async or sync — TradingSuite/data manager are async)
+            if hasattr(component, "get_stats"):
                 try:
-                    result = await component.get_memory_stats()
+                    result = await self._invoke_stats_method(component.get_stats)
                     if result:
                         await self.record_timing(
                             f"{name}_collection", (time.time() - start_time) * 1000
                         )
                         return dict(result) if isinstance(result, dict) else None
+                except TimeoutError:
+                    await self.track_error(
+                        TimeoutError("Component statistics timed out"),
+                        f"get_stats timeout for {name}",
+                        {"component_name": name},
+                    )
+                    return None
+                except (AttributeError, TypeError):
+                    pass
+
+            # Try get_memory_stats() (async or sync)
+            if hasattr(component, "get_memory_stats"):
+                try:
+                    result = await self._invoke_stats_method(component.get_memory_stats)
+                    if result:
+                        await self.record_timing(
+                            f"{name}_collection", (time.time() - start_time) * 1000
+                        )
+                        return dict(result) if isinstance(result, dict) else None
+                except TimeoutError:
+                    await self.track_error(
+                        TimeoutError("Component statistics timed out"),
+                        f"get_memory_stats timeout for {name}",
+                        {"component_name": name},
+                    )
+                    return None
                 except (AttributeError, TypeError):
                     pass
 

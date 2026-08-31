@@ -138,6 +138,79 @@ class TestMarketData:
         assert payload == {"searchText": "MNQ", "live": True}
 
     @pytest.mark.asyncio
+    async def test_get_instrument_live_true_falls_back_to_sim(self, initialized_client):
+        """Issue #131: Practice/sim contracts are excluded from live=True search."""
+        from unittest.mock import AsyncMock
+
+        sim_contract = {
+            "id": "CON.F.US.MNQ.U26",
+            "name": "MNQU26",
+            "description": "Micro Nasdaq",
+            "tickSize": 0.25,
+            "tickValue": 0.5,
+            "activeContract": True,
+            "symbolId": "F.US.MNQ",
+        }
+        initialized_client._ensure_authenticated = AsyncMock(return_value=None)
+        initialized_client.get_cached_instrument = lambda _symbol: None
+        initialized_client.cache_instrument = lambda *_args, **_kwargs: None
+        initialized_client._make_request = AsyncMock(
+            side_effect=[
+                {"success": True, "contracts": []},
+                {"success": True, "contracts": [sim_contract]},
+            ]
+        )
+
+        instrument = await initialized_client.get_instrument("MNQ", live=True)
+
+        assert instrument.id == "CON.F.US.MNQ.U26"
+        assert initialized_client._make_request.await_count == 2
+        first_payload = initialized_client._make_request.await_args_list[0].kwargs[
+            "data"
+        ]
+        second_payload = initialized_client._make_request.await_args_list[1].kwargs[
+            "data"
+        ]
+        assert first_payload == {"searchText": "MNQ", "live": True}
+        assert second_payload == {"searchText": "MNQ", "live": False}
+
+    @pytest.mark.asyncio
+    async def test_get_instrument_live_false_still_raises_when_empty(
+        self, initialized_client
+    ):
+        """live=False with no matches must still raise Instrument not found."""
+        from unittest.mock import AsyncMock
+
+        initialized_client._ensure_authenticated = AsyncMock(return_value=None)
+        initialized_client.get_cached_instrument = lambda _symbol: None
+        initialized_client._make_request = AsyncMock(
+            return_value={"success": True, "contracts": []}
+        )
+
+        with pytest.raises(ProjectXInstrumentError, match="Instrument not found: MNQ"):
+            await initialized_client.get_instrument("MNQ", live=False)
+
+        assert initialized_client._make_request.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_get_instrument_live_true_does_not_fallback_on_failed_search(
+        self, initialized_client
+    ):
+        """Gateway success=false is an error, not an empty live book."""
+        from unittest.mock import AsyncMock
+
+        initialized_client._ensure_authenticated = AsyncMock(return_value=None)
+        initialized_client.get_cached_instrument = lambda _symbol: None
+        initialized_client._make_request = AsyncMock(
+            return_value={"success": False, "errorMessage": "unauthorized"}
+        )
+
+        with pytest.raises(ProjectXInstrumentError, match="Instrument not found: MNQ"):
+            await initialized_client.get_instrument("MNQ", live=True)
+
+        assert initialized_client._make_request.await_count == 1
+
+    @pytest.mark.asyncio
     async def test_get_instrument_from_cache(
         self, mock_httpx_client, mock_auth_response, mock_instrument
     ):
