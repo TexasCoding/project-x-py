@@ -382,22 +382,25 @@ class StatisticsAggregator(BaseStatisticsTracker):
         async with self._component_lock:
             components = list(self._components.items())
 
-        # Create collection tasks with timeout protection
+        collectible = [
+            (name, component)
+            for name, component in components
+            if name != "trading_suite"
+        ]
+
         tasks = []
-        for name, component in components:
+        for name, component in collectible:
             task = asyncio.create_task(self._collect_component_stats(name, component))
             tasks.append(task)
 
-        # Collect with timeout protection
         try:
             results = await asyncio.wait_for(
                 asyncio.gather(*tasks, return_exceptions=True),
-                timeout=self.component_timeout * len(components),
+                timeout=self.component_timeout * max(len(collectible), 1),
             )
 
-            # Process results and handle exceptions
             component_stats = {}
-            for (name, _), result in zip(components, results, strict=False):
+            for (name, _), result in zip(collectible, results, strict=False):
                 if isinstance(result, Exception):
                     await self.track_error(
                         result,
@@ -444,6 +447,8 @@ class StatisticsAggregator(BaseStatisticsTracker):
         Returns:
             Component statistics dictionary or None if collection fails
         """
+        if name == "trading_suite":
+            return None
         try:
             start_time = time.time()
 

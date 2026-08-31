@@ -820,6 +820,64 @@ class TestStatisticsAggregator:
         )
         assert stats is None
 
+    @pytest.mark.asyncio
+    async def test_collect_component_stats_skips_trading_suite(self):
+        """Issue #133: never invoke get_stats on the suite component."""
+        aggregator = StatisticsAggregator()
+
+        class Suite:
+            async def get_stats(self) -> dict:
+                raise AssertionError("trading_suite.get_stats must not be called")
+
+        stats = await aggregator._collect_component_stats("trading_suite", Suite())
+        assert stats is None
+
+    @pytest.mark.asyncio
+    async def test_collect_all_components_skips_trading_suite(self):
+        """Issue #133: fallback collection must not re-enter suite.get_stats()."""
+        aggregator = StatisticsAggregator()
+
+        class Suite:
+            async def get_stats(self) -> dict:
+                raise AssertionError("trading_suite.get_stats must not be called")
+
+        class Orders:
+            async def get_stats(self) -> dict:
+                return {"status": "ok", "operations": 1}
+
+        await aggregator.register_component("trading_suite", Suite())
+        await aggregator.register_component("order_manager", Orders())
+        aggregator._collector = None
+
+        stats = await aggregator._collect_all_components()
+        assert "trading_suite" not in stats
+        assert stats["order_manager"] == {"status": "ok", "operations": 1}
+
+    @pytest.mark.asyncio
+    async def test_suite_get_stats_does_not_reenter(self):
+        """Issue #133: aggregator.trading_suite = suite must not recurse."""
+        aggregator = StatisticsAggregator(component_timeout=0.5)
+        calls = {"n": 0}
+
+        class FakeSuite:
+            suite_id = "test-suite"
+            instrument = "MNQ"
+            created_at = time.time()
+
+            async def get_stats(self) -> dict:
+                calls["n"] += 1
+                if calls["n"] > 3:
+                    raise AssertionError("unbounded get_stats re-entry")
+                return await aggregator.aggregate_stats()
+
+        suite = FakeSuite()
+        aggregator.trading_suite = suite
+        aggregator._collector = None
+
+        stats = await asyncio.wait_for(suite.get_stats(), timeout=2.0)
+        assert calls["n"] == 1
+        assert stats is not None
+
 
 class TestHealthMonitor:
     """Test cases for HealthMonitor class."""
