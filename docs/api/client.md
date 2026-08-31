@@ -319,6 +319,9 @@ async def instrument_information():
             print(f"    Min Quantity: {instrument.min_quantity}")
 
         # Get specific instrument details
+        # live=True means Gateway live/active *listed* contracts and can
+        # exclude TopstepX Practice/sim. get_instrument falls back to
+        # live=False with a warning when no listed contract is found.
         mnq_info = await client.get_instrument("MNQ")
         print(f"\nMNQ Details:")
         print(f"  Full Name: {mnq_info.description}")

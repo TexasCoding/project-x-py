@@ -126,7 +126,11 @@ class MarketDataMixin:
         Args:
             symbol: Trading symbol (e.g., 'MNQ', 'ES', 'NQ') or full contract ID
                    (e.g., 'CON.F.US.MNQ.U25')
-            live: If True, only return live/active contracts (default: False)
+            live: If True, prefer Gateway live/active **listed** contracts.
+                Practice/sim contracts (TopstepX Practice MNQ/MES, etc.) are
+                often excluded from ``live=True``. When no live match is found,
+                the search is retried with ``live=False`` and a warning is
+                logged. Default False.
 
         Returns:
             Instrument object with complete contract details
@@ -200,11 +204,34 @@ class MarketDataMixin:
                     else:
                         search_symbol = base_symbol_part
 
-            # Search for instrument
+            # Search for instrument. live=True is Gateway "listed/active" and
+            # can exclude Practice/sim contracts (#131).
             payload = {"searchText": search_symbol, "live": live}
             response = await self._make_request(
                 "POST", "/Contract/search", data=payload
             )
+            contracts_data = (
+                response.get("contracts", []) if isinstance(response, dict) else []
+            )
+            if (
+                live
+                and isinstance(response, dict)
+                and response.get("success") is True
+                and not contracts_data
+            ):
+                logger.warning(
+                    "No live/active listed contracts for %s; retrying with "
+                    "live=False (Practice/sim contracts are excluded from live=True)",
+                    symbol,
+                    extra={"symbol": symbol, "live": True},
+                )
+                payload = {"searchText": search_symbol, "live": False}
+                response = await self._make_request(
+                    "POST", "/Contract/search", data=payload
+                )
+                contracts_data = (
+                    response.get("contracts", []) if isinstance(response, dict) else []
+                )
 
             if not response or not response.get("success", False):
                 raise ProjectXInstrumentError(
@@ -213,7 +240,6 @@ class MarketDataMixin:
                     )
                 )
 
-            contracts_data = response.get("contracts", [])
             if not contracts_data:
                 raise ProjectXInstrumentError(
                     format_error_message(
@@ -354,7 +380,10 @@ class MarketDataMixin:
 
         Args:
             query: Search query (symbol or partial name)
-            live: If True, search only live/active instruments
+            live: If True, search only Gateway live/active listed instruments.
+                Practice/sim contracts may be omitted. Unlike
+                ``get_instrument(live=True)``, this method does not fall back
+                to ``live=False``.
 
         Returns:
             List of Instrument objects matching the query

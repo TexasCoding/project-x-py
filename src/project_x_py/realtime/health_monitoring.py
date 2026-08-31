@@ -169,6 +169,7 @@ class HealthMonitoringMixin:
         # Stale-feed watchdog (#97)
         self.stale_feed_seconds: float = 30.0
         self.stale_feed_check_interval: float = 5.0
+        self.health_reconnect_wait_seconds: float = 5.0
         self._stale_feed_task: asyncio.Task[Any] | None = None
         self._stale_feed_emitted: dict[str, bool] = {"user": False, "market": False}
         self._hub_watch_started: dict[str, float] = {"user": 0.0, "market": 0.0}
@@ -266,7 +267,7 @@ class HealthMonitoringMixin:
     async def _start_stale_feed_watchdog(
         self: "ProjectXRealtimeClientProtocol",
     ) -> None:
-        """Start the user- and market-hub stale-feed watchdog."""
+        """Start the market-hub stale-feed watchdog."""
         task = getattr(self, "_stale_feed_task", None)
         if task is not None and not task.done():
             return
@@ -288,6 +289,11 @@ class HealthMonitoringMixin:
         task = getattr(self, "_stale_feed_task", None)
         if task is None or task.done():
             return
+        if task is asyncio.current_task():
+            # Reconnect was invoked from the watchdog itself. Keep the
+            # slot bound so _start_stale_feed_watchdog does not spawn a
+            # second loop while this one is still running.
+            return
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
@@ -296,13 +302,15 @@ class HealthMonitoringMixin:
     async def _stale_feed_watchdog_loop(
         self: "ProjectXRealtimeClientProtocol",
     ) -> None:
-        """Reconnect when user or market hub messages stop arriving."""
+        """Reconnect when market-hub messages stop arriving."""
         from project_x_py.event_bus import EventType
 
         while True:
             await asyncio.sleep(self.stale_feed_check_interval)
             stale_hubs: list[tuple[str, float]] = []
-            for hub in ("market", "user"):
+            # Market-hub silence is a real freeze. User-hub silence is normal
+            # while flat / overnight with no fills (#129).
+            for hub in ("market",):
                 age = self._hub_silence_age(hub)
                 if age is None:
                     continue
@@ -339,6 +347,8 @@ class HealthMonitoringMixin:
 
     def _hub_silence_age(self, hub: str) -> float | None:
         """Return seconds since last hub message, or None if the hub is not stale."""
+        if hub == "user":
+            return None
         connected_attr = "market_connected" if hub == "market" else "user_connected"
         if not getattr(self, connected_attr, False):
             return None
@@ -379,6 +389,27 @@ class HealthMonitoringMixin:
             return success
         finally:
             self._restore_in_flight = False
+
+    def _hub_transport_running(self) -> bool:
+        """True if a SignalR hub run() task is still active."""
+        for conn in (
+            getattr(self, "user_connection", None),
+            getattr(self, "market_connection", None),
+        ):
+            if conn is None:
+                continue
+            task = getattr(conn, "_run_task", None)
+            if task is None:
+                continue
+            done = getattr(task, "done", None)
+            if not callable(done):
+                continue
+            try:
+                if not bool(done()):
+                    return True
+            except Exception:
+                continue
+        return False
 
     def _mark_hubs_fresh(self) -> None:
         """Record a successful restore so the watchdog does not immediately re-trip."""
@@ -624,8 +655,19 @@ class HealthMonitoringMixin:
             # Stop health monitoring temporarily
             await self._stop_health_monitoring()
 
-            # Disconnect and reconnect
+            # Disconnect and reconnect. pysignalr/websockets raise
+            # "Cannot connect while not disconnected" if connect() runs
+            # before the previous transport has fully dropped (#129).
             await self.disconnect()
+            deadline = time.monotonic() + self.health_reconnect_wait_seconds
+            while self._hub_transport_running() and time.monotonic() < deadline:
+                await asyncio.sleep(0.05)
+            if self._hub_transport_running():
+                logger.error(
+                    "Health-based reconnection aborted: hub transport still running"
+                )
+                await self._start_health_monitoring()
+                return False
             success = await self.connect()
 
             if success:

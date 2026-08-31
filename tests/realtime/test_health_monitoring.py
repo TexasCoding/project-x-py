@@ -499,6 +499,75 @@ class TestAutomaticReconnection:
         health_client.subscribe_user_updates.assert_awaited()
         health_client.subscribe_market_data.assert_awaited_once_with(["MNQ", "ES"])
 
+    async def test_force_health_reconnect_waits_until_disconnected(self, health_client):
+        """Issue #129: do not call connect() while a hub run() task is still active."""
+
+        class FakeTask:
+            def __init__(self) -> None:
+                self._done = False
+
+            def done(self) -> bool:
+                return self._done
+
+        user_task = FakeTask()
+        market_task = FakeTask()
+        health_client._last_health_score = 45.0
+        health_client.user_connection = Mock()
+        health_client.user_connection._run_task = user_task
+        health_client.market_connection = Mock()
+        health_client.market_connection._run_task = market_task
+        connect_called_while_running = False
+
+        async def fake_disconnect() -> None:
+            def _clear() -> None:
+                user_task._done = True
+                market_task._done = True
+
+            asyncio.get_running_loop().call_later(0.03, _clear)
+
+        async def fake_connect() -> bool:
+            nonlocal connect_called_while_running
+            if not user_task.done() or not market_task.done():
+                connect_called_while_running = True
+                raise RuntimeError("Cannot connect while not disconnected")
+            return True
+
+        health_client.disconnect = fake_disconnect
+        health_client.connect = fake_connect
+        health_client._start_health_monitoring = AsyncMock()
+        health_client._stop_health_monitoring = AsyncMock()
+
+        success = await health_client.force_health_reconnect()
+
+        assert success is True
+        assert connect_called_while_running is False
+
+    async def test_force_health_reconnect_restarts_monitoring_if_transport_stuck(
+        self, health_client
+    ):
+        """If connect is aborted, health monitoring must be restarted."""
+
+        class NeverDone:
+            def done(self) -> bool:
+                return False
+
+        health_client._last_health_score = 45.0
+        health_client.health_reconnect_wait_seconds = 0.0
+        health_client.user_connection = Mock()
+        health_client.user_connection._run_task = NeverDone()
+        health_client.market_connection = Mock()
+        health_client.market_connection._run_task = NeverDone()
+        health_client.disconnect = AsyncMock()
+        health_client.connect = AsyncMock(return_value=True)
+        health_client._start_health_monitoring = AsyncMock()
+        health_client._stop_health_monitoring = AsyncMock()
+
+        success = await health_client.force_health_reconnect()
+
+        assert success is False
+        health_client.connect.assert_not_called()
+        health_client._start_health_monitoring.assert_awaited()
+
 
 @pytest.mark.asyncio
 class TestIntegrationWithMixins:
@@ -729,8 +798,8 @@ class TestStaleFeedWatchdog:
         client.force_health_reconnect.assert_awaited()
 
     @pytest.mark.asyncio
-    async def test_silent_hub_still_goes_stale(self):
-        """A hub that never received a message still goes stale after the threshold."""
+    async def test_silent_market_hub_still_goes_stale(self):
+        """A market hub that never received a message still goes stale after the threshold."""
         from project_x_py.event_bus import EventType
 
         client = MockHealthMonitoringClient()
@@ -757,14 +826,12 @@ class TestStaleFeedWatchdog:
 
         client.event_bus.emit.assert_awaited()
         assert client.event_bus.emit.await_args.args[0] == EventType.FEED_STALE
-        assert client.event_bus.emit.await_args.args[1]["hub"] in ("market", "user")
+        assert client.event_bus.emit.await_args.args[1]["hub"] == "market"
         client.force_health_reconnect.assert_awaited()
 
     @pytest.mark.asyncio
-    async def test_user_hub_stale_emits_feed_stale(self):
-        """User hub silence is watched independently of the market hub."""
-        from project_x_py.event_bus import EventType
-
+    async def test_user_hub_silence_is_not_stale(self):
+        """Issue #129: user-hub silence is normal while flat; do not reconnect."""
         client = MockHealthMonitoringClient()
         client.stale_feed_seconds = 0.01
         client.stale_feed_check_interval = 0.001
@@ -772,6 +839,8 @@ class TestStaleFeedWatchdog:
         client._last_user_message = time.monotonic() - 1.0
         client.event_bus = AsyncMock()
         client.force_health_reconnect = AsyncMock(return_value=True)
+
+        assert client._hub_silence_age("user") is None
 
         calls = 0
 
@@ -785,10 +854,24 @@ class TestStaleFeedWatchdog:
             with pytest.raises(asyncio.CancelledError):
                 await client._stale_feed_watchdog_loop()
 
-        client.event_bus.emit.assert_awaited()
-        assert client.event_bus.emit.await_args.args[0] == EventType.FEED_STALE
-        assert client.event_bus.emit.await_args.args[1]["hub"] == "user"
-        client.force_health_reconnect.assert_awaited()
+        client.event_bus.emit.assert_not_called()
+        client.force_health_reconnect.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_stop_watchdog_does_not_cancel_current_task(self):
+        """Reconnect from the watchdog must not cancel or unbind the running loop."""
+        client = MockHealthMonitoringClient()
+        current = asyncio.current_task()
+        client._stale_feed_task = current
+
+        await client._stop_stale_feed_watchdog()
+
+        assert client._stale_feed_task is current
+        assert current is not None
+        assert not current.cancelled()
+
+        await client._start_stale_feed_watchdog()
+        assert client._stale_feed_task is current
 
     @pytest.mark.asyncio
     async def test_failed_reconnect_does_not_reset_timestamp(self):

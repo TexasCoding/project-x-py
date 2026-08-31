@@ -769,6 +769,57 @@ class TestStatisticsAggregator:
         # Should be closer to 0.1s (parallel) than 0.5s (sequential)
         assert duration < 0.3
 
+    @pytest.mark.asyncio
+    async def test_collect_component_stats_awaits_async_get_stats(self):
+        """Issue #130: async get_stats() must be awaited, not dropped."""
+        import warnings
+
+        aggregator = StatisticsAggregator()
+
+        class AsyncStatsComponent:
+            async def get_stats(self) -> dict:
+                return {"status": "active", "operations": 7}
+
+        component = AsyncStatsComponent()
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            stats = await aggregator._collect_component_stats("realtime", component)
+
+        assert stats == {"status": "active", "operations": 7}
+        assert not any(issubclass(w.category, RuntimeWarning) for w in caught)
+
+    @pytest.mark.asyncio
+    async def test_collect_component_stats_still_accepts_sync_get_stats(self):
+        """Sync get_stats() remains supported."""
+        aggregator = StatisticsAggregator()
+
+        class SyncStatsComponent:
+            def get_stats(self) -> dict:
+                return {"status": "sync", "operations": 3}
+
+        stats = await aggregator._collect_component_stats(
+            "orderbook", SyncStatsComponent()
+        )
+        assert stats == {"status": "sync", "operations": 3}
+
+    @pytest.mark.asyncio
+    async def test_collect_component_stats_timeout_does_not_fall_through(self):
+        """A slow get_stats() must not silently return the next method's dict."""
+        aggregator = StatisticsAggregator(component_timeout=0.01)
+
+        class SlowThenFallback:
+            async def get_stats(self) -> dict:
+                await asyncio.sleep(1)
+                return {"status": "slow"}
+
+            async def get_memory_stats(self) -> dict:
+                return {"status": "fallback"}
+
+        stats = await aggregator._collect_component_stats(
+            "realtime", SlowThenFallback()
+        )
+        assert stats is None
+
 
 class TestHealthMonitor:
     """Test cases for HealthMonitor class."""
