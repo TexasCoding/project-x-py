@@ -433,6 +433,120 @@ class MarketDataMixin:
 
     HISTORY_BAR_LIMIT = 20_000
 
+    def _dataframe_from_bars_response(self, response: Any) -> pl.DataFrame:
+        if not response or not isinstance(response, dict):
+            return pl.DataFrame()
+        if not response.get("success", False):
+            error_msg = response.get("errorMessage", "Unknown error")
+            self.logger.error(
+                LogMessages.DATA_ERROR,
+                extra={"operation": "get_history", "error": error_msg},
+            )
+            return pl.DataFrame()
+        bars_data = response.get("bars", [])
+        if not bars_data:
+            return pl.DataFrame()
+        data = (
+            pl.DataFrame(bars_data)
+            .sort("t")
+            .rename(
+                {
+                    "t": "timestamp",
+                    "o": "open",
+                    "h": "high",
+                    "l": "low",
+                    "c": "close",
+                    "v": "volume",
+                }
+            )
+        )
+        canonical = ["timestamp", "open", "high", "low", "close", "volume"]
+        extra = [column for column in data.columns if column not in canonical]
+        data = data.select(canonical + extra)
+        try:
+            data = data.with_columns(
+                pl.col("timestamp")
+                .str.to_datetime()
+                .dt.replace_time_zone("UTC")
+                .dt.convert_time_zone(self.config.timezone)
+            )
+        except Exception:
+            try:
+                data = data.with_columns(
+                    pl.col("timestamp")
+                    .str.to_datetime(time_zone="UTC")
+                    .dt.convert_time_zone(self.config.timezone)
+                )
+            except Exception:
+                data = data.with_columns(
+                    pl.when(pl.col("timestamp").str.contains("[+-]\\d{2}:\\d{2}$|Z$"))
+                    .then(pl.col("timestamp").str.to_datetime())
+                    .otherwise(
+                        pl.col("timestamp")
+                        .str.to_datetime()
+                        .dt.replace_time_zone("UTC")
+                    )
+                    .dt.convert_time_zone(self.config.timezone)
+                    .alias("timestamp")
+                )
+        if data.is_empty():
+            return data
+        return data.sort("timestamp")
+
+    async def _retrieve_bars_paged(
+        self,
+        contract_id: str,
+        start_date: datetime.datetime,
+        end_date: datetime.datetime,
+        interval: int,
+        unit: int,
+        live: bool,
+        partial: bool,
+        page_limit: int,
+    ) -> tuple[pl.DataFrame, bool]:
+        frames: list[pl.DataFrame] = []
+        page_end = end_date
+        first_ok = False
+        cap = max(1, min(int(page_limit), self.HISTORY_BAR_LIMIT))
+        for page_index in range(20):
+            payload = {
+                "contractId": contract_id,
+                "live": live,
+                "startTime": start_date.astimezone(pytz.UTC).isoformat(),
+                "endTime": page_end.astimezone(pytz.UTC).isoformat(),
+                "unit": unit,
+                "unitNumber": interval,
+                "limit": cap,
+                "includePartialBar": partial,
+            }
+            response = await self._make_request(
+                "POST", "/History/retrieveBars", data=payload
+            )
+            if page_index == 0:
+                if (
+                    not response
+                    or not isinstance(response, dict)
+                    or not response.get("success", False)
+                ):
+                    if response and isinstance(response, dict):
+                        self._dataframe_from_bars_response(response)
+                    return pl.DataFrame(), False
+                first_ok = True
+            frame = self._dataframe_from_bars_response(response)
+            if frame.is_empty():
+                break
+            frames.append(frame)
+            earliest = frame["timestamp"].min()
+            if len(frame) < self.HISTORY_BAR_LIMIT:
+                break
+            if not isinstance(earliest, datetime.datetime) or earliest <= start_date:
+                break
+            page_end = earliest
+        if not frames:
+            return pl.DataFrame(), first_ok
+        data = pl.concat(frames).unique(subset=["timestamp"], keep="last")
+        return data.sort("timestamp"), True
+
     @handle_errors("get bars")
     async def get_bars(
         self,
@@ -578,108 +692,21 @@ class MarketDataMixin:
 
         limit = max(1, min(int(limit), self.HISTORY_BAR_LIMIT))
 
-        # Prepare payload - convert to UTC for API
-        payload = {
-            "contractId": instrument.id,
-            "live": live,
-            "startTime": start_date.astimezone(pytz.UTC).isoformat(),
-            "endTime": end_date.astimezone(pytz.UTC).isoformat(),
-            "unit": unit,
-            "unitNumber": interval,
-            "limit": limit,
-            "includePartialBar": partial,
-        }
-
-        # Fetch data using correct endpoint
-        response = await self._make_request(
-            "POST", "/History/retrieveBars", data=payload
+        data, gateway_ok = await self._retrieve_bars_paged(
+            instrument.id,
+            start_date,
+            end_date,
+            interval,
+            unit,
+            live,
+            partial,
+            limit,
         )
-
-        if not response:
+        if not gateway_ok:
             return pl.DataFrame()
-
-        # Handle the response format
-        if not response.get("success", False):
-            error_msg = response.get("errorMessage", "Unknown error")
-            self.logger.error(
-                LogMessages.DATA_ERROR,
-                extra={"operation": "get_history", "error": error_msg},
-            )
-            return pl.DataFrame()
-
-        bars_data = response.get("bars", [])
-        if not bars_data:
-            return pl.DataFrame()
-
-        # Convert to DataFrame and process
-        # First create the DataFrame with renamed columns
-        data = (
-            pl.DataFrame(bars_data)
-            .sort("t")
-            .rename(
-                {
-                    "t": "timestamp",
-                    "o": "open",
-                    "h": "high",
-                    "l": "low",
-                    "c": "close",
-                    "v": "volume",
-                }
-            )
-        )
-
-        # Order canonical OHLCV first, but keep extra API fields.
-        canonical = ["timestamp", "open", "high", "low", "close", "volume"]
-        extra = [column for column in data.columns if column not in canonical]
-        data = data.select(canonical + extra)
-
-        # Handle datetime conversion robustly
-        # Try the simple approach first (fastest for consistent data)
-        try:
-            data = data.with_columns(
-                pl.col("timestamp")
-                .str.to_datetime()
-                .dt.replace_time_zone("UTC")
-                .dt.convert_time_zone(self.config.timezone)
-            )
-        except Exception:
-            # Fallback: Handle mixed timestamp formats
-            # Some timestamps may have timezone info, others may not
-            try:
-                # Try with UTC assumption for naive timestamps
-                data = data.with_columns(
-                    pl.col("timestamp")
-                    .str.to_datetime(time_zone="UTC")
-                    .dt.convert_time_zone(self.config.timezone)
-                )
-            except Exception:
-                # Last resort: Parse with specific format patterns
-                # This handles the most complex mixed-format scenarios
-                data = data.with_columns(
-                    pl.when(pl.col("timestamp").str.contains("[+-]\\d{2}:\\d{2}$|Z$"))
-                    .then(
-                        # Has timezone info - parse as-is
-                        pl.col("timestamp").str.to_datetime()
-                    )
-                    .otherwise(
-                        # No timezone - assume UTC
-                        pl.col("timestamp")
-                        .str.to_datetime()
-                        .dt.replace_time_zone("UTC")
-                    )
-                    .dt.convert_time_zone(self.config.timezone)
-                    .alias("timestamp")
-                )
-
         if data.is_empty():
             return data
-
-        # Sort by timestamp
-        data = data.sort("timestamp")
-
-        # Cache the result
         self.cache_market_data(cache_key, data)
-
         return data
 
     # Session-aware methods
