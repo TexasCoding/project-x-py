@@ -541,11 +541,12 @@ class MarketDataMixin:
                 break
             if not isinstance(earliest, datetime.datetime) or earliest <= start_date:
                 break
+            if earliest >= page_end:
+                break
             page_end = earliest
         if not frames:
             return pl.DataFrame(), first_ok
-        data = pl.concat(frames).unique(subset=["timestamp"], keep="last")
-        return data.sort("timestamp"), True
+        return pl.concat(frames).sort("timestamp"), True
 
     @staticmethod
     def _should_stitch_contracts(symbol: str, unit: int, interval: int) -> bool:
@@ -716,9 +717,10 @@ class MarketDataMixin:
             live: If True, retrieve bars from the live data subscription
 
         Product-root symbols (e.g. ``MNQ``) on hourly or coarser timeframes
-        (``unit >= 3``, or ``unit == 2`` and ``interval >= 60``) fetch prior
-        contract months via ``/Contract/searchById`` and concatenate them.
-        Sub-hour bars are the active contract only (Gateway does not keep
+        (``unit >= 3`` excluding ticks, or ``unit == 2`` and ``interval >= 60``)
+        fetch prior contract months via ``/Contract/searchById`` and concatenate
+        them. Seconds (``unit == 1``) and ticks (``unit == 7``) never stitch.
+        Sub-hour minute bars are the active contract only (Gateway does not keep
         intraday history on expired months). Windows larger than 20,000 bars
         are paged. If the returned timestamps start after the requested
         ``start_time``, a warning is logged.

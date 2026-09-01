@@ -92,6 +92,36 @@ async def test_get_bars_pages_when_first_response_is_full(history_client):
 
 
 @pytest.mark.asyncio
+async def test_get_bars_stops_when_full_page_does_not_advance(history_client):
+    """A full page whose min timestamp equals the requested end must not re-request."""
+    end = datetime.datetime(2026, 8, 2, 0, 0, 0, tzinfo=pytz.UTC)
+    history_client._make_request = AsyncMock(
+        return_value={
+            "success": True,
+            "bars": [
+                _bar("2026-08-02T00:00:00+00:00", 2.0),
+                _bar("2026-08-02T00:00:00+00:00", 1.0),
+            ],
+        }
+    )
+    start = datetime.datetime(2026, 7, 31, 0, 0, 0, tzinfo=pytz.UTC)
+    await history_client.get_bars(
+        "MNQ",
+        interval=1,
+        unit=4,
+        start_time=start,
+        end_time=end,
+        partial=False,
+    )
+    history_calls = [
+        call
+        for call in history_client._make_request.await_args_list
+        if call.args[1] == "/History/retrieveBars"
+    ]
+    assert len(history_calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_get_bars_does_not_stitch_full_contract_id(history_client):
     history_client._make_request = AsyncMock(
         return_value={
@@ -190,6 +220,57 @@ async def test_get_bars_stitches_hourly_prior_month(history_client):
 
 
 @pytest.mark.asyncio
+async def test_get_bars_stitches_60_minute_prior_month(history_client):
+    async def make_request(
+        method: str, endpoint: str, data: dict | None = None, **_kwargs
+    ):
+        if endpoint == "/History/retrieveBars":
+            cid = (data or {}).get("contractId")
+            if cid == "CON.F.US.MNQ.U26":
+                return {
+                    "success": True,
+                    "bars": [_bar("2026-07-02T00:00:00+00:00", 2.0)],
+                }
+            if cid == "CON.F.US.MNQ.M26":
+                return {
+                    "success": True,
+                    "bars": [_bar("2026-06-01T00:00:00+00:00", 1.0)],
+                }
+            return {"success": True, "bars": []}
+        if endpoint == "/Contract/searchById":
+            cid = (data or {}).get("contractId")
+            if cid == "CON.F.US.MNQ.M26":
+                return {
+                    "success": True,
+                    "contract": {
+                        "id": cid,
+                        "name": "MNQM6",
+                        "description": "June",
+                        "tickSize": 0.25,
+                        "tickValue": 0.5,
+                        "activeContract": False,
+                    },
+                }
+            return {"success": True, "contract": None}
+        raise AssertionError(f"unexpected {endpoint}")
+
+    history_client._make_request = AsyncMock(side_effect=make_request)
+    history_client.HISTORY_BAR_LIMIT = 20_000
+    start = datetime.datetime(2026, 6, 1, tzinfo=pytz.UTC)
+    end = datetime.datetime(2026, 7, 2, tzinfo=pytz.UTC)
+    await history_client.get_bars(
+        "MNQ",
+        interval=60,
+        unit=2,
+        start_time=start,
+        end_time=end,
+        partial=False,
+    )
+    endpoints = [call.args[1] for call in history_client._make_request.await_args_list]
+    assert "/Contract/searchById" in endpoints
+
+
+@pytest.mark.asyncio
 async def test_get_bars_overlap_keeps_later_month(history_client):
     overlap_ts = "2026-06-18T00:00:00+00:00"
 
@@ -268,6 +349,33 @@ async def test_get_bars_does_not_stitch_ticks(history_client):
     )
     endpoints = [call.args[1] for call in history_client._make_request.await_args_list]
     assert "/Contract/searchById" not in endpoints
+
+
+@pytest.mark.asyncio
+async def test_get_bars_keeps_same_timestamp_ticks(history_client):
+    """Paging must not unique-by-timestamp; two ticks can share ``t``."""
+    history_client.HISTORY_BAR_LIMIT = 20_000
+    same_t = "2026-08-02T00:00:00+00:00"
+    history_client._make_request = AsyncMock(
+        return_value={
+            "success": True,
+            "bars": [
+                _bar(same_t, 1.0),
+                _bar(same_t, 2.0),
+            ],
+        }
+    )
+    start = datetime.datetime(2026, 8, 1, tzinfo=pytz.UTC)
+    end = datetime.datetime(2026, 8, 3, tzinfo=pytz.UTC)
+    bars = await history_client.get_bars(
+        "MNQ",
+        interval=1,
+        unit=7,
+        start_time=start,
+        end_time=end,
+        partial=False,
+    )
+    assert len(bars) == 2
 
 
 @pytest.mark.asyncio
