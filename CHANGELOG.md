@@ -18,6 +18,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 None.
 
+## [4.2.0] - 2026-08-31
+
+### Added
+
+- `get_bars()` on product-root symbols (e.g. `"MNQ"`) stitches expired
+  contract months for hourly and coarser timeframes via
+  `Contract/searchById`, so a requested window can span rolls. Pass a
+  full `CON.…` id to stay on one month. Sub-hour, second, and tick
+  bars stay on the active contract — Gateway does not keep that
+  history on expired months (#134).
+
+### Fixed
+
+- `StatisticsAggregator` no longer collects `TradingSuite` as a
+  component of itself. `suite.get_stats()` was re-entering
+  `_collect_component_stats` until the event loop froze and leaked
+  thousands of pending tasks. Collection timeouts now cancel child
+  tasks and keep finished results (#133).
+- `get_bars()` pages `/History/retrieveBars` at the 20,000-bar Gateway
+  cap instead of silently returning only the newest page. Same-timestamp
+  tick rows are kept. A warning is logged when the returned window is
+  shorter than requested (#134).
+
 ## [4.1.2] - 2026-08-30
 
 ### Fixed

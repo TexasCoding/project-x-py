@@ -382,22 +382,25 @@ class StatisticsAggregator(BaseStatisticsTracker):
         async with self._component_lock:
             components = list(self._components.items())
 
-        # Create collection tasks with timeout protection
+        collectible = [
+            (name, component)
+            for name, component in components
+            if name != "trading_suite"
+        ]
+
         tasks = []
-        for name, component in components:
+        for name, component in collectible:
             task = asyncio.create_task(self._collect_component_stats(name, component))
             tasks.append(task)
 
-        # Collect with timeout protection
         try:
             results = await asyncio.wait_for(
                 asyncio.gather(*tasks, return_exceptions=True),
-                timeout=self.component_timeout * len(components),
+                timeout=self.component_timeout * max(len(collectible), 1),
             )
 
-            # Process results and handle exceptions
             component_stats = {}
-            for (name, _), result in zip(components, results, strict=False):
+            for (name, _), result in zip(collectible, results, strict=False):
                 if isinstance(result, Exception):
                     await self.track_error(
                         result,
@@ -414,7 +417,23 @@ class StatisticsAggregator(BaseStatisticsTracker):
                 TimeoutError("Component collection timed out"),
                 "Parallel component collection",
             )
-            return {}
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            timed_out_stats: dict[str, Any] = {}
+            for (name, _), result in zip(collectible, results, strict=False):
+                if isinstance(result, asyncio.CancelledError):
+                    continue
+                if isinstance(result, Exception):
+                    await self.track_error(
+                        result,
+                        f"Failed to collect statistics from {name}",
+                        {"component_name": name},
+                    )
+                elif result is not None:
+                    timed_out_stats[name] = result
+            return timed_out_stats
 
     async def _invoke_stats_method(self, method: Any) -> Any:
         """Call a stats method, awaiting it when it is async or returns a coroutine."""
@@ -444,6 +463,8 @@ class StatisticsAggregator(BaseStatisticsTracker):
         Returns:
             Component statistics dictionary or None if collection fails
         """
+        if name == "trading_suite":
+            return None
         try:
             start_time = time.time()
 

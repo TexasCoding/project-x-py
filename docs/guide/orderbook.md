@@ -1,6 +1,6 @@
 # OrderBook Guide
 
-This guide covers comprehensive Level 2 market depth analysis using ProjectX Python SDK v3.3.4+. The OrderBook component provides real-time market microstructure analysis with advanced features including spoofing detection, iceberg identification, and volume profile analysis.
+This guide covers comprehensive Level 2 market depth analysis using the ProjectX Python SDK. The OrderBook component provides real-time market microstructure analysis with advanced features including spoofing detection, iceberg identification, and volume profile analysis.
 
 ## Overview
 

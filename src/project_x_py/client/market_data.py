@@ -433,6 +433,256 @@ class MarketDataMixin:
 
     HISTORY_BAR_LIMIT = 20_000
 
+    def _dataframe_from_bars_response(self, response: Any) -> pl.DataFrame:
+        if not response or not isinstance(response, dict):
+            return pl.DataFrame()
+        if not response.get("success", False):
+            error_msg = response.get("errorMessage", "Unknown error")
+            self.logger.error(
+                LogMessages.DATA_ERROR,
+                extra={"operation": "get_history", "error": error_msg},
+            )
+            return pl.DataFrame()
+        bars_data = response.get("bars", [])
+        if not bars_data:
+            return pl.DataFrame()
+        data = (
+            pl.DataFrame(bars_data)
+            .sort("t")
+            .rename(
+                {
+                    "t": "timestamp",
+                    "o": "open",
+                    "h": "high",
+                    "l": "low",
+                    "c": "close",
+                    "v": "volume",
+                }
+            )
+        )
+        canonical = ["timestamp", "open", "high", "low", "close", "volume"]
+        extra = [column for column in data.columns if column not in canonical]
+        data = data.select(canonical + extra)
+        try:
+            data = data.with_columns(
+                pl.col("timestamp")
+                .str.to_datetime()
+                .dt.replace_time_zone("UTC")
+                .dt.convert_time_zone(self.config.timezone)
+            )
+        except Exception:
+            try:
+                data = data.with_columns(
+                    pl.col("timestamp")
+                    .str.to_datetime(time_zone="UTC")
+                    .dt.convert_time_zone(self.config.timezone)
+                )
+            except Exception:
+                data = data.with_columns(
+                    pl.when(pl.col("timestamp").str.contains("[+-]\\d{2}:\\d{2}$|Z$"))
+                    .then(pl.col("timestamp").str.to_datetime())
+                    .otherwise(
+                        pl.col("timestamp")
+                        .str.to_datetime()
+                        .dt.replace_time_zone("UTC")
+                    )
+                    .dt.convert_time_zone(self.config.timezone)
+                    .alias("timestamp")
+                )
+        if data.is_empty():
+            return data
+        return data.sort("timestamp")
+
+    async def _retrieve_bars_paged(
+        self,
+        contract_id: str,
+        start_date: datetime.datetime,
+        end_date: datetime.datetime,
+        interval: int,
+        unit: int,
+        live: bool,
+        partial: bool,
+        page_limit: int,
+    ) -> tuple[pl.DataFrame, bool]:
+        frames: list[pl.DataFrame] = []
+        page_end = end_date
+        first_ok = False
+        cap = max(1, min(int(page_limit), self.HISTORY_BAR_LIMIT))
+        for page_index in range(20):
+            payload = {
+                "contractId": contract_id,
+                "live": live,
+                "startTime": start_date.astimezone(pytz.UTC).isoformat(),
+                "endTime": page_end.astimezone(pytz.UTC).isoformat(),
+                "unit": unit,
+                "unitNumber": interval,
+                "limit": cap,
+                "includePartialBar": partial,
+            }
+            response = await self._make_request(
+                "POST", "/History/retrieveBars", data=payload
+            )
+            if page_index == 0:
+                if (
+                    not response
+                    or not isinstance(response, dict)
+                    or not response.get("success", False)
+                ):
+                    if response and isinstance(response, dict):
+                        self._dataframe_from_bars_response(response)
+                    return pl.DataFrame(), False
+                first_ok = True
+            frame = self._dataframe_from_bars_response(response)
+            if frame.is_empty():
+                break
+            frames.append(frame)
+            earliest = frame["timestamp"].min()
+            if len(frame) < self.HISTORY_BAR_LIMIT:
+                break
+            if not isinstance(earliest, datetime.datetime) or earliest <= start_date:
+                break
+            if earliest >= page_end:
+                break
+            page_end = earliest
+        if not frames:
+            return pl.DataFrame(), first_ok
+        return pl.concat(frames).sort("timestamp"), True
+
+    @staticmethod
+    def _should_stitch_contracts(symbol: str, unit: int, interval: int) -> bool:
+        if symbol.startswith("CON."):
+            return False
+        if unit >= 3 and unit != 7:
+            return True
+        return unit == 2 and interval >= 60
+
+    async def _stitch_prior_contract_bars(
+        self,
+        active_contract_id: str,
+        existing: pl.DataFrame,
+        start_date: datetime.datetime,
+        end_date: datetime.datetime,
+        interval: int,
+        unit: int,
+        live: bool,
+        partial: bool,
+        page_limit: int,
+    ) -> pl.DataFrame:
+        from project_x_py.client.contract_calendar import iter_prior_contract_ids
+
+        if existing.is_empty():
+            current_earliest: datetime.datetime = end_date
+        else:
+            earliest_existing = existing["timestamp"].min()
+            if isinstance(earliest_existing, datetime.datetime):
+                current_earliest = earliest_existing
+            else:
+                current_earliest = end_date
+        collected: list[pl.DataFrame] = []
+        misses = 0
+        attempts = 0
+        for prior_id in iter_prior_contract_ids(active_contract_id, max_count=16):
+            attempts += 1
+            if attempts > 16:
+                break
+            if current_earliest <= start_date:
+                break
+            try:
+                by_id = await self._make_request(
+                    "POST", "/Contract/searchById", data={"contractId": prior_id}
+                )
+            except Exception:
+                misses += 1
+                if misses >= 4:
+                    break
+                continue
+            contract = (
+                by_id.get("contract")
+                if isinstance(by_id, dict) and by_id.get("success")
+                else None
+            )
+            if not isinstance(contract, dict):
+                misses += 1
+                if misses >= 4:
+                    break
+                continue
+            misses = 0
+            try:
+                chunk, chunk_ok = await self._retrieve_bars_paged(
+                    prior_id,
+                    start_date,
+                    current_earliest,
+                    interval,
+                    unit,
+                    live,
+                    partial,
+                    page_limit,
+                )
+            except Exception:
+                continue
+            if not chunk_ok or chunk.is_empty():
+                continue
+            collected.append(chunk)
+            earliest = chunk["timestamp"].min()
+            if isinstance(earliest, datetime.datetime) and earliest < current_earliest:
+                current_earliest = earliest
+        collected.reverse()
+        frames = [frame for frame in collected if not frame.is_empty()]
+        if not existing.is_empty():
+            frames.append(existing)
+        if not frames:
+            return existing
+        return (
+            pl.concat(frames)
+            .unique(subset=["timestamp"], keep="last")
+            .sort("timestamp")
+        )
+
+    @staticmethod
+    def _bar_duration(unit: int, interval: int) -> datetime.timedelta:
+        if unit == 1:
+            return datetime.timedelta(seconds=interval)
+        if unit == 2:
+            return datetime.timedelta(minutes=interval)
+        if unit == 3:
+            return datetime.timedelta(hours=interval)
+        if unit == 4:
+            return datetime.timedelta(days=interval)
+        if unit == 5:
+            return datetime.timedelta(days=7 * interval)
+        if unit == 6:
+            return datetime.timedelta(days=30 * interval)
+        return datetime.timedelta(seconds=interval)
+
+    def _warn_if_short_history(
+        self,
+        symbol: str,
+        start_date: datetime.datetime,
+        end_date: datetime.datetime,
+        data: pl.DataFrame,
+        unit: int,
+        interval: int,
+        contract_id: str,
+    ) -> None:
+        if data.is_empty():
+            return
+        actual_min = data["timestamp"].min()
+        actual_max = data["timestamp"].max()
+        if not isinstance(actual_min, datetime.datetime) or actual_min <= (
+            start_date + self._bar_duration(unit, interval)
+        ):
+            return
+        logger.warning(
+            "Historical bars for %s shorter than requested: requested [%s, %s] "
+            "actual [%s, %s] contract=%s",
+            symbol,
+            start_date,
+            end_date,
+            actual_min,
+            actual_max,
+            contract_id,
+        )
+
     @handle_errors("get bars")
     async def get_bars(
         self,
@@ -465,6 +715,15 @@ class MarketDataMixin:
             start_time: Optional start datetime (overrides days if provided)
             end_time: Optional end datetime (defaults to now if not provided)
             live: If True, retrieve bars from the live data subscription
+
+        Product-root symbols (e.g. ``MNQ``) on hourly or coarser timeframes
+        (``unit >= 3`` excluding ticks, or ``unit == 2`` and ``interval >= 60``)
+        fetch prior contract months via ``/Contract/searchById`` and concatenate
+        them. Seconds (``unit == 1``) and ticks (``unit == 7``) never stitch.
+        Sub-hour minute bars are the active contract only (Gateway does not keep
+        intraday history on expired months). Windows larger than 20,000 bars
+        are paged. If the returned timestamps start after the requested
+        ``start_time``, a warning is logged.
 
         Returns:
             pl.DataFrame: DataFrame with OHLCV data and timezone-aware timestamps
@@ -578,108 +837,40 @@ class MarketDataMixin:
 
         limit = max(1, min(int(limit), self.HISTORY_BAR_LIMIT))
 
-        # Prepare payload - convert to UTC for API
-        payload = {
-            "contractId": instrument.id,
-            "live": live,
-            "startTime": start_date.astimezone(pytz.UTC).isoformat(),
-            "endTime": end_date.astimezone(pytz.UTC).isoformat(),
-            "unit": unit,
-            "unitNumber": interval,
-            "limit": limit,
-            "includePartialBar": partial,
-        }
-
-        # Fetch data using correct endpoint
-        response = await self._make_request(
-            "POST", "/History/retrieveBars", data=payload
+        data, gateway_ok = await self._retrieve_bars_paged(
+            instrument.id,
+            start_date,
+            end_date,
+            interval,
+            unit,
+            live,
+            partial,
+            limit,
         )
-
-        if not response:
+        if not gateway_ok:
             return pl.DataFrame()
-
-        # Handle the response format
-        if not response.get("success", False):
-            error_msg = response.get("errorMessage", "Unknown error")
-            self.logger.error(
-                LogMessages.DATA_ERROR,
-                extra={"operation": "get_history", "error": error_msg},
+        earliest_ts = None if data.is_empty() else data["timestamp"].min()
+        if self._should_stitch_contracts(symbol, unit, interval) and (
+            data.is_empty()
+            or (isinstance(earliest_ts, datetime.datetime) and earliest_ts > start_date)
+        ):
+            data = await self._stitch_prior_contract_bars(
+                instrument.id,
+                data,
+                start_date,
+                end_date,
+                interval,
+                unit,
+                live,
+                partial,
+                limit,
             )
-            return pl.DataFrame()
-
-        bars_data = response.get("bars", [])
-        if not bars_data:
-            return pl.DataFrame()
-
-        # Convert to DataFrame and process
-        # First create the DataFrame with renamed columns
-        data = (
-            pl.DataFrame(bars_data)
-            .sort("t")
-            .rename(
-                {
-                    "t": "timestamp",
-                    "o": "open",
-                    "h": "high",
-                    "l": "low",
-                    "c": "close",
-                    "v": "volume",
-                }
-            )
-        )
-
-        # Order canonical OHLCV first, but keep extra API fields.
-        canonical = ["timestamp", "open", "high", "low", "close", "volume"]
-        extra = [column for column in data.columns if column not in canonical]
-        data = data.select(canonical + extra)
-
-        # Handle datetime conversion robustly
-        # Try the simple approach first (fastest for consistent data)
-        try:
-            data = data.with_columns(
-                pl.col("timestamp")
-                .str.to_datetime()
-                .dt.replace_time_zone("UTC")
-                .dt.convert_time_zone(self.config.timezone)
-            )
-        except Exception:
-            # Fallback: Handle mixed timestamp formats
-            # Some timestamps may have timezone info, others may not
-            try:
-                # Try with UTC assumption for naive timestamps
-                data = data.with_columns(
-                    pl.col("timestamp")
-                    .str.to_datetime(time_zone="UTC")
-                    .dt.convert_time_zone(self.config.timezone)
-                )
-            except Exception:
-                # Last resort: Parse with specific format patterns
-                # This handles the most complex mixed-format scenarios
-                data = data.with_columns(
-                    pl.when(pl.col("timestamp").str.contains("[+-]\\d{2}:\\d{2}$|Z$"))
-                    .then(
-                        # Has timezone info - parse as-is
-                        pl.col("timestamp").str.to_datetime()
-                    )
-                    .otherwise(
-                        # No timezone - assume UTC
-                        pl.col("timestamp")
-                        .str.to_datetime()
-                        .dt.replace_time_zone("UTC")
-                    )
-                    .dt.convert_time_zone(self.config.timezone)
-                    .alias("timestamp")
-                )
-
         if data.is_empty():
             return data
-
-        # Sort by timestamp
-        data = data.sort("timestamp")
-
-        # Cache the result
+        self._warn_if_short_history(
+            symbol, start_date, end_date, data, unit, interval, instrument.id
+        )
         self.cache_market_data(cache_key, data)
-
         return data
 
     # Session-aware methods

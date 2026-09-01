@@ -1,10 +1,10 @@
 # Backtesting Examples
 
-This page demonstrates how to backtest trading strategies using the ProjectX Python SDK v3.3.4. Learn to test strategies on historical data, evaluate performance, and optimize parameters before live trading.
+This page demonstrates how to backtest trading strategies using the ProjectX Python SDK. Learn to test strategies on historical data, evaluate performance, and optimize parameters before live trading.
 
 ## Prerequisites
 
-- ProjectX Python SDK v3.3.4 installed
+- ProjectX Python SDK installed (Python 3.12+)
 - Access to historical market data
 - Understanding of trading strategy development
 - Basic knowledge of performance metrics

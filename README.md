@@ -27,9 +27,9 @@ A **high-performance async Python SDK** for the [ProjectX Trading Platform](http
 
 This Python SDK acts as a bridge between your trading strategies and the ProjectX platform, handling all the complex API interactions, data processing, and real-time connectivity.
 
-## 🚀 v4.1.2 - Live-hub stability and Practice lookups
+## 🚀 v4.2.0 - Rolling-contract history and stats watchdog fix
 
-**Latest Version**: v4.1.2 — TopstepX-only Gateway SDK. v4.1.2 stops market-hub WS 1009 close-loops (1 MiB frame cap), ignores user-hub silence while flat, awaits async `get_stats()`, and falls back Practice/sim contracts when `live=True` finds none. v4.1.1 serialized multi-instrument market-hub `send()`.
+**Latest Version**: v4.2.0 — `get_bars()` pages the 20,000-bar Gateway cap and stitches expired months on hourly+ product-root requests. Sub-hour history is still the active contract only (Gateway limitation). `suite.get_stats()` no longer re-enters itself or leaks tasks (#133, #134). v4.1.2 stopped market-hub WS 1009 close-loops and Practice `live=True` lookup misses.
 
 **Key changes**:
 - Official defaults: `https://api.topstepx.com` and `https://rtc.topstepx.com`

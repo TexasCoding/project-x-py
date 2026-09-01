@@ -95,92 +95,102 @@ asyncio.run(token_management())
 
 ### Historical Data
 
+`get_bars(symbol, days=8, interval=5, unit=2, ...)` returns a Polars
+DataFrame. `interval` is the count of `unit`s (1=second, 2=minute, 3=hour,
+4=day, 5=week, 6=month, 7=tick). The first argument is the symbol, not
+`instrument=`.
+
 ```python
+from datetime import datetime
+
 async def historical_data():
     async with ProjectX.from_env() as client:
         await client.authenticate()
 
-        # Get OHLCV bars
-        bars = await client.get_bars(
-            instrument="MNQ",
-            days=30,           # Last 30 days
-            interval=60        # 1-minute bars
-        )
-
+        # 5-minute bars, last 5 days (unit defaults to 2 = minutes)
+        bars = await client.get_bars("MNQ", days=5, interval=5)
         print(f"Retrieved {len(bars)} bars")
         print(f"Columns: {bars.columns}")
 
-        # Get bars with specific date range
-        from datetime import datetime, timedelta
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=7)
-
-        weekly_bars = await client.get_bars(
-            instrument="MNQ",
-            start_time=start_date,
-            end_time=end_date,
-            interval=300  # 5-minute bars
+        # Hourly bars across a date range (stitches expired months)
+        hourly = await client.get_bars(
+            "MNQ",
+            interval=1,
+            unit=3,
+            start_time=datetime(2026, 3, 31),
+            end_time=datetime(2026, 8, 23),
         )
+        print(f"Hourly bars: {len(hourly)}")
 
-        print(f"Weekly bars: {len(weekly_bars)}")
+        # One contract month only — pass the full Gateway id
+        september = await client.get_bars(
+            "CON.F.US.MNQ.U26", days=5, interval=15
+        )
 
 asyncio.run(historical_data())
 ```
 
-### Current Market Data
+### Contract rolls and Gateway limits
+
+`get_instrument("MNQ")` always returns the **active** listed contract
+(front month). That is what you trade and subscribe to.
+
+Historical bars are different:
+
+| Request | What Gateway / the SDK return |
+|---|---|
+| Product root (`"MNQ"`) **hourly or coarser** (`unit >= 3` except ticks, or 60-minute bars) | SDK walks prior months via `Contract/searchById` and concatenates them. Overlap keeps the later month. |
+| Product root **sub-hour minutes, seconds, or ticks** | Active contract only. Expired months have **no** 5m/15m/1m history. |
+| Full id (`"CON.F.US.MNQ.U26"`) | That month only. |
+| More than 20,000 bars in one window | SDK pages `/History/retrieveBars`. Same-timestamp tick rows are kept. |
+
+There is no continuous-contract id (`CON.F.US.MNQ` / `F.US.MNQ` return no
+bars). If the returned timestamps start after your `start_time`, a warning
+is logged — that is Gateway coverage, not a silent SDK clip.
 
 ```python
+# 15-minute March–August will NOT fill from expired months.
+# Gateway only keeps sub-hour bars on the current front month.
+bars = await client.get_bars(
+    "MNQ",
+    interval=15,
+    unit=2,
+    start_time=datetime(2026, 3, 31),
+    end_time=datetime(2026, 8, 23),
+)
+# Expect a warning and data starting when the active month has 15-minute history.
+```
+
+### Current Market Data
+
+The REST client does not have `get_current_price` / `get_market_snapshot`.
+Live last price comes from `TradingSuite`'s realtime data manager:
+
+```python
+from project_x_py import TradingSuite
+
 async def current_market_data():
-    async with ProjectX.from_env() as client:
-        await client.authenticate()
-
-        # Get current price
-        current_price = await client.get_current_price("MNQ")
-        print(f"MNQ Current Price: ${current_price:.2f}")
-
-        # Get market snapshot
-        snapshot = await client.get_market_snapshot("MNQ")
-        print(f"Bid: ${snapshot.bid:.2f}")
-        print(f"Ask: ${snapshot.ask:.2f}")
-        print(f"Last: ${snapshot.last:.2f}")
-        print(f"Volume: {snapshot.volume:,}")
-
-        # Get multiple instruments
-        instruments = ["MNQ", "MES", "MGC"]
-        prices = await client.get_current_prices(instruments)
-        for instrument, price in prices.items():
-            print(f"{instrument}: ${price:.2f}")
+    suite = await TradingSuite.create("MNQ", timeframes=["1min"])
+    price = await suite.data.get_current_price()
+    print(f"MNQ Current Price: ${price:.2f}")
+    await suite.disconnect()
 
 asyncio.run(current_market_data())
 ```
 
-### Tick Data
+### Tick bars
+
+There is no `get_ticks()` REST helper. Tick aggregation is `get_bars` with
+`unit=7` (still the active contract only, 20,000-bar pages):
 
 ```python
-async def tick_data():
+async def tick_bars():
     async with ProjectX.from_env() as client:
         await client.authenticate()
+        ticks = await client.get_bars("MNQ", days=1, interval=1, unit=7)
+        print(f"Retrieved {len(ticks)} tick bars")
 
-        # Get recent ticks
-        ticks = await client.get_ticks(
-            instrument="MNQ",
-            count=100  # Last 100 ticks
-        )
-
-        print(f"Retrieved {len(ticks)} ticks")
-
-        # Get ticks for specific time range
-        from datetime import datetime, timedelta
-
-        recent_ticks = await client.get_ticks(
-            instrument="MNQ",
-            start_time=datetime.now() - timedelta(minutes=5),
-            end_time=datetime.now()
-        )
-
-        print(f"Last 5 minutes: {len(recent_ticks)} ticks")
-
-asyncio.run(tick_data())
+asyncio.run(tick_bars())
 ```
 
 ## Account Information
