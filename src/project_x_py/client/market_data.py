@@ -551,7 +551,7 @@ class MarketDataMixin:
     def _should_stitch_contracts(symbol: str, unit: int, interval: int) -> bool:
         if symbol.startswith("CON."):
             return False
-        if unit >= 3:
+        if unit >= 3 and unit != 7:
             return True
         return unit == 2 and interval >= 60
 
@@ -606,16 +606,19 @@ class MarketDataMixin:
                     break
                 continue
             misses = 0
-            chunk, chunk_ok = await self._retrieve_bars_paged(
-                prior_id,
-                start_date,
-                current_earliest,
-                interval,
-                unit,
-                live,
-                partial,
-                page_limit,
-            )
+            try:
+                chunk, chunk_ok = await self._retrieve_bars_paged(
+                    prior_id,
+                    start_date,
+                    current_earliest,
+                    interval,
+                    unit,
+                    live,
+                    partial,
+                    page_limit,
+                )
+            except Exception:
+                continue
             if not chunk_ok or chunk.is_empty():
                 continue
             collected.append(chunk)
