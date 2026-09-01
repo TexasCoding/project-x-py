@@ -18,7 +18,10 @@ The statistics system provides centralized collection and analysis of performanc
 ### StatisticsAggregator
 
 Central component that collects and aggregates statistics from registered
-components. Multi-instrument suites currently export **single-instrument**
+components. `TradingSuite` assigns itself on the aggregator for metadata
+and `ComponentCollector` setup, but it is **not** collected as a stats
+component of itself (`get_stats()` is the aggregator entry point).
+Multi-instrument suites currently export **single-instrument**
 stats (first symbol only). Missing health inputs are omitted from the
 weighted score rather than treated as a perfect 100. Prometheus, CSV, and
 Datadog exports redact the same secret fields as JSON.

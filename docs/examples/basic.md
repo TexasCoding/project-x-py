@@ -1,6 +1,6 @@
 # Basic Usage Examples
 
-This page demonstrates the most fundamental usage patterns of the ProjectX Python SDK v3.3.4. All examples use async/await patterns and are designed for beginners getting started with the SDK.
+This page demonstrates the most fundamental usage patterns of the ProjectX Python SDK. All examples use async/await patterns and are designed for beginners getting started with the SDK.
 
 ## Prerequisites
 
@@ -8,7 +8,7 @@ Before running these examples, ensure you have:
 
 - Valid ProjectX API credentials
 - Environment variables set (`PROJECT_X_API_KEY`, `PROJECT_X_USERNAME`, `PROJECT_X_ACCOUNT_NAME`)
-- Python 3.11+ with the SDK installed
+- Python 3.12+ with the SDK installed
 
 ## 1. TradingSuite Quick Start
 
@@ -67,15 +67,14 @@ async def main():
         account_info = client.get_account_info()
         print(f"Account: {account_info}")
 
-        # Get instrument information
-        instruments = await client.get_instruments()
-        mnq = next((i for i in instruments if i.symbol == "MNQ"), None)
-        print(f"MNQ Contract: {mnq}")
+        # Get instrument information (active/front-month contract)
+        mnq = await client.get_instrument("MNQ")
+        print(f"MNQ Contract: {mnq.id} ({mnq.name})")
 
-        # Get historical market data
+        # Get historical market data (Polars DataFrame)
         bars = await client.get_bars("MNQ", days=1)
         print(f"Retrieved {len(bars)} bars")
-        print(f"Latest bar: {bars[-1] if bars else 'No data'}")
+        print(f"Latest bar: {bars.tail(1) if not bars.is_empty() else 'No data'}")
 
 if __name__ == "__main__":
     asyncio.run(main())

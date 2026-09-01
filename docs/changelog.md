@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The canonical changelog is the repository root [CHANGELOG.md](https://github.com/TexasCoding/project-x-py/blob/main/CHANGELOG.md). This page is a docs-site copy.
 
+## [4.2.0] - 2026-08-31
+
+`get_bars()` pages the 20,000-bar Gateway cap and stitches expired months
+on hourly and coarser product-root requests. Sub-hour / tick history stays
+on the active contract. `TradingSuite.get_stats()` no longer re-enters
+the aggregator (#133, #134). See the root CHANGELOG for the full list.
+
 ## [4.1.2] - 2026-08-30
 
 Market-hub WS 1009 frame cap, user-hub stale reconnect, awaited
