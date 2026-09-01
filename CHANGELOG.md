@@ -16,7 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-None.
+### Fixed
+
+- `StatisticsAggregator` no longer registers `TradingSuite` as a stats
+  component of itself. `suite.get_stats()` was re-entering
+  `_collect_component_stats` until the event loop froze and leaked
+  thousands of pending tasks. Collection timeouts now cancel child
+  tasks and keep finished results (#133).
+- `get_bars()` pages `/History/retrieveBars` at the 20,000-bar Gateway
+  cap. For product-root symbols on hourly and coarser timeframes it
+  stitches expired months via `Contract/searchById`. Sub-hour history
+  remains the active contract only; a warning is logged when the
+  returned window is shorter than requested (#134).
 
 ## [4.1.2] - 2026-08-30
 

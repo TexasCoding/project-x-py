@@ -383,3 +383,28 @@ async def test_get_bars_skips_prior_month_retrieve_error(history_client):
     assert len(bars) == 2
     closes = bars.sort("timestamp")["close"].to_list()
     assert closes == [1.0, 2.0]
+
+
+@pytest.mark.asyncio
+async def test_get_bars_warns_when_range_is_short(history_client, caplog):
+    import logging
+
+    history_client._make_request = AsyncMock(
+        return_value={
+            "success": True,
+            "bars": [_bar("2026-07-02T22:30:00+00:00")],
+        }
+    )
+    start = datetime.datetime(2026, 3, 31, tzinfo=pytz.UTC)
+    end = datetime.datetime(2026, 8, 23, tzinfo=pytz.UTC)
+    with caplog.at_level(logging.WARNING, logger="project_x_py.client.market_data"):
+        bars = await history_client.get_bars(
+            "MNQ",
+            interval=15,
+            unit=2,
+            start_time=start,
+            end_time=end,
+            partial=False,
+        )
+    assert not bars.is_empty()
+    assert any("shorter than requested" in rec.message for rec in caplog.records)

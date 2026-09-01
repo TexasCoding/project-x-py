@@ -637,6 +637,51 @@ class MarketDataMixin:
             .sort("timestamp")
         )
 
+    @staticmethod
+    def _bar_duration(unit: int, interval: int) -> datetime.timedelta:
+        if unit == 1:
+            return datetime.timedelta(seconds=interval)
+        if unit == 2:
+            return datetime.timedelta(minutes=interval)
+        if unit == 3:
+            return datetime.timedelta(hours=interval)
+        if unit == 4:
+            return datetime.timedelta(days=interval)
+        if unit == 5:
+            return datetime.timedelta(days=7 * interval)
+        if unit == 6:
+            return datetime.timedelta(days=30 * interval)
+        return datetime.timedelta(seconds=interval)
+
+    def _warn_if_short_history(
+        self,
+        symbol: str,
+        start_date: datetime.datetime,
+        end_date: datetime.datetime,
+        data: pl.DataFrame,
+        unit: int,
+        interval: int,
+        contract_id: str,
+    ) -> None:
+        if data.is_empty():
+            return
+        actual_min = data["timestamp"].min()
+        actual_max = data["timestamp"].max()
+        if not isinstance(actual_min, datetime.datetime) or actual_min <= (
+            start_date + self._bar_duration(unit, interval)
+        ):
+            return
+        logger.warning(
+            "Historical bars for %s shorter than requested: requested [%s, %s] "
+            "actual [%s, %s] contract=%s",
+            symbol,
+            start_date,
+            end_date,
+            actual_min,
+            actual_max,
+            contract_id,
+        )
+
     @handle_errors("get bars")
     async def get_bars(
         self,
@@ -669,6 +714,14 @@ class MarketDataMixin:
             start_time: Optional start datetime (overrides days if provided)
             end_time: Optional end datetime (defaults to now if not provided)
             live: If True, retrieve bars from the live data subscription
+
+        Product-root symbols (e.g. ``MNQ``) on hourly or coarser timeframes
+        (``unit >= 3``, or ``unit == 2`` and ``interval >= 60``) fetch prior
+        contract months via ``/Contract/searchById`` and concatenate them.
+        Sub-hour bars are the active contract only (Gateway does not keep
+        intraday history on expired months). Windows larger than 20,000 bars
+        are paged. If the returned timestamps start after the requested
+        ``start_time``, a warning is logged.
 
         Returns:
             pl.DataFrame: DataFrame with OHLCV data and timezone-aware timestamps
@@ -812,6 +865,9 @@ class MarketDataMixin:
             )
         if data.is_empty():
             return data
+        self._warn_if_short_history(
+            symbol, start_date, end_date, data, unit, interval, instrument.id
+        )
         self.cache_market_data(cache_key, data)
         return data
 
