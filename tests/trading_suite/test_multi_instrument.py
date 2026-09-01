@@ -535,13 +535,9 @@ async def test_multi_instrument_parallel_creation():
     assert "MES" in result
     assert "MCL" in result
 
-    # Verify parallel execution by checking timing:
-    # If executed in parallel, total time should be close to the individual task time (0.01s)
-    # If executed sequentially, total time would be ~3x individual task time (0.03s)
-    # We'll be generous and allow up to 0.025s (2.5x) to account for overhead
-    assert total_time < 0.025, (
-        f"Creation took {total_time:.3f}s, suggesting sequential rather than parallel execution"
-    )
+    # CI runners add 100ms+ of mock/patch overhead, so wall-clock is not a
+    # reliable parallel-vs-sequential signal. Overlap of start/end times is.
+    assert total_time < 2.0, f"Creation hung ({total_time:.3f}s)"
 
     # Additional verification: All instruments should have started before any finished
     # (indicating true parallelism)
