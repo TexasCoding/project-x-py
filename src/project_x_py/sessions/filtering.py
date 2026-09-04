@@ -14,7 +14,13 @@ from typing import Any
 import polars as pl
 import pytz
 
-from .config import DEFAULT_SESSIONS, SessionConfig, SessionTimes, SessionType
+from .config import (
+    DEFAULT_SESSIONS,
+    SessionConfig,
+    SessionTimes,
+    SessionType,
+    resolve_session_product,
+)
 
 # For broader compatibility, we'll catch ValueError and re-raise with our message
 
@@ -175,8 +181,9 @@ class SessionFilterMixin:
         if custom_session_times:
             return custom_session_times
 
-        if product in DEFAULT_SESSIONS:
-            return DEFAULT_SESSIONS[product]
+        resolved = resolve_session_product(product)
+        if resolved in DEFAULT_SESSIONS:
+            return DEFAULT_SESSIONS[resolved]
 
         raise ValueError(f"Unknown product: {product}")
 
@@ -334,9 +341,10 @@ class SessionFilterMixin:
 
     def _get_session_times_for_product(self, product: str) -> SessionTimes:
         """Get session times for the specified product."""
-        if product not in DEFAULT_SESSIONS:
+        resolved = resolve_session_product(product)
+        if resolved not in DEFAULT_SESSIONS:
             raise ValueError(f"Unknown product: {product}")
-        return DEFAULT_SESSIONS[product]
+        return DEFAULT_SESSIONS[resolved]
 
     def _convert_to_market_time(self, timestamp: datetime | str) -> datetime:
         """Convert timestamp to market timezone (ET)."""

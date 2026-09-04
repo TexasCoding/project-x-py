@@ -7,9 +7,9 @@
 
 The Trading Sessions module enables you to filter and analyze market data based on different trading sessions:
 
-- **RTH (Regular Trading Hours)**: Traditional market hours (typically 9:30 AM - 4:00 PM ET for equities)
-- **ETH (Electronic Trading Hours)**: Extended/overnight trading hours
-- **BOTH**: All available trading hours (default behavior)
+- **RTH (Regular Trading Hours)**: Pit hours (typically 9:30 AM - 4:00 PM ET for equity index futures)
+- **ETH (Electronic Trading Hours)**: All hours except the daily maintenance break
+- **CUSTOM**: Caller-supplied `SessionTimes`
 
 This feature is particularly useful for:
 - Separating overnight volatility from regular session price action
@@ -36,7 +36,7 @@ session_filter = SessionFilterMixin()
 rth_data = await session_filter.filter_by_session(
     data,
     SessionType.RTH,
-    "ES"
+    "ES",
 )
 
 eth_data = await session_filter.filter_by_session(
@@ -53,9 +53,9 @@ eth_data = await session_filter.filter_by_session(
 ```python
 from project_x_py.sessions import SessionType
 
-SessionType.RTH   # Regular Trading Hours only
-SessionType.ETH   # Electronic Trading Hours only
-SessionType.BOTH  # All trading hours (default)
+SessionType.RTH     # Regular Trading Hours only
+SessionType.ETH     # Electronic Trading Hours (excludes maintenance)
+SessionType.CUSTOM  # Caller-supplied SessionTimes
 ```
 
 ### Product-Specific Sessions
@@ -281,6 +281,27 @@ filtered_data = await filter_mixin.filter_by_session(
     custom_session_times=custom_times  # Optional
 )
 ```
+
+## Live `get_session_data` (v4.2.1+)
+
+Call this from `on_bar`. It copies bars under a **bounded** read lock
+(default 2 seconds), then filters after the lock is released:
+
+```python
+from project_x_py.sessions import SessionType
+
+rth = await suite["MNQ"].data.get_session_data("1min", SessionType.RTH)
+# optional: timeout=1.0
+```
+
+If the bar cache is mid-update and the lock does not release in time, the
+call returns the last successful snapshot (or `None` on the first attempt)
+instead of hanging. Configure defaults with `session_data_timeout` and
+`data_lock_timeout` on the data-manager config.
+
+`session_type` may be omitted; it then uses `session_config.session_type`.
+Gateway contract ids (`CON.F.US.MNQ.H26`) resolve to the product calendar
+via `resolve_session_product()`.
 
 ## Performance Considerations
 
@@ -524,7 +545,7 @@ logging.getLogger("project_x_py.sessions").setLevel(logging.DEBUG)
 
 - `SessionConfig`: Configuration for session types and times
 - `SessionTimes`: Definition of session start/end times
-- `SessionType`: Enum for RTH, ETH, BOTH
+- `SessionType`: Enum for RTH, ETH, CUSTOM
 - `SessionFilterMixin`: Main filtering functionality
 - `SessionStatistics`: Statistical calculations by session
 - `SessionAnalytics`: Advanced analytics and comparisons

@@ -189,6 +189,39 @@ class SessionConfig:
 
 
 # Default session times for major futures products
+def resolve_session_product(product: str) -> str:
+    """Map a contract id or listed symbol to a DEFAULT_SESSIONS key.
+
+    Accepts root symbols (``MNQ``), Gateway ids (``CON.F.US.MNQ.H26``),
+    and month-coded names (``MNQH26``). Returns the original string when
+    no known product is found so callers can still raise ``Unknown product``.
+    """
+    if product in DEFAULT_SESSIONS:
+        return product
+    upper = product.upper()
+    if upper in DEFAULT_SESSIONS:
+        return upper
+
+    tokens = product.replace("-", ".").split(".")
+    candidates: list[str] = []
+    for token in reversed(tokens):
+        letters = "".join(ch for ch in token if ch.isalpha()).upper()
+        if letters:
+            candidates.append(letters)
+    if not candidates:
+        letters = "".join(ch for ch in product if ch.isalpha()).upper()
+        if letters:
+            candidates.append(letters)
+
+    for letters in candidates:
+        if letters in DEFAULT_SESSIONS:
+            return letters
+        for length in (4, 3, 2):
+            if len(letters) >= length and letters[:length] in DEFAULT_SESSIONS:
+                return letters[:length]
+    return product
+
+
 DEFAULT_SESSIONS: dict[str, SessionTimes] = {
     # ========== EQUITY INDEX FUTURES ==========
     # Full-size Equity Index - RTH: 9:30 AM - 4:00 PM ET

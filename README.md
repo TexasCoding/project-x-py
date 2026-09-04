@@ -27,9 +27,9 @@ A **high-performance async Python SDK** for the [ProjectX Trading Platform](http
 
 This Python SDK acts as a bridge between your trading strategies and the ProjectX platform, handling all the complex API interactions, data processing, and real-time connectivity.
 
-## 🚀 v4.2.0 - Rolling-contract history and stats watchdog fix
+## 🚀 v4.2.1 - Session data no longer hangs on bar-cache lock
 
-**Latest Version**: v4.2.0 — `get_bars()` pages the 20,000-bar Gateway cap and stitches expired months on hourly+ product-root requests. Sub-hour history is still the active contract only (Gateway limitation). `suite.get_stats()` no longer re-enters itself or leaks tasks (#133, #134). v4.1.2 stopped market-hub WS 1009 close-loops and Practice `live=True` lookup misses.
+**Latest Version**: v4.2.1 — `get_session_data()` copies bars under a bounded lock (default 2s) and returns the last snapshot on timeout, so `on_bar` cannot stall (#137). v4.2.0 paged `get_bars()` at the 20,000-bar cap, stitched expired months on hourly+ product-root requests, and stopped `suite.get_stats()` from re-entering itself (#133, #134).
 
 **Key changes**:
 - Official defaults: `https://api.topstepx.com` and `https://rtc.topstepx.com`
@@ -263,9 +263,9 @@ async def session_example():
         session_config=SessionConfig(session_type=SessionType.ETH)
     )
 
-    # v3.5.0: Use explicit instrument access
-    rth_data = await rth_suite["MNQ"].data.get_session_data("1min")
-    eth_data = await eth_suite["MNQ"].data.get_session_data("1min")
+    # session_type defaults to session_config; pass it to override
+    rth_data = await rth_suite["MNQ"].data.get_session_data("1min", SessionType.RTH)
+    eth_data = await eth_suite["MNQ"].data.get_session_data("1min", SessionType.ETH)
 
     print(f"RTH bars: {len(rth_data):,}")  # ~390 bars per day
     print(f"ETH bars: {len(eth_data):,}")  # ~1,410 bars per day (366% more)
@@ -279,7 +279,7 @@ if __name__ == "__main__":
 
 ⚠️ **Note**: Session filtering is experimental. Test thoroughly in paper trading before production use.
 
-📚 **Full Example**: See `examples/sessions/16_eth_vs_rth_sessions_demo.py` for comprehensive demonstration of all session features.
+📚 **Full Example**: See `examples/sessions/00_eth_vs_rth_sessions_demo.py` for a walkthrough of session filtering.
 
 ### Trading Suite (Enhanced in v3.5.0)
 

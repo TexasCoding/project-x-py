@@ -50,28 +50,19 @@ async def accessing_bar_data():
     suite = await TradingSuite.create(["MNQ"], timeframes=["1min", "5min"])
     mnq_data = suite["MNQ"].data
 
-    # Get data for a specific timeframe
+    # Get data for a specific timeframe (copy of the in-memory cache)
     bars = await mnq_data.get_data("1min")
     if bars is not None and not bars.is_empty():
         print(f"Retrieved {len(bars)} bars")
 
-        # Access OHLCV data using Polars DataFrame
         latest_bar = bars.tail(1)
         print(f"Latest close: ${latest_bar['close'][0]:.2f}")
 
-    # Get data with specific count
-    recent_bars = await mnq_data.get_data("5min", count=20)
+    # Limit to the most recent N bars
+    recent_bars = await mnq_data.get_data("5min", bars=20)
 
-    # Get data for time range
-    from datetime import datetime, timedelta
-    end_time = datetime.now()
-    start_time = end_time - timedelta(hours=2)
-
-    range_bars = await mnq_data.get_data(
-        timeframe="1min",
-        start_time=start_time,
-        end_time=end_time
-    )
+    # Optional lock timeout (seconds). Default is data_lock_timeout (5.0).
+    recent_or_stale = await mnq_data.get_data("1min", timeout=2.0)
 
     await suite.disconnect()
 
@@ -120,14 +111,41 @@ async def volume_stats():
     # Get volume statistics
     vol_stats = await mnq_data.get_volume_stats(timeframe="1min")
     if vol_stats:
-        print(f"Total volume: {vol_stats['total_volume']:,}")
-        print(f"Average volume: {vol_stats['avg_volume']:.0f}")
-        print(f"Volume trend: {vol_stats['volume_trend']}")
+        print(f"Total volume: {vol_stats['total']:,}")
+        print(f"Average volume: {vol_stats['average']:.0f}")
+        print(f"Relative to average: {vol_stats['relative']:.1%}")
 
     await suite.disconnect()
 
 asyncio.run(volume_stats())
 ```
+
+### Session-filtered bars
+
+```python
+from project_x_py import TradingSuite, SessionConfig, SessionType
+
+async def session_bars():
+    suite = await TradingSuite.create(
+        ["MNQ"],
+        timeframes=["1min", "5min"],
+        session_config=SessionConfig(session_type=SessionType.RTH),
+    )
+    mnq = suite["MNQ"].data
+
+    # Bounded: copies under the read lock (default 2s), then filters.
+    # On timeout returns the last successful snapshot, or None.
+    rth = await mnq.get_session_data("1min", SessionType.RTH)
+    eth = await mnq.get_session_data("1min", SessionType.ETH, timeout=1.0)
+
+    await suite.disconnect()
+
+asyncio.run(session_bars())
+```
+
+`get_session_data()` will not hold the bar-cache lock while filtering, and it
+will not wait forever if a writer is stuck. Configure the defaults with
+`data_lock_timeout` and `session_data_timeout` on `DataManagerConfig`.
 
 ## Memory Management
 

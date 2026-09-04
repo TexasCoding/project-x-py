@@ -8,7 +8,13 @@ Author: TDD Implementation
 Date: 2025-08-28
 """
 
-from .config import DEFAULT_SESSIONS, SessionConfig, SessionTimes, SessionType
+from .config import (
+    DEFAULT_SESSIONS,
+    SessionConfig,
+    SessionTimes,
+    SessionType,
+    resolve_session_product,
+)
 from .filtering import SessionFilterMixin
 from .indicators import (
     aggregate_with_sessions,
@@ -28,6 +34,7 @@ __all__ = [
     "SessionTimes",
     "SessionType",
     "DEFAULT_SESSIONS",
+    "resolve_session_product",
     # Filtering
     "SessionFilterMixin",
     # Statistics

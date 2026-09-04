@@ -255,7 +255,8 @@ class MemoryManagementMixin(TaskManagerMixin):
             f"Buffer overflow detected for {timeframe}: {utilization:.1f}% utilization"
         )
 
-        # Trigger overflow alerts
+        # Trigger overflow alerts. Callbacks run on this task, so a nested
+        # data write_lock is re-entrant; get_data uses a bounded read timeout.
         for callback in self._overflow_alert_callbacks:
             try:
                 if asyncio.iscoroutinefunction(callback):
@@ -403,7 +404,6 @@ class MemoryManagementMixin(TaskManagerMixin):
         # Import here to avoid circular dependency
         from project_x_py.utils.lock_optimization import AsyncRWLock
 
-        # Use appropriate lock method based on lock type
         if isinstance(self.data_lock, AsyncRWLock):
             async with self.data_lock.write_lock():
                 await self._perform_cleanup()
