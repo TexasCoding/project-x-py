@@ -423,6 +423,8 @@ class RealtimeDataManager(
 
         # Initialize data storage
         self.data: dict[str, pl.DataFrame] = {}
+        self._last_data_snapshot: dict[str, pl.DataFrame] = {}
+        self._last_session_snapshot: dict[tuple[str, str], pl.DataFrame] = {}
 
         # Apply defaults which sets max_bars_per_timeframe etc.
         self._apply_config_defaults()
@@ -735,6 +737,9 @@ class RealtimeDataManager(
         self.cleanup_interval_minutes = self.config.get("cleanup_interval_minutes", 5)
         self.historical_data_cache = self.config.get("historical_data_cache", True)
         self.cache_expiry_hours = self.config.get("cache_expiry_hours", 24)
+        # Bounded lock waits so get_data / get_session_data cannot hang (#137)
+        self.data_lock_timeout = float(self.config.get("data_lock_timeout", 5.0))
+        self.session_data_timeout = float(self.config.get("session_data_timeout", 2.0))
 
         # Configuration for historical data loading
         self.default_initial_days = self.config.get("initial_days", 1)

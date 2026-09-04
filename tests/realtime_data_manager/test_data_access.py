@@ -908,9 +908,19 @@ class TestErrorHandling:
         manager = MockDataAccessManager()
         manager.data_lock = None  # Simulate missing lock
 
-        # Should handle missing lock gracefully (might use fallback or raise appropriate error)
-        with pytest.raises((AttributeError, TypeError)):
-            await manager.get_data("5min")
+        manager.data["5min"] = pl.DataFrame(
+            {
+                "timestamp": [datetime(2025, 1, 22, 9, 30, tzinfo=timezone.utc)],
+                "open": [19000.0],
+                "high": [19005.0],
+                "low": [18995.0],
+                "close": [19005.0],
+                "volume": [100],
+            }
+        )
+        result = await manager.get_data("5min")
+        assert result is not None
+        assert len(result) == 1
 
     @pytest.mark.asyncio
     async def test_handles_concurrent_modification_during_read(

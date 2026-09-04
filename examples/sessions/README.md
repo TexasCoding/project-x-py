@@ -41,8 +41,8 @@ suite = await TradingSuite.create(
     session_config=session_config
 )
 
-# Option 3: Default (BOTH - all trading hours)
-suite = await TradingSuite.create("MNQ")  # Uses BOTH by default
+# Option 3: Default (ETH — all hours except the maintenance break)
+suite = await TradingSuite.create("MNQ")  # SessionType.ETH by default
 ```
 
 ### Immediate Usage
@@ -72,9 +72,9 @@ if stats:
 ```python
 from project_x_py.sessions import SessionType
 
-SessionType.RTH   # Regular Trading Hours only
-SessionType.ETH   # Electronic Trading Hours only
-SessionType.BOTH  # All trading hours (default)
+SessionType.RTH     # Regular Trading Hours only
+SessionType.ETH     # Electronic Trading Hours (excludes maintenance)
+SessionType.CUSTOM  # Caller-supplied SessionTimes
 ```
 
 ### SessionConfig Options
@@ -84,7 +84,7 @@ from datetime import time
 
 # Basic configuration
 config = SessionConfig(
-    session_type=SessionType.RTH  # RTH, ETH, or BOTH
+    session_type=SessionType.RTH  # RTH, ETH, or CUSTOM
 )
 
 # Custom session times
@@ -773,7 +773,7 @@ elif stats.get('rth_volume', 0) == 0:
 ```python
 # Problem: Using all data instead of session-filtered
 mnq_context = suite["MNQ"]
-full_data = await mnq_context.data.get_data("5min")  # Contains BOTH sessions
+full_data = await mnq_context.data.get_data("5min")  # Unfiltered cache (RTH + ETH)
 
 if full_data is not None:
     wrong_sma = full_data.pipe(SMA, period=20)  # Uses all data
@@ -900,7 +900,7 @@ All existing code continues to work without changes. The session system is addit
 
 ```python
 # This still works exactly as before
-suite = await TradingSuite.create("MNQ")  # Uses BOTH (all hours) by default
+suite = await TradingSuite.create("MNQ")  # ETH by default (all hours except maintenance)
 mnq_context = suite["MNQ"]
 data = await mnq_context.data.get_data("5min")  # Returns all data
 

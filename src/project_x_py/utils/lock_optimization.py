@@ -17,6 +17,7 @@ Key Features:
     - Fine-grained locking strategies for reduced contention
     - Lock profiling and contention monitoring utilities
     - Timeout-based lock acquisition with deadlock prevention
+    - Writer preference so a waiting writer is not starved by new readers
     - Memory-efficient lock tracking and cleanup
 
 Performance Benefits:
@@ -24,7 +25,7 @@ Performance Benefits:
     - Improved parallelism for DataFrame read access
     - Sub-millisecond lock acquisition times
     - Lock-free updates for high-frequency data (10K+ ops/sec)
-    - Deadlock prevention through ordered lock acquisition
+    - Deadlock prevention through ordered lock acquisition and timeouts
 
 Components:
     - AsyncRWLock: High-performance read/write lock
@@ -77,7 +78,7 @@ Architecture Patterns:
     - Fine-grained locking: Per-resource locks instead of global locks
     - Lock ordering: Consistent acquisition order prevents deadlocks
     - Timeout-based acquisition: Prevents indefinite blocking
-    - Reader preference: Optimized for read-heavy workloads
+    - Writer preference: Waiting writers block new readers to avoid livelock
     - Lock-free fast paths: High-frequency operations bypass locks
 
 See Also:
@@ -121,33 +122,89 @@ class AsyncRWLock:
     """
     High-performance async read/write lock optimized for DataFrame operations.
 
-    Provides reader preference for read-heavy workloads common in financial data
-    processing. Multiple readers can acquire the lock concurrently, but writers
-    get exclusive access. Includes timeout support and contention monitoring.
+    Multiple readers can hold the lock concurrently. Writers get exclusive
+    access. Waiting writers block new readers (writer preference) so a
+    writer cannot be starved by a continuous stream of readers. Acquisition
+    is cancellable and supports timeouts.
 
     Key Features:
         - Multiple concurrent readers with single exclusive writer
-        - Reader preference for read-heavy workloads
+        - Writer preference to prevent reader livelock
         - Timeout support to prevent deadlocks
+        - Reentrant write lock for the owning task
         - Contention monitoring and statistics
-        - Memory-efficient implementation with weak references
-        - Deadlock prevention through ordered acquisition
-
-    Performance Characteristics:
-        - Read operations: O(1) acquisition time
-        - Write operations: Waits for all readers to complete
-        - Memory usage: ~100 bytes per lock instance
-        - Concurrent readers: Limited only by system resources
     """
 
     def __init__(self, name: str = "unnamed"):
         self.name = name
+        self._cond = asyncio.Condition()
         self._readers: WeakSet[asyncio.Task[Any]] = WeakSet()
-        self._writer_lock = asyncio.Lock()
         self._reader_count = 0
-        self._reader_count_lock = asyncio.Lock()
+        self._writer = False
+        self._writer_task: asyncio.Task[Any] | None = None
+        self._writer_depth = 0
+        self._waiting_writers = 0
         self._stats = LockStats()
         self._creation_time = time.time()
+
+    def _record_acquisition(self, start_time: float) -> None:
+        wait_time = (time.time() - start_time) * 1000
+        self._stats.total_acquisitions += 1
+        self._stats.total_wait_time_ms += wait_time
+        self._stats.max_wait_time_ms = max(self._stats.max_wait_time_ms, wait_time)
+        self._stats.min_wait_time_ms = min(self._stats.min_wait_time_ms, wait_time)
+        self._stats.last_acquisition = start_time
+        if wait_time > 1.0:
+            self._stats.contentions += 1
+
+    async def _acquire_read(self) -> None:
+        async with self._cond:
+            while self._writer or self._waiting_writers > 0:
+                await self._cond.wait()
+            self._reader_count += 1
+            current_task = asyncio.current_task()
+            if current_task:
+                self._readers.add(current_task)
+            self._stats.concurrent_readers = self._reader_count
+            self._stats.max_concurrent_readers = max(
+                self._stats.max_concurrent_readers, self._reader_count
+            )
+
+    async def _release_read(self) -> None:
+        async with self._cond:
+            self._reader_count = max(0, self._reader_count - 1)
+            current_task = asyncio.current_task()
+            if current_task and current_task in self._readers:
+                self._readers.discard(current_task)
+            self._stats.concurrent_readers = self._reader_count
+            if self._reader_count == 0:
+                self._cond.notify_all()
+
+    async def _acquire_write(self) -> None:
+        async with self._cond:
+            current = asyncio.current_task()
+            if self._writer and self._writer_task is current:
+                self._writer_depth += 1
+                return
+            self._waiting_writers += 1
+            try:
+                while self._writer or self._reader_count > 0:
+                    await self._cond.wait()
+                self._writer = True
+                self._writer_task = current
+                self._writer_depth = 1
+            finally:
+                self._waiting_writers -= 1
+
+    async def _release_write(self) -> None:
+        async with self._cond:
+            self._writer_depth -= 1
+            if self._writer_depth > 0:
+                return
+            self._writer = False
+            self._writer_task = None
+            self._writer_depth = 0
+            self._cond.notify_all()
 
     @asynccontextmanager
     async def read_lock(
@@ -157,7 +214,7 @@ class AsyncRWLock:
         Acquire read lock with optional timeout.
 
         Multiple readers can hold the lock simultaneously. Blocks if a writer
-        is waiting or has acquired the lock.
+        is active or waiting.
 
         Args:
             timeout: Maximum time to wait for lock acquisition (None = no timeout)
@@ -167,55 +224,18 @@ class AsyncRWLock:
 
         Raises:
             asyncio.TimeoutError: If timeout expires before acquiring lock
-
-        Example:
-            ```python
-            rw_lock = AsyncRWLock("dataframe_access")
-
-            async with rw_lock.read_lock(timeout=5.0):
-                # Multiple readers can execute this concurrently
-                data = dataframe.select(pl.col("close")).tail(100)
-                analysis = data.mean()
-            ```
         """
         start_time = time.time()
-
+        acquired = False
         try:
-            # Use timeout for reader count lock acquisition
-            if timeout:
+            if timeout is not None:
                 async with asyncio.timeout(timeout):
-                    async with self._reader_count_lock:
-                        self._reader_count += 1
-                        current_task = asyncio.current_task()
-                        if current_task:
-                            self._readers.add(current_task)
+                    await self._acquire_read()
             else:
-                async with self._reader_count_lock:
-                    self._reader_count += 1
-                    current_task = asyncio.current_task()
-                    if current_task:
-                        self._readers.add(current_task)
-
-                    # Update statistics
-                    self._stats.total_acquisitions += 1
-                    self._stats.concurrent_readers = self._reader_count
-                    self._stats.max_concurrent_readers = max(
-                        self._stats.max_concurrent_readers, self._reader_count
-                    )
-                    self._stats.last_acquisition = start_time
-
-            wait_time = (time.time() - start_time) * 1000  # Convert to ms
-
-            # Update wait time statistics
-            self._stats.total_wait_time_ms += wait_time
-            self._stats.max_wait_time_ms = max(self._stats.max_wait_time_ms, wait_time)
-            self._stats.min_wait_time_ms = min(self._stats.min_wait_time_ms, wait_time)
-
-            if wait_time > 1.0:  # Consider >1ms as contention
-                self._stats.contentions += 1
-
+                await self._acquire_read()
+            acquired = True
+            self._record_acquisition(start_time)
             yield
-
         except TimeoutError:
             self._stats.timeouts += 1
             logger.warning(
@@ -224,15 +244,11 @@ class AsyncRWLock:
             )
             raise
         finally:
-            # Always release the reader count
-            try:
-                async with self._reader_count_lock:
-                    self._reader_count = max(0, self._reader_count - 1)
-                    current_task = asyncio.current_task()
-                    if current_task and current_task in self._readers:
-                        self._readers.discard(current_task)
-            except Exception as e:
-                logger.error(f"Error releasing read lock for {self.name}: {e}")
+            if acquired:
+                try:
+                    await self._release_read()
+                except Exception as e:
+                    logger.error(f"Error releasing read lock for {self.name}: {e}")
 
     @asynccontextmanager
     async def write_lock(
@@ -243,6 +259,7 @@ class AsyncRWLock:
 
         Only one writer can hold the lock at a time, and no readers can access
         while a writer holds the lock. Waits for all existing readers to complete.
+        Re-entrant for the owning task.
 
         Args:
             timeout: Maximum time to wait for lock acquisition (None = no timeout)
@@ -252,68 +269,18 @@ class AsyncRWLock:
 
         Raises:
             asyncio.TimeoutError: If timeout expires before acquiring lock
-
-        Example:
-            ```python
-            async with rw_lock.write_lock(timeout=10.0):
-                # Exclusive access - no other readers or writers
-                dataframe = dataframe.with_columns(
-                    new_indicator=calculate_rsi(dataframe["close"])
-                )
-            ```
         """
         start_time = time.time()
-
+        acquired = False
         try:
-            # Acquire writer lock with timeout
-            if timeout:
+            if timeout is not None:
                 async with asyncio.timeout(timeout):
-                    async with self._writer_lock:
-                        # Wait for all readers to complete
-                        while self._reader_count > 0:
-                            await asyncio.sleep(0.001)  # Small delay to yield control
-
-                        wait_time = (time.time() - start_time) * 1000
-
-                        # Update statistics
-                        self._stats.total_acquisitions += 1
-                        self._stats.total_wait_time_ms += wait_time
-                        self._stats.max_wait_time_ms = max(
-                            self._stats.max_wait_time_ms, wait_time
-                        )
-                        self._stats.min_wait_time_ms = min(
-                            self._stats.min_wait_time_ms, wait_time
-                        )
-                        self._stats.last_acquisition = start_time
-
-                        if wait_time > 1.0:
-                            self._stats.contentions += 1
-
-                        yield
+                    await self._acquire_write()
             else:
-                async with self._writer_lock:
-                    # Wait for all readers to complete
-                    while self._reader_count > 0:
-                        await asyncio.sleep(0.001)  # Small delay to yield control
-
-                    wait_time = (time.time() - start_time) * 1000
-
-                    # Update statistics
-                    self._stats.total_acquisitions += 1
-                    self._stats.total_wait_time_ms += wait_time
-                    self._stats.max_wait_time_ms = max(
-                        self._stats.max_wait_time_ms, wait_time
-                    )
-                    self._stats.min_wait_time_ms = min(
-                        self._stats.min_wait_time_ms, wait_time
-                    )
-                    self._stats.last_acquisition = start_time
-
-                    if wait_time > 1.0:
-                        self._stats.contentions += 1
-
-                    yield
-
+                await self._acquire_write()
+            acquired = True
+            self._record_acquisition(start_time)
+            yield
         except TimeoutError:
             self._stats.timeouts += 1
             logger.warning(
@@ -321,6 +288,12 @@ class AsyncRWLock:
                 extra={"lock_name": self.name, "timeout": timeout},
             )
             raise
+        finally:
+            if acquired:
+                try:
+                    await self._release_write()
+                except Exception as e:
+                    logger.error(f"Error releasing write lock for {self.name}: {e}")
 
     async def get_stats(self) -> LockStats:
         """Get lock usage statistics."""

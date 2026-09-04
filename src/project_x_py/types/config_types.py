@@ -170,6 +170,8 @@ class DataManagerConfig(TypedDict):
     cache_expiry_hours: NotRequired[int]
     timezone: NotRequired[str]  # Timezone for timestamp handling
     initial_days: NotRequired[int]  # Initial days of historical data to load
+    data_lock_timeout: NotRequired[float]  # Seconds to wait for bar-cache read lock
+    session_data_timeout: NotRequired[float]  # Seconds for get_session_data (#137)
 
     # Dynamic resource management
     enable_dynamic_limits: NotRequired[bool]

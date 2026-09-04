@@ -102,6 +102,8 @@ import asyncio
 import logging
 import time
 from collections import deque
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -130,11 +132,75 @@ class DataAccessMixin:
         instrument: str
         session_filter: Any
         session_config: Any
+        data_lock_timeout: float
+        session_data_timeout: float
+        _last_data_snapshot: dict[str, pl.DataFrame]
+        _last_session_snapshot: dict[tuple[str, str], pl.DataFrame]
+
+    def _lock_timeout(
+        self, timeout: float | None, default_attr: str, fallback: float
+    ) -> float:
+        if timeout is not None:
+            return timeout
+        return float(getattr(self, default_attr, fallback))
+
+    @asynccontextmanager
+    async def _data_read(self, timeout: float | None = None) -> AsyncIterator[None]:
+        """Acquire the data read lock, falling back to a regular lock."""
+        from project_x_py.utils.lock_optimization import AsyncRWLock
+
+        rw = getattr(self, "data_rw_lock", None)
+        if isinstance(rw, AsyncRWLock):
+            async with rw.read_lock(timeout):
+                yield
+            return
+
+        lock = getattr(self, "data_lock", None)
+        if lock is None:
+            yield
+            return
+
+        if timeout is not None:
+            async with asyncio.timeout(timeout):
+                async with lock:
+                    yield
+            return
+
+        async with lock:
+            yield
+
+    def _slice_copied_frame(
+        self, timeframe: str, bars: int | None
+    ) -> pl.DataFrame | None:
+        if timeframe not in self.data:
+            return None
+        df = self.data[timeframe]
+        if not isinstance(df, pl.DataFrame):
+            return df
+        if bars is not None and len(df) > bars:
+            df = df.tail(bars)
+        return df.clone()
+
+    def _store_data_snapshot(self, timeframe: str, df: pl.DataFrame) -> None:
+        snapshots = getattr(self, "_last_data_snapshot", None)
+        if snapshots is None:
+            self._last_data_snapshot = {}
+            snapshots = self._last_data_snapshot
+        snapshots[timeframe] = df
+
+    def _store_session_snapshot(self, key: tuple[str, str], df: pl.DataFrame) -> None:
+        snapshots = getattr(self, "_last_session_snapshot", None)
+        if snapshots is None:
+            self._last_session_snapshot = {}
+            snapshots = self._last_session_snapshot
+        snapshots[key] = df
 
     async def get_data(
         self,
         timeframe: str = "5min",
         bars: int | None = None,
+        *,
+        timeout: float | None = None,
     ) -> pl.DataFrame | None:
         """
         Get OHLCV data for a specific timeframe.
@@ -197,34 +263,34 @@ class DataAccessMixin:
             - This method is thread-safe and can be called concurrently from multiple tasks
             - The returned DataFrame is a copy of the internal data and can be modified safely
             - For memory efficiency, specify the 'bars' parameter to limit the result size
+            - Lock acquisition is bounded (default 5s). On timeout the last successful
+              copy is returned when available, otherwise None.
         """
-        # Check for optimized read lock (AsyncRWLock) and use it for better parallelism
-        if hasattr(self, "data_rw_lock"):
-            try:
-                from project_x_py.utils.lock_optimization import AsyncRWLock
-
-                if isinstance(self.data_rw_lock, AsyncRWLock):
-                    async with self.data_rw_lock.read_lock():
-                        if timeframe not in self.data:
-                            return None
-
-                        df = self.data[timeframe]
-                        if bars is not None and len(df) > bars:
-                            return df.tail(bars)
-                        return df
-            except (ImportError, TypeError):
-                # Fall back to regular lock if AsyncRWLock not available or type check fails
-                pass
-
-        # Fallback to regular data_lock for backward compatibility
-        async with self.data_lock:  # type: ignore
-            if timeframe not in self.data:
+        lock_timeout = self._lock_timeout(timeout, "data_lock_timeout", 5.0)
+        try:
+            async with self._data_read(lock_timeout):
+                df = self._slice_copied_frame(timeframe, bars)
+        except TimeoutError:
+            logger.warning(
+                "get_data timed out after %.3ss waiting for %s (%s)",
+                lock_timeout,
+                timeframe,
+                getattr(self, "instrument", "?"),
+            )
+            snapshots = getattr(self, "_last_data_snapshot", {})
+            cached = snapshots.get(timeframe)
+            if cached is None:
                 return None
+            if bars is not None and len(cached) > bars:
+                return cached.tail(bars)
+            return cached
+        except (ImportError, TypeError):
+            async with self.data_lock:  # type: ignore[union-attr]
+                df = self._slice_copied_frame(timeframe, bars)
 
-            df = self.data[timeframe]
-            if bars is not None and len(df) > bars:
-                return df.tail(bars)
-            return df
+        if df is not None:
+            self._store_data_snapshot(timeframe, df)
+        return df
 
     async def get_current_price(self) -> float | None:
         """
@@ -312,18 +378,16 @@ class DataAccessMixin:
                     return float(frame["close"][-1])
             return None
 
-        if hasattr(self, "data_rw_lock"):
-            try:
-                from project_x_py.utils.lock_optimization import AsyncRWLock
-
-                if isinstance(self.data_rw_lock, AsyncRWLock):
-                    async with self.data_rw_lock.read_lock():
-                        return _read_close()
-            except (ImportError, TypeError):
-                pass
-
-        async with self.data_lock:  # type: ignore
-            return _read_close()
+        lock_timeout = self._lock_timeout(None, "data_lock_timeout", 5.0)
+        try:
+            async with self._data_read(lock_timeout):
+                return _read_close()
+        except TimeoutError:
+            logger.warning("Timed out copying latest bar close")
+            return None
+        except (ImportError, TypeError):
+            async with self.data_lock:  # type: ignore[union-attr]
+                return _read_close()
 
     async def _get_rest_fallback_price(self) -> float | None:
         """Use REST partial bars when the realtime tick feed is stale or empty."""
@@ -353,21 +417,16 @@ class DataAccessMixin:
             >>> for tf, data in mtf_data.items():
             ...     print(f"{tf}: {len(data)} bars")
         """
-        # Use optimized read lock if available
-        if hasattr(self, "data_rw_lock"):
-            try:
-                from project_x_py.utils.lock_optimization import AsyncRWLock
-
-                if isinstance(self.data_rw_lock, AsyncRWLock):
-                    async with self.data_rw_lock.read_lock():
-                        return {tf: df.clone() for tf, df in self.data.items()}
-            except (ImportError, TypeError):
-                # Fall back to regular lock if AsyncRWLock not available or type check fails
-                pass
-
-        # Fallback to regular lock
-        async with self.data_lock:  # type: ignore
-            return {tf: df.clone() for tf, df in self.data.items()}
+        lock_timeout = self._lock_timeout(None, "data_lock_timeout", 5.0)
+        try:
+            async with self._data_read(lock_timeout):
+                return {tf: df.clone() for tf, df in self.data.items()}
+        except TimeoutError:
+            logger.warning("get_mtf_data timed out after %.3ss", lock_timeout)
+            return {}
+        except (ImportError, TypeError):
+            async with self.data_lock:  # type: ignore[union-attr]
+                return {tf: df.clone() for tf, df in self.data.items()}
 
     async def get_latest_bars(
         self,
@@ -577,18 +636,14 @@ class DataAccessMixin:
             ...     # Safe to start trading logic
             ...     strategy.start()
         """
-        # Handle both Lock and AsyncRWLock types
+        lock_timeout = self._lock_timeout(None, "data_lock_timeout", 5.0)
         try:
-            from project_x_py.utils.lock_optimization import AsyncRWLock
-
-            if isinstance(self.data_lock, AsyncRWLock):
-                async with self.data_lock.read_lock():
-                    return await self._check_data_readiness(timeframe, min_bars)
-            else:
-                async with self.data_lock:
-                    return await self._check_data_readiness(timeframe, min_bars)
+            async with self._data_read(lock_timeout):
+                return await self._check_data_readiness(timeframe, min_bars)
+        except TimeoutError:
+            logger.warning("is_data_ready timed out after %.3ss", lock_timeout)
+            return False
         except (ImportError, TypeError):
-            # Fall back to regular lock if AsyncRWLock not available or type check fails
             async with self.data_lock:  # type: ignore[union-attr]
                 return await self._check_data_readiness(timeframe, min_bars)
 
@@ -679,14 +734,25 @@ class DataAccessMixin:
         return data
 
     async def get_session_data(
-        self, timeframe: str, session_type: Any
+        self,
+        timeframe: str,
+        session_type: Any = None,
+        *,
+        timeout: float | None = None,
     ) -> pl.DataFrame | None:
         """
         Get data filtered by specific trading session (RTH/ETH).
 
+        Copies bars under a bounded read lock, then filters after releasing
+        the lock so ``on_bar`` cannot stall behind a writer. On lock timeout
+        the last successful session snapshot is returned when one exists.
+
         Args:
             timeframe: Timeframe to retrieve data for (e.g., "1min", "5min")
-            session_type: SessionType enum value (RTH, ETH, or CUSTOM)
+            session_type: SessionType enum value (RTH, ETH, or CUSTOM).
+                Defaults to ``session_config.session_type`` when set, else ETH.
+            timeout: Seconds to wait for the data lock and filter. Defaults to
+                ``session_data_timeout`` (2.0s). Does not block forever.
 
         Returns:
             DataFrame containing only data from the specified session, or None if no data
@@ -700,28 +766,55 @@ class DataAccessMixin:
             eth_data = await manager.get_session_data("5min", SessionType.ETH)
             ```
         """
-        # Get all data for the timeframe
-        data = await self.get_data(timeframe)
-        if data is None or data.is_empty():
-            return None
-
-        # Apply session filtering if we have a session filter
-        if hasattr(self, "session_filter") and self.session_filter is not None:
-            from project_x_py.sessions import SessionType
-
-            filtered = await self.session_filter.filter_by_session(
-                data, session_type, self.instrument
-            )
-            return filtered if not filtered.is_empty() else None
-
-        # If no session filter configured, return all data for ETH, none for RTH
         from project_x_py.sessions import SessionType
+        from project_x_py.sessions.config import resolve_session_product
 
-        if session_type == SessionType.ETH:
-            return data
-        else:
-            # Without a filter, we can't determine RTH hours
+        lock_timeout = self._lock_timeout(timeout, "session_data_timeout", 2.0)
+        if session_type is None:
+            session_config = getattr(self, "session_config", None)
+            session_type = (
+                session_config.session_type
+                if session_config is not None
+                else SessionType.ETH
+            )
+        cache_key = (timeframe, str(session_type))
+
+        async def _load() -> pl.DataFrame | None:
+            data = await self.get_data(timeframe, timeout=lock_timeout)
+            if data is None or data.is_empty():
+                return None
+
+            if hasattr(self, "session_filter") and self.session_filter is not None:
+                product = resolve_session_product(str(self.instrument))
+                try:
+                    filtered = await self.session_filter.filter_by_session(
+                        data, session_type, product
+                    )
+                except ValueError as e:
+                    logger.warning("get_session_data filter failed: %s", e)
+                    return None
+                return filtered if not filtered.is_empty() else None
+
+            if session_type == SessionType.ETH:
+                return data
             return None
+
+        try:
+            async with asyncio.timeout(lock_timeout):
+                result = await _load()
+        except TimeoutError:
+            logger.warning(
+                "get_session_data timed out after %.3ss (%s %s)",
+                lock_timeout,
+                getattr(self, "instrument", "?"),
+                timeframe,
+            )
+            snapshots = getattr(self, "_last_session_snapshot", {})
+            return snapshots.get(cache_key)
+
+        if result is not None:
+            self._store_session_snapshot(cache_key, result)
+        return result
 
     async def get_session_statistics(self, timeframe: str) -> dict[str, Any]:
         """

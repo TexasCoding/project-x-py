@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The canonical changelog is the repository root [CHANGELOG.md](https://github.com/TexasCoding/project-x-py/blob/main/CHANGELOG.md). This page is a docs-site copy.
 
+## [4.2.1] - 2026-09-03
+
+`get_session_data()` no longer hangs when the bar cache is locked. Reads
+time out (default 2s) and return the last snapshot when one exists (#137).
+See the root CHANGELOG for the full list.
+
 ## [4.2.0] - 2026-08-31
 
 `get_bars()` pages the 20,000-bar Gateway cap and stitches expired months

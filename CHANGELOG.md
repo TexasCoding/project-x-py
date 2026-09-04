@@ -18,6 +18,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 None.
 
+## [4.2.1] - 2026-09-03
+
+### Fixed
+
+- `get_session_data()` / `get_data()` no longer wait forever on the bar-cache
+  lock. `AsyncRWLock` now actually blocks readers while a writer holds or is
+  waiting, write locks are re-entrant, and acquisition is cancellable. Session
+  reads copy bars under a bounded lock (default 2s) then filter after release.
+  On timeout the last successful snapshot is returned when one exists, else
+  `None`, so an `on_bar` handler cannot stall the event loop (#137).
+
+### Added
+
+- `get_session_data(..., timeout=)` and `get_data(..., timeout=)`. Defaults
+  come from `DataManagerConfig.session_data_timeout` (2.0s) and
+  `data_lock_timeout` (5.0s).
+- `resolve_session_product()` maps Gateway ids (`CON.F.US.MNQ.H26`) and
+  month codes (`MNQH26`) to session calendars. `session_type` on
+  `get_session_data()` is optional and defaults to `session_config`.
+
 ## [4.2.0] - 2026-08-31
 
 ### Added

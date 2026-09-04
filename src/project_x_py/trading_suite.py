@@ -248,6 +248,8 @@ class TradingSuiteConfig:
             "enable_level2_data": Features.ORDERBOOK in self.features,
             "data_validation": True,
             "auto_cleanup": True,
+            "data_lock_timeout": 5.0,
+            "session_data_timeout": 2.0,
             "enable_dynamic_limits": True,  # Enable dynamic resource limits by default
             "resource_config": {
                 "memory_target_percent": 15.0,  # Use 15% of available memory
@@ -1429,7 +1431,11 @@ class TradingSuite:
                 )
 
     async def get_session_data(
-        self, timeframe: str, session_type: SessionType | None = None
+        self,
+        timeframe: str,
+        session_type: SessionType | None = None,
+        *,
+        timeout: float | None = None,
     ) -> Any:
         """
         Get session-filtered market data.
@@ -1437,6 +1443,7 @@ class TradingSuite:
         Args:
             timeframe: Data timeframe (e.g., "1min", "5min")
             session_type: Optional session type override
+            timeout: Seconds to wait for the bar-cache lock (default 2.0)
 
         Returns:
             Polars DataFrame with session-filtered data
@@ -1447,11 +1454,15 @@ class TradingSuite:
             rth_data = await suite.get_session_data("1min", SessionType.RTH)
             ```
         """
+        timeout_kw: dict[str, float] = {}
+        if timeout is not None:
+            timeout_kw["timeout"] = timeout
+
         # Handle single instrument mode (backward compatibility)
         if self._is_single_instrument and self._single_context:
             if hasattr(self._single_context.data, "get_session_data"):
                 return await self._single_context.data.get_session_data(
-                    timeframe, session_type
+                    timeframe, session_type, **timeout_kw
                 )
             # Fallback to regular data if no session support
             return await self._single_context.data.get_data(timeframe)
@@ -1461,7 +1472,7 @@ class TradingSuite:
         for symbol, context in self._instruments.items():
             if hasattr(context.data, "get_session_data"):
                 result[symbol] = await context.data.get_session_data(
-                    timeframe, session_type
+                    timeframe, session_type, **timeout_kw
                 )
             else:
                 result[symbol] = await context.data.get_data(timeframe)

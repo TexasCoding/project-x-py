@@ -19,6 +19,7 @@ from project_x_py.sessions import (
     SessionFilterMixin,
     SessionTimes,
     SessionType,
+    resolve_session_product,
 )
 
 
@@ -715,6 +716,49 @@ class TestSessionFilterErrorRecovery:
 
         result = await session_filter.filter_by_session(data, SessionType.RTH, "ES")
         assert len(result) >= 0  # Should not crash
+
+
+@pytest.mark.unit
+class TestResolveSessionProduct:
+    """Map Gateway contract ids and month codes to DEFAULT_SESSIONS keys."""
+
+    def test_root_symbol_unchanged(self):
+        assert resolve_session_product("MNQ") == "MNQ"
+        assert resolve_session_product("ES") == "ES"
+
+    def test_gateway_contract_id(self):
+        assert resolve_session_product("CON.F.US.MNQ.H26") == "MNQ"
+        assert resolve_session_product("CON.F.US.MES.U26") == "MES"
+
+    def test_month_coded_symbol(self):
+        assert resolve_session_product("MNQH26") == "MNQ"
+        assert resolve_session_product("MESH26") == "MES"
+
+    @pytest.mark.asyncio
+    async def test_filter_accepts_contract_id(self):
+        session_filter = SessionFilterMixin()
+        data = pl.DataFrame(
+            {
+                "timestamp": [datetime(2024, 1, 15, 15, 0, tzinfo=timezone.utc)],
+                "open": [100.0],
+                "high": [101.0],
+                "low": [99.0],
+                "close": [100.5],
+                "volume": [1000],
+            }
+        )
+        result = await session_filter.filter_by_session(
+            data, SessionType.RTH, "CON.F.US.ES.H26"
+        )
+        assert len(result) == 1
+
+
+class TestSessionFilterErrorRecoveryContinued:
+    """Large-data recovery paths for SessionFilterMixin."""
+
+    @pytest.fixture
+    def session_filter(self):
+        return SessionFilterMixin()
 
     @pytest.mark.asyncio
     async def test_memory_pressure_handling(self, session_filter):
