@@ -94,13 +94,15 @@ async def session_setup():
     from datetime import time
 
     custom_config = SessionConfig(
-        session_type=SessionType.RTH,
-        session_times=SessionTimes(
-            rth_start=time(9, 0),
-            rth_end=time(15, 30),
-            eth_start=time(18, 0),
-            eth_end=time(17, 0)
-        )
+        session_type=SessionType.CUSTOM,
+        product_sessions={
+            "CL": SessionTimes(
+                rth_start=time(9, 0),
+                rth_end=time(15, 30),
+                eth_start=time(18, 0),
+                eth_end=time(17, 0),
+            )
+        },
     )
 
     custom_suite = await TradingSuite.create(

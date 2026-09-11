@@ -881,21 +881,26 @@ class MarketDataMixin:
         session_type: Any | None = None,
         session_config: Any | None = None,
         days: int = 1,
+        aggregate: str | bool | None = None,
+        include_partial: bool = True,
         **kwargs: Any,
     ) -> pl.DataFrame:
         """
-        Get historical bars filtered by trading session.
+        Get historical bars filtered or aggregated by trading session.
 
         Args:
             symbol: Instrument symbol
-            timeframe: Data timeframe (e.g., "1min", "5min")
+            timeframe: Source timeframe when not aggregating (e.g., "1min")
             session_type: Type of session to filter (RTH/ETH)
             session_config: Optional custom session configuration
             days: Number of days of data to fetch
+            aggregate: When ``"1d"`` / ``True``, fetch hourly bars and rebuild
+                exchange-aligned session candles via ``aggregate_session_bars``.
+            include_partial: Include the in-progress session when aggregating.
             **kwargs: Additional arguments for get_bars
 
         Returns:
-            Polars DataFrame with session-filtered bars
+            Polars DataFrame with session-filtered or session-aggregated bars
 
         Example:
             ```python
@@ -905,8 +910,43 @@ class MarketDataMixin:
             rth_bars = await client.get_session_bars(
                 "MNQ", session_type=SessionType.RTH, days=5
             )
+
+            # Rebuild TopstepX-aligned daily ETH candles from hourly bars
+            daily = await client.get_session_bars(
+                "MNQ", session_type=SessionType.ETH, days=20, aggregate="1d"
+            )
             ```
         """
+        from project_x_py.sessions import (
+            SessionConfig,
+            SessionFilterMixin,
+            aggregate_session_bars,
+        )
+
+        aggregate_interval: str | None
+        if aggregate is True:
+            aggregate_interval = "1d"
+        elif isinstance(aggregate, str):
+            aggregate_interval = aggregate
+        else:
+            aggregate_interval = None
+
+        if aggregate_interval is not None:
+            # 15-minute source bars keep RTH 09:30 and avoid folding the
+            # 16:00-17:00 ET hour into an RTH daily (#140).
+            bars = await self.get_bars(symbol, days=days, interval=15, unit=2, **kwargs)
+            config = session_config
+            if config is None and session_type is not None:
+                config = SessionConfig(session_type=session_type)
+            return aggregate_session_bars(
+                bars,
+                product=symbol,
+                interval=aggregate_interval,
+                session_type=session_type,
+                session_config=config,
+                include_partial=include_partial,
+            )
+
         # Parse timeframe to get interval
         interval = 1
         if timeframe == "1min":
@@ -925,11 +965,6 @@ class MarketDataMixin:
 
         # Apply session filtering if requested
         if session_type is not None or session_config is not None:
-            from project_x_py.sessions import (
-                SessionConfig,
-                SessionFilterMixin,
-            )
-
             # Use provided config or create one
             if session_config is None and session_type is not None:
                 session_config = SessionConfig(session_type=session_type)

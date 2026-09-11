@@ -1,6 +1,6 @@
 # Real-time Data Guide
 
-This guide covers comprehensive real-time data streaming using ProjectX Python SDK v3.5.7+. All real-time operations are fully asynchronous and provide high-performance WebSocket connectivity with automatic reconnection, memory management, and enhanced event forwarding for multi-instrument support.
+This guide covers comprehensive real-time data streaming using ProjectX Python SDK v4+. All real-time operations are fully asynchronous and provide high-performance WebSocket connectivity with automatic reconnection, memory management, and enhanced event forwarding for multi-instrument support.
 
 ## Overview
 
@@ -80,6 +80,18 @@ async def health_monitoring():
     await suite.disconnect()
 
 asyncio.run(health_monitoring())
+```
+
+`suite.data.get_health_score()` is the **data manager** score. WebSocket hub
+health is `await suite.realtime.get_health_status()`. As of v4.3.0 that
+score drops when a hub's `run()` task is finished or a heartbeat fails with
+`Connection is closed`; it no longer stays at 100 while both hubs are down.
+Closed-hub heartbeats also schedule reconnect. `list_accounts()` still raises
+`ProjectXConnectionError` after HTTP retries — catch it in a watchdog tick.
+
+```python
+status = await suite.realtime.get_health_status()
+print(status["health_score"], status["user_connected"], status["market_connected"])
 ```
 
 ## Real-time Data Access

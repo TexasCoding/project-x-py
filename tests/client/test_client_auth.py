@@ -1,6 +1,6 @@
 """Tests for the authentication functionality of ProjectX client."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -168,7 +168,9 @@ class TestClientAuth:
 
                 assert client._authenticated
                 assert client.username == "testuser"
-                assert client.api_key == "test-api-key-1234567890"  # pragma: allowlist secret
+                assert client.api_key == (
+                    "test-api-key-1234567890"  # pragma: allowlist secret
+                )
                 assert client.account_name == "TEST ACCOUNT"
 
     @pytest.mark.asyncio
@@ -205,6 +207,23 @@ class TestClientAuth:
         assert accounts[0].id == 12345
         assert accounts[1].name == "Secondary Account"
         assert accounts[1].id == 67890
+
+    @pytest.mark.asyncio
+    async def test_list_accounts_still_raises_connection_timeout(
+        self, initialized_client
+    ):
+        """Transport failure stays ProjectXConnectionError, not an empty account list."""
+        from project_x_py.exceptions import ProjectXConnectionError
+
+        client = initialized_client
+        client._authenticated = True
+        client._ensure_authenticated = AsyncMock()
+        client._make_request = AsyncMock(
+            side_effect=ProjectXConnectionError("ConnectTimeout")
+        )
+
+        with pytest.raises(ProjectXConnectionError, match="ConnectTimeout"):
+            await client.list_accounts()
 
     @pytest.mark.asyncio
     async def test_token_extraction(self, initialized_client, mock_auth_response):

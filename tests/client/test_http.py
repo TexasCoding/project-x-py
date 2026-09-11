@@ -1,6 +1,6 @@
 """Tests for the HTTP client functionality of ProjectX client."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -476,3 +476,72 @@ class TestHttpClient:
         health = await client.get_health_status()
 
         assert health["active_connections"] == 0
+
+    @pytest.mark.asyncio
+    async def test_shielded_connect_timeout_after_cancel_is_retrieved(
+        self, initialized_client
+    ):
+        """Issue #141: asyncio.shield must not leak an unretrieved ConnectTimeout."""
+        import asyncio
+
+        client = initialized_client
+        started = asyncio.Event()
+
+        async def slow_timeout(*_args, **_kwargs):
+            started.set()
+            await asyncio.sleep(0.05)
+            raise httpx.ConnectTimeout("")
+
+        client._client.request.side_effect = slow_timeout
+
+        leaked: list[BaseException] = []
+
+        def handler(
+            _loop: asyncio.AbstractEventLoop, context: dict[str, object]
+        ) -> None:
+            exc = context.get("exception")
+            if isinstance(exc, BaseException):
+                leaked.append(exc)
+
+        loop = asyncio.get_running_loop()
+        previous = loop.get_exception_handler()
+        loop.set_exception_handler(handler)
+        try:
+            task = asyncio.create_task(
+                client._make_request("POST", "/Account/search", data={})
+            )
+            await started.wait()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            await asyncio.sleep(0.15)
+            assert not any(isinstance(exc, httpx.TimeoutException) for exc in leaked)
+        finally:
+            loop.set_exception_handler(previous)
+
+    @pytest.mark.asyncio
+    async def test_shielded_success_after_cancel_closes_response(
+        self, initialized_client, mock_response
+    ):
+        """Orphaned successful responses must be closed so the pool is released."""
+        import asyncio
+
+        client = initialized_client
+        started = asyncio.Event()
+        response = mock_response(json_data={"ok": True})
+        response.close = MagicMock()
+
+        async def slow_ok(*_args, **_kwargs):
+            started.set()
+            await asyncio.sleep(0.05)
+            return response
+
+        client._client.request.side_effect = slow_ok
+
+        task = asyncio.create_task(client._make_request("GET", "/test/endpoint"))
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await asyncio.sleep(0.15)
+        response.close.assert_called()
