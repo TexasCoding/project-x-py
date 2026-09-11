@@ -927,5 +927,81 @@ class TestStaleFeedWatchdog:
         assert max_in_flight == 1
 
 
+@pytest.mark.asyncio
+class TestClosedHubHealthIssue141:
+    """Issue #141: health must not stay 100 when hubs are actually closed."""
+
+    async def test_health_score_not_perfect_when_both_flags_disconnected(
+        self, health_client
+    ):
+        health_client.user_connected = False
+        health_client.market_connected = False
+        health_client._last_health_score = 100.0
+
+        score = await health_client._calculate_health_score()
+
+        assert score < 70.0
+        assert score != 100.0
+
+    async def test_health_score_not_perfect_when_hub_run_tasks_are_done(
+        self, health_client
+    ):
+        class DoneTask:
+            def done(self) -> bool:
+                return True
+
+        health_client.user_connected = True
+        health_client.market_connected = True
+        health_client.user_connection._run_task = DoneTask()
+        health_client.market_connection._run_task = DoneTask()
+
+        score = await health_client._calculate_health_score()
+
+        assert score < 70.0
+
+    async def test_closed_heartbeat_marks_hub_disconnected(self, health_client):
+        health_client.user_connected = True
+        health_client.user_connection.ping = MagicMock(
+            side_effect=Exception("Connection is closed")
+        )
+        health_client._serialized_health_reconnect = AsyncMock(return_value=True)
+
+        await health_client._send_heartbeat("user")
+        await asyncio.sleep(0)
+
+        assert health_client._user_heartbeats_failed == 1
+        assert health_client.user_connected is False
+        health_client._serialized_health_reconnect.assert_awaited()
+
+    async def test_generic_heartbeat_error_does_not_flip_connected(self, health_client):
+        health_client.user_connected = True
+        health_client.user_connection.ping = MagicMock(
+            side_effect=Exception("cannot send heartbeat payload")
+        )
+        health_client._serialized_health_reconnect = AsyncMock(return_value=True)
+
+        await health_client._send_heartbeat("user")
+        await asyncio.sleep(0)
+
+        assert health_client.user_connected is True
+        health_client._serialized_health_reconnect.assert_not_awaited()
+
+    async def test_force_health_reconnect_recalculates_score_when_hubs_closed(
+        self, health_client
+    ):
+        health_client.user_connected = False
+        health_client.market_connected = False
+        health_client._last_health_score = 100.0
+        health_client.connect = AsyncMock(return_value=False)
+        health_client.disconnect = AsyncMock()
+        health_client._start_health_monitoring = AsyncMock()
+        health_client._stop_health_monitoring = AsyncMock()
+
+        success = await health_client.force_health_reconnect()
+
+        assert success is False
+        assert health_client._last_health_score < 100.0
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

@@ -96,8 +96,8 @@ custom_times = SessionTimes(
 )
 
 config = SessionConfig(
-    session_type=SessionType.RTH,
-    session_times=custom_times
+    session_type=SessionType.CUSTOM,
+    product_sessions={"MNQ": custom_times},
 )
 ```
 

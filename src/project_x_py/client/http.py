@@ -52,6 +52,7 @@ See Also:
 """
 
 import asyncio
+import contextlib
 import time
 from typing import TYPE_CHECKING, Any, TypeVar
 
@@ -158,7 +159,7 @@ class HttpMixin:
             verify=True,
             follow_redirects=False,
             headers={
-                "User-Agent": "ProjectX-Python-SDK/4.2.1",
+                "User-Agent": "ProjectX-Python-SDK/4.3.0",
                 "Accept": "application/json",
             },
         )
@@ -302,15 +303,38 @@ class HttpMixin:
             try:
                 # Shield the in-flight request so asyncio cancellation cannot
                 # double-release httpx/httpcore connection-pool semaphores (#85).
-                response = await asyncio.shield(
+                # Keep an explicit Task so a later ConnectTimeout is retrieved
+                # instead of becoming "Task exception was never retrieved" (#141).
+                request_task = asyncio.create_task(
                     client.request(
                         method=method,
                         url=url,
                         json=data,
                         params=params,
                         headers=request_headers,
-                    )
+                    ),
+                    name=f"http:{method}:{endpoint}",
                 )
+
+                def _cleanup_orphaned_request(
+                    task: asyncio.Task[Any],
+                ) -> None:
+                    if task.cancelled():
+                        return
+                    try:
+                        result = task.result()
+                    except Exception:
+                        return
+                    close = getattr(result, "close", None)
+                    if callable(close):
+                        with contextlib.suppress(Exception):
+                            close()
+
+                try:
+                    response = await asyncio.shield(request_task)
+                except asyncio.CancelledError:
+                    request_task.add_done_callback(_cleanup_orphaned_request)
+                    raise
             except asyncio.CancelledError:
                 raise
             except (

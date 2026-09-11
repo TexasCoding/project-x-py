@@ -8,6 +8,7 @@ Author: TDD Implementation
 Date: 2025-08-28
 """
 
+from .aggregation import aggregate_session_bars
 from .config import (
     DEFAULT_SESSIONS,
     SessionConfig,
@@ -37,6 +38,7 @@ __all__ = [
     "resolve_session_product",
     # Filtering
     "SessionFilterMixin",
+    "aggregate_session_bars",
     # Statistics
     "SessionStatistics",
     "SessionAnalytics",

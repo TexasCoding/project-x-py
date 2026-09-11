@@ -18,6 +18,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 None.
 
+## [4.3.0] - 2026-09-11
+
+### Added
+
+- `aggregate_session_bars()` rebuilds exchange-aligned session candles from
+  intraday Polars OHLCV. Overnight ETH bars map to the next trading date, the
+  daily maintenance break is dropped, Gateway ids resolve through
+  `resolve_session_product()`, and `is_partial` marks the in-progress session
+  (`include_partial=False` drops it). Use this instead of `get_bars(unit=4)`
+  when daily candles must match the TopstepX / CME session (#140).
+- `get_session_bars(..., aggregate="1d")` fetches 15-minute bars and returns
+  those session candles (keeps RTH 09:30). `aggregate=True` is the same as `"1d"`.
+
+### Fixed
+
+- Realtime `health_score` no longer stays `100` when both SignalR hubs are
+  closed. Heartbeats that fail with `Connection is closed` mark the hub
+  disconnected, dead `run()` tasks count as down, and
+  `force_health_reconnect` recalculates the score before logging (#141).
+- `asyncio.shield` around HTTP requests no longer leaks an unretrieved
+  `ConnectTimeout` after the caller is cancelled. A request that still
+  succeeds after cancel closes the orphaned ``httpx.Response`` (#141).
+- Heartbeats that fail with ``Connection is closed`` mark the hub down
+  **and** schedule ``force_health_reconnect``, so the stale-feed watchdog
+  is not left with nothing to watch (#141).
+- `list_accounts()` still raises ``ProjectXConnectionError`` after retries
+  (so outage is not confused with “no accounts”). Catch it in watchdog
+  ticks; do not let it cancel the parent task (#141).
+
 ## [4.2.1] - 2026-09-03
 
 ### Fixed

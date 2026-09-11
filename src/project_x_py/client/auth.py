@@ -326,6 +326,9 @@ class AuthenticationMixin:
 
         Raises:
             ProjectXError: If account listing fails
+            ProjectXConnectionError: If the Gateway is unreachable after retries.
+                Watchdog loops should catch this rather than letting it cancel
+                the parent task (#141).
 
         Example:
             >>> # V3: List all active accounts with detailed information

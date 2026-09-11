@@ -161,6 +161,39 @@ bars = await client.get_bars(
 # Expect a warning and data starting when the active month has 15-minute history.
 ```
 
+### Session-aligned daily bars
+
+Gateway `get_bars(..., unit=4)` daily candles are **not** guaranteed to
+match the CME session TopstepX charts use. Rebuild them from hourly bars:
+
+```python
+from project_x_py.sessions import SessionType, aggregate_session_bars
+
+async def session_daily_bars():
+    async with ProjectX.from_env() as client:
+        await client.authenticate()
+
+        # 15-minute bars keep RTH 09:30; hourly is also valid for ETH
+        intraday = await client.get_bars("MNQ", days=20, interval=15, unit=2)
+        daily = aggregate_session_bars(
+            intraday,
+            product="MNQ",
+            interval="1d",
+            session_type=SessionType.ETH,
+            include_partial=False,
+        )
+
+        # Same result via the client helper
+        daily = await client.get_session_bars(
+            "MNQ", session_type=SessionType.ETH, days=20, aggregate="1d"
+        )
+
+asyncio.run(session_daily_bars())
+```
+
+`get_session_bars` without `aggregate` still only **filters** existing bars
+by RTH/ETH. It does not change candle boundaries.
+
 ### Current Market Data
 
 The REST client does not have `get_current_price` / `get_market_snapshot`.

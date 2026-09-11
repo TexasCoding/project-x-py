@@ -1,7 +1,12 @@
 # Trading Sessions Guide
 
-!!! warning "Experimental Feature"
-    The ETH vs RTH Trading Sessions feature is experimental and has not been thoroughly tested with live market data. Use with caution in production environments. Session boundaries may need adjustment based on specific contract specifications.
+!!! note "Session calendars"
+    `DEFAULT_SESSIONS` times are **America/New_York**. Equity-index ETH is
+    18:00 previous day through 17:00 current day ET (17:00–16:00 CT) with a
+    17:00–18:00 ET maintenance break. Use `aggregate_session_bars()` (or
+    `get_session_bars(..., aggregate="1d")`) to rebuild daily candles that
+    match TopstepX. RTH/ETH *filtering* of live bars is calendar-sensitive —
+    verify against the contract you trade.
 
 ## Overview
 
@@ -12,6 +17,7 @@ The Trading Sessions module enables you to filter and analyze market data based 
 - **CUSTOM**: Caller-supplied `SessionTimes`
 
 This feature is particularly useful for:
+- Rebuilding daily candles that match the CME / TopstepX session (not Gateway `unit=4`)
 - Separating overnight volatility from regular session price action
 - Calculating session-specific technical indicators
 - Analyzing volume profiles by session type
@@ -94,10 +100,10 @@ custom_times = SessionTimes(
     eth_end=time(17, 0)      # 5:00 PM next day
 )
 
-# Use custom times in config
+# Use custom times in config (keyed by product root)
 custom_config = SessionConfig(
-    session_type=SessionType.RTH,
-    session_times=custom_times
+    session_type=SessionType.CUSTOM,
+    product_sessions={"ES": custom_times},
 )
 ```
 
@@ -250,18 +256,56 @@ alerts_data = await generate_session_alerts(data, conditions)
 # Adds 'alerts' column with triggered alert names
 ```
 
-### Time Aggregation with Sessions
+### Exchange-aligned daily session candles
+
+Gateway `get_bars(unit=4)` daily bars do **not** always match the CME
+session TopstepX charts use (equity-index Globex is 17:00–16:00
+America/Chicago, i.e. 18:00–17:00 America/New_York, with a 16:00–17:00
+CT / 17:00–18:00 ET maintenance break). Rebuild daily candles from
+intraday bars:
+
+```python
+from project_x_py.sessions import SessionType, aggregate_session_bars
+
+# 15-minute bars keep RTH 09:30; hourly is enough for ETH Globex
+intraday = await client.get_bars("MNQ", days=20, interval=15, unit=2)
+daily = aggregate_session_bars(
+    intraday,
+    product="MNQ",  # also accepts MNQH26 or CON.F.US.MNQ.U26
+    interval="1d",
+    session_type=SessionType.ETH,
+    include_partial=True,
+)
+# Columns: timestamp (session start), trading_date, session_start,
+# session_end, open, high, low, close, volume, is_partial
+complete = aggregate_session_bars(
+    intraday, product="MNQ", include_partial=False
+)
+```
+
+Or let the client fetch 15-minute bars and aggregate:
+
+```python
+daily = await client.get_session_bars(
+    "MNQ", session_type=SessionType.ETH, days=20, aggregate="1d"
+)
+```
+
+`aggregate_session_bars` is **synchronous**. Overnight bars belong to the
+next trading date. Maintenance-break bars are dropped. Short holiday
+sessions present in the intraday series are kept.
+
+### Intraday aggregation with session filtering
 
 ```python
 from project_x_py.sessions import aggregate_with_sessions
 
-# Aggregate 1-minute bars to 5-minute with session awareness
+# Filter to RTH, then bucket 1-minute bars into 5-minute candles
 aggregated = await aggregate_with_sessions(
     data,
     timeframe="5min",
     session_type=SessionType.RTH
 )
-# Ensures aggregation respects session boundaries
 ```
 
 ### Manual Session Filtering
@@ -552,16 +596,19 @@ logging.getLogger("project_x_py.sessions").setLevel(logging.DEBUG)
 
 ### Public Functions
 
-All functions are async and exported from `project_x_py.sessions`:
+Exported from `project_x_py.sessions` (and `project_x_py` for
+`aggregate_session_bars`):
 
-- `calculate_session_vwap()`: Session-aware VWAP
-- `calculate_anchored_vwap()`: Anchored VWAP calculations
-- `calculate_session_levels()`: High/low/open/close levels
-- `calculate_session_cumulative_volume()`: Cumulative volume
-- `calculate_relative_to_vwap()`: Price relative to VWAP
-- `calculate_percent_from_open()`: Percent change from open
-- `aggregate_with_sessions()`: Time-based aggregation
-- `generate_session_alerts()`: Alert generation system
+- `aggregate_session_bars()`: **Sync.** Rebuild session OHLCV candles from intraday bars
+- `calculate_session_vwap()`: Async session-aware VWAP
+- `calculate_anchored_vwap()`: Async anchored VWAP
+- `calculate_session_levels()`: Async high/low/range
+- `calculate_session_cumulative_volume()`: Async cumulative volume
+- `calculate_relative_to_vwap()`: Async price vs VWAP
+- `calculate_percent_from_open()`: Async percent from session open
+- `aggregate_with_sessions()`: Async RTH/ETH filter then 5/15-minute buckets
+- `generate_session_alerts()`: Async alert column
+- `resolve_session_product()`: Map Gateway ids / month codes to a session calendar key
 
 ## See Also
 

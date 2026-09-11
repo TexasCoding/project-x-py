@@ -510,6 +510,17 @@ class HealthMonitoringMixin:
                 self._market_heartbeats_failed += 1
 
             logger.error(f"{hub.title()} hub heartbeat failed: {e}")
+            if self._is_closed_connection_error(e):
+                if hub == "user":
+                    self.user_connected = False
+                else:
+                    self.market_connected = False
+                # Clearing the flag stops the stale-feed watchdog from
+                # seeing that hub. Schedule reconnect here (#141).
+                asyncio.get_running_loop().create_task(
+                    self._serialized_health_reconnect(),
+                    name=f"health_reconnect_{hub}",
+                )
 
         finally:
             # Clear pending flag
@@ -640,13 +651,15 @@ class HealthMonitoringMixin:
         Returns:
             True if reconnection successful
         """
+        health_score = await self._calculate_health_score()
+        self._last_health_score = health_score
         with LogContext(
             logger,
             operation="force_health_reconnect",
-            health_score=self._last_health_score,
+            health_score=health_score,
         ):
             logger.warning(
-                f"Forcing reconnection due to poor health: {self._last_health_score:.1f}"
+                f"Forcing reconnection due to poor health: {health_score:.1f}"
             )
 
             # Record connection failure
@@ -739,11 +752,13 @@ class HealthMonitoringMixin:
         - Heartbeat reliability (20% weight)
         - Event processing rate (10% weight)
         """
-        # Connection status score (40%)
+        # Connection status score (40%) — use live transport, not stale flags (#141)
+        user_live = self._hub_is_live("user")
+        market_live = self._hub_is_live("market")
         connection_score = 0.0
-        if self.user_connected and self.market_connected:
+        if user_live and market_live:
             connection_score = 100.0
-        elif self.user_connected or self.market_connected:
+        elif user_live or market_live:
             connection_score = 50.0
 
         # Latency score (30%)
@@ -765,8 +780,37 @@ class HealthMonitoringMixin:
 
         return round(health_score, 1)
 
+    def _hub_is_live(self, hub: str) -> bool:
+        """True when the hub flag is set and its SignalR run() task is still active."""
+        connected_attr = "user_connected" if hub == "user" else "market_connected"
+        if not bool(getattr(self, connected_attr, False)):
+            return False
+        conn_attr = "user_connection" if hub == "user" else "market_connection"
+        conn = getattr(self, conn_attr, None)
+        if conn is None:
+            return False
+        task = getattr(conn, "_run_task", None)
+        if task is None:
+            return True
+        done = getattr(task, "done", None)
+        if not callable(done):
+            return True
+        try:
+            finished = done()
+        except Exception:
+            return True
+        # Compare to True so MagicMock.done() in tests is not treated as dead.
+        return finished is not True
+
+    def _is_closed_connection_error(self, exc: BaseException) -> bool:
+        """True when a heartbeat failed because the websocket is already down."""
+        message = str(exc).lower()
+        return "connection is closed" in message or "websocket is closed" in message
+
     def _calculate_latency_score(self) -> float:
         """Calculate latency-based health score."""
+        if not self._hub_is_live("user") and not self._hub_is_live("market"):
+            return 0.0
         if not self._user_latencies and not self._market_latencies:
             return 100.0
 

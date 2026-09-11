@@ -3,7 +3,7 @@ ProjectX Python SDK for Trading Applications
 
 Author: @TexasCoding
 Date: 2026-08-29
-Version: 4.2.1 - get_session_data no longer hangs on bar-cache lock (#137)
+Version: 4.3.0 - session-aligned daily bars and reconnect health (#140, #141)
 
 Overview:
     A comprehensive Python SDK for the ProjectX Trading Platform Gateway API, providing
@@ -96,7 +96,7 @@ Architecture Benefits:
 It provides the infrastructure to help developers create their own trading applications
 that integrate with the ProjectX platform.
 
-Version: 4.2.1
+Version: 4.3.0
 Author: TexasCoding
 
 See Also:
@@ -109,7 +109,7 @@ See Also:
     - `utils`: Utility functions and calculations
 """
 
-__version__ = "4.2.1"
+__version__ = "4.3.0"
 __author__ = "TexasCoding"
 
 # Core client classes - renamed from Async* to standard names
@@ -207,6 +207,7 @@ from project_x_py.sessions import (
     SessionStatistics,
     SessionTimes,
     SessionType,
+    aggregate_session_bars,
     resolve_session_product,
 )
 from project_x_py.trading_suite import Features, TradingSuite, TradingSuiteConfig
@@ -254,6 +255,7 @@ __all__ = [
     "SessionType",
     "DEFAULT_SESSIONS",
     "resolve_session_product",
+    "aggregate_session_bars",
     "SessionFilterMixin",
     "SessionStatistics",
     "SessionAnalytics",
