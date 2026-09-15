@@ -94,6 +94,36 @@ status = await suite.realtime.get_health_status()
 print(status["health_score"], status["user_connected"], status["market_connected"])
 ```
 
+### Quote and depth coalescing (v4.3.1)
+
+Gateway quote and depth messages can arrive faster than callbacks can run,
+especially at the CME RTH open with an orderbook attached. Each SignalR
+message used to schedule its own `run_coroutine_threadsafe` task. That
+queue could grow without bound and delay data-manager tick processing, so
+`NEW_BAR` arrived late (or not at all) while a 1s heartbeat still looked
+healthy.
+
+As of v4.3.1 the realtime client keeps **one in-flight forward per
+contract** for `quote_update` and `market_depth`. Extra messages replace a
+pending slot (latest-wins) instead of enqueueing another task.
+
+| Event | Under load |
+|---|---|
+| `quote_update` | Latest payload per contract is delivered; intermediate quotes may be skipped |
+| `market_depth` | Latest payload per contract is delivered; intermediate depth rows may be skipped |
+| `market_trade` | **Never dropped** — required for volume / OHLC / `NEW_BAR` |
+| `order_update`, `position_update`, `account_update`, `trade_execution` | **Never dropped** |
+
+Dropped counts are on `suite.realtime.get_stats()` as
+`coalesced_quote_dropped` and `coalesced_depth_dropped`. Quotes are
+snapshots, so latest-wins is correct. Depth is per price level, so a flood
+may skip intermediate book updates until later rows or a reset arrive.
+
+```python
+stats = suite.realtime.get_stats()
+print(stats["coalesced_quote_dropped"], stats["coalesced_depth_dropped"])
+```
+
 ## Real-time Data Access
 
 ### Getting Bar Data

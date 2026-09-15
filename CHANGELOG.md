@@ -18,6 +18,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 None.
 
+## [4.3.1] - 2026-09-14
+
+### Fixed
+
+- Realtime `quote_update` and `market_depth` forwards are now latest-wins
+  coalesced per contract. At RTH open, an unbounded
+  `run_coroutine_threadsafe` queue of quote/depth tasks could fill the
+  asyncio loop and starve tick processing, so 1-minute `NEW_BAR` arrived
+  tens of seconds late (or not at all) while a 1s heartbeat still looked
+  healthy. Intermediate quote/depth payloads may be skipped under load;
+  `market_trade` (volume/OHLC) and user-hub events (orders, positions,
+  account, trade executions) are never dropped (#143).
+- Realtime `get_stats()` reports `coalesced_quote_dropped` and
+  `coalesced_depth_dropped`.
+
 ## [4.3.0] - 2026-09-11
 
 ### Added

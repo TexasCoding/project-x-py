@@ -27,9 +27,9 @@ A **high-performance async Python SDK** for the [ProjectX Trading Platform](http
 
 This Python SDK acts as a bridge between your trading strategies and the ProjectX platform, handling all the complex API interactions, data processing, and real-time connectivity.
 
-## 🚀 v4.3.0 - Session-aligned daily bars and honest reconnect health
+## 🚀 v4.3.1 - Coalesced quote/depth forwards so NEW_BAR is not starved
 
-**Latest Version**: v4.3.0 — `aggregate_session_bars()` rebuilds CME/TopstepX session candles from intraday OHLCV so ATR and daily charts match the exchange session, not Gateway `unit=4` midnight-ish bars (#140). Realtime health no longer reports 100 while both hubs are closed; closed-hub heartbeats trigger reconnect; cancelled HTTP requests no longer leak `ConnectTimeout` (#141).
+**Latest Version**: v4.3.1 — SignalR `quote_update` and `market_depth` forwards keep one in-flight task per contract and replace extras with the latest payload, so an RTH-open quote/depth flood cannot fill the asyncio queue and delay 1-minute `NEW_BAR` (#143). `market_trade` and user-hub events are never dropped. v4.3.0 added `aggregate_session_bars()` for CME/TopstepX session candles (#140) and honest reconnect health (#141).
 
 **Key changes**:
 - Official defaults: `https://api.topstepx.com` and `https://rtc.topstepx.com`
