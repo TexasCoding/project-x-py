@@ -873,10 +873,13 @@ class ConnectionManagementMixin:
         task_stats = {}
         if hasattr(self, "get_task_stats"):
             task_stats = self.get_task_stats()
+        dropped = getattr(self, "_coalesce_dropped", {})
         return {
             **self.stats,
             "user_connected": self.user_connected,
             "market_connected": self.market_connected,
             "subscribed_contracts": len(self._subscribed_contracts),
             "task_stats": task_stats,
+            "coalesced_quote_dropped": dropped.get("quote_update", 0),
+            "coalesced_depth_dropped": dropped.get("market_depth", 0),
         }

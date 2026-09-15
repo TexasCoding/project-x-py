@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The canonical changelog is the repository root [CHANGELOG.md](https://github.com/TexasCoding/project-x-py/blob/main/CHANGELOG.md). This page is a docs-site copy.
 
+## [4.3.1] - 2026-09-14
+
+Quote and depth SignalR forwards coalesce to the latest payload per
+contract so a quote/depth flood cannot starve `NEW_BAR`. Trades and
+user-hub events are not dropped (#143). See the root CHANGELOG for the
+full list.
+
 ## [4.3.0] - 2026-09-11
 
 `aggregate_session_bars()` rebuilds CME/TopstepX-aligned daily candles from

@@ -21,6 +21,7 @@ Event Handling Capabilities:
     - User events: Account, position, order, and trade updates
     - Market events: Quote, trade, and market depth data
     - Cross-thread event processing for SignalR compatibility
+    - Latest-wins coalescing for quote_update and market_depth (#143)
     - Callback registration and management
     - Event statistics and health monitoring
     - Error handling and recovery
@@ -68,6 +69,7 @@ See Also:
 """
 
 import asyncio
+import threading
 import time
 from collections.abc import Callable, Coroutine
 from concurrent.futures import CancelledError as FutureCancelledError
@@ -79,6 +81,10 @@ from project_x_py.utils.task_management import TaskManagerMixin
 
 if TYPE_CHECKING:
     import logging
+
+# Quotes are snapshots and depth is high-frequency; both may skip intermediate
+# payloads under load. Trades and user-hub events are never coalesced (#143).
+_COALESCE_EVENTS = frozenset({"quote_update", "market_depth"})
 
 
 class EventHandlingMixin(TaskManagerMixin):
@@ -102,6 +108,13 @@ class EventHandlingMixin(TaskManagerMixin):
         self._use_batching = False
         self._last_market_message: float = 0.0
         self._last_user_message: float = 0.0
+        self._coalesce_lock = threading.Lock()
+        self._coalesce_pending: dict[tuple[str, str], Any] = {}
+        self._coalesce_inflight: set[tuple[str, str]] = set()
+        self._coalesce_dropped: dict[str, int] = {
+            "quote_update": 0,
+            "market_depth": 0,
+        }
 
     async def add_callback(
         self,
@@ -354,16 +367,13 @@ class EventHandlingMixin(TaskManagerMixin):
 
         Event Data Format:
             Callbacks receive: {"contract_id": str, "data": quote_dict}
+
+        Note:
+            Quotes are snapshots. Under load, only the latest quote per
+            contract is forwarded (one in-flight task + pending slot).
         """
         self._mark_hub_message("market")
-        if self._use_batching and self._batched_handler and args:
-            # Use batched processing for high-frequency quotes
-            self._schedule_coroutine_threadsafe(
-                self._batched_handler.handle_quote(args[0]),
-                name="handle_quote",
-            )
-        else:
-            self._schedule_async_task("quote_update", args)
+        self._schedule_coalesced_event("quote_update", args)
 
     def _forward_market_trade(self, *args: Any) -> None:
         """
@@ -400,16 +410,14 @@ class EventHandlingMixin(TaskManagerMixin):
 
         Event Data Format:
             Callbacks receive: {"contract_id": str, "data": depth_dict}
+
+        Note:
+            Depth is high-frequency. Under load, only the latest payload per
+            contract is forwarded so quote/depth floods cannot starve
+            market_trade / NEW_BAR. Intermediate levels may be skipped.
         """
         self._mark_hub_message("market")
-        if self._use_batching and self._batched_handler and args:
-            # Use batched processing for depth updates
-            self._schedule_coroutine_threadsafe(
-                self._batched_handler.handle_depth(args[0]),
-                name="handle_depth",
-            )
-        else:
-            self._schedule_async_task("market_depth", args)
+        self._schedule_coalesced_event("market_depth", args)
 
     def _mark_hub_message(self, hub: str) -> None:
         """Record the last inbound message time for stale-feed detection."""
@@ -466,6 +474,77 @@ class EventHandlingMixin(TaskManagerMixin):
         future.add_done_callback(_log_task_error)
         return True
 
+    @staticmethod
+    def _market_contract_id(args: Any) -> str:
+        """Best-effort contract id used as the coalesce key."""
+        if not args:
+            return "unknown"
+        raw = args[0] if isinstance(args, list | tuple) else args
+        if isinstance(raw, list | tuple) and raw:
+            return str(raw[0])
+        if isinstance(raw, dict):
+            return str(
+                raw.get("contract_id")
+                or raw.get("symbol")
+                or raw.get("symbolId")
+                or "unknown"
+            )
+        return "unknown"
+
+    def _schedule_coalesced_event(self, event_type: str, data: Any) -> None:
+        """Keep one in-flight forward per (event, contract); extras keep latest."""
+        key = (event_type, self._market_contract_id(data))
+        start_drain = False
+        with self._coalesce_lock:
+            if key in self._coalesce_pending or key in self._coalesce_inflight:
+                self._coalesce_dropped[event_type] = (
+                    self._coalesce_dropped.get(event_type, 0) + 1
+                )
+            self._coalesce_pending[key] = data
+            if key not in self._coalesce_inflight:
+                self._coalesce_inflight.add(key)
+                start_drain = True
+
+        if not start_drain:
+            return
+
+        scheduled = self._schedule_coroutine_threadsafe(
+            self._drain_coalesced_event(key),
+            name=f"forward_{event_type}",
+        )
+        if not scheduled:
+            with self._coalesce_lock:
+                self._coalesce_inflight.discard(key)
+                self._coalesce_pending.pop(key, None)
+
+    async def _drain_coalesced_event(self, key: tuple[str, str]) -> None:
+        """Forward the latest pending payload until the slot is empty."""
+        event_type = key[0]
+        try:
+            while True:
+                with self._coalesce_lock:
+                    data = self._coalesce_pending.pop(key, None)
+                    if data is None:
+                        self._coalesce_inflight.discard(key)
+                        return
+                await self._dispatch_coalesced_payload(event_type, data)
+        except BaseException:
+            with self._coalesce_lock:
+                self._coalesce_inflight.discard(key)
+            raise
+
+    async def _dispatch_coalesced_payload(self, event_type: str, args: Any) -> None:
+        """Dispatch a coalesced quote/depth payload, honoring optional batching."""
+        if self._use_batching and self._batched_handler and args:
+            payload = args[0]
+            if event_type == "quote_update":
+                await self._batched_handler.handle_quote(payload)
+                return
+            if event_type == "market_depth":
+                await self._batched_handler.handle_depth(payload)
+                return
+        await self._forward_event_async(event_type, args)
+
     def _schedule_async_task(self, event_type: str, data: Any) -> None:
         """
         Schedule async task in the main event loop from any thread.
@@ -490,7 +569,12 @@ class EventHandlingMixin(TaskManagerMixin):
 
         Note:
             Critical for thread safety - ensures callbacks run in proper context.
+            quote_update and market_depth are coalesced so a quote/depth flood
+            cannot fill the asyncio queue and starve market_trade / NEW_BAR (#143).
         """
+        if event_type in _COALESCE_EVENTS:
+            self._schedule_coalesced_event(event_type, data)
+            return
         self._schedule_coroutine_threadsafe(
             self._forward_event_async(event_type, data),
             name=f"forward_{event_type}",
@@ -618,4 +702,7 @@ class EventHandlingMixin(TaskManagerMixin):
         await self._cleanup_tasks()  # Clean up all managed tasks
         async with self._callback_lock:
             self.callbacks.clear()
+        with self._coalesce_lock:
+            self._coalesce_pending.clear()
+            self._coalesce_inflight.clear()
         self.logger.info("✅ AsyncProjectXRealtimeClient cleanup completed")

@@ -69,6 +69,12 @@ class TestEventHandlingMixinInitialization:
         assert event_handler._batched_handler is None
         assert hasattr(event_handler, "_use_batching")
         assert event_handler._use_batching is False
+        assert event_handler._coalesce_dropped == {
+            "quote_update": 0,
+            "market_depth": 0,
+        }
+        assert event_handler._coalesce_pending == {}
+        assert event_handler._coalesce_inflight == set()
 
     def test_init_task_manager(self, event_handler):
         """Test that TaskManagerMixin is properly initialized."""
@@ -579,3 +585,294 @@ class TestEventHandlingIntegration:
         # Batching should be disabled
         assert event_handler._use_batching is False
         assert event_handler._batched_handler is None
+
+
+def _quote_args(contract: str, bid: float) -> tuple[list[object], ...]:
+    return ([contract, {"bid": bid, "ask": bid + 1.0}],)
+
+
+def _trade_args(
+    contract: str, price: float, volume: int = 1
+) -> tuple[list[object], ...]:
+    return ([contract, {"price": price, "volume": volume}],)
+
+
+def _depth_args(contract: str, price: float) -> tuple[list[object], ...]:
+    return ([contract, {"price": price, "volume": 1, "type": 1}],)
+
+
+class TestCoalescedMarketEventScheduling:
+    """#143: quote/depth floods must not starve trades, user events, or NEW_BAR."""
+
+    @pytest.mark.asyncio
+    async def test_quote_flood_delivers_first_and_latest_only(self, event_handler):
+        """A slow quote callback plus a flood must not enqueue every quote."""
+        received: list[float] = []
+        first_started = asyncio.Event()
+        release_first = asyncio.Event()
+
+        async def on_quote(data):
+            bid = data["data"]["bid"]
+            if not first_started.is_set():
+                first_started.set()
+                await release_first.wait()
+            received.append(bid)
+
+        await event_handler.add_callback("quote_update", on_quote)
+        event_handler._loop = asyncio.get_running_loop()
+
+        event_handler._forward_quote_update(*_quote_args("MNQ", 1.0))
+        await asyncio.wait_for(first_started.wait(), timeout=1.0)
+
+        for bid in range(2, 52):
+            event_handler._forward_quote_update(*_quote_args("MNQ", float(bid)))
+
+        release_first.set()
+        await asyncio.sleep(0.1)
+
+        assert received[0] == 1.0
+        assert received[-1] == 51.0
+        assert len(received) < 10
+        assert event_handler._coalesce_dropped["quote_update"] > 0
+
+    @pytest.mark.asyncio
+    async def test_depth_flood_is_bounded_per_contract(self, event_handler):
+        """market_depth must not spawn one loop task per SignalR row."""
+        received: list[float] = []
+        first_started = asyncio.Event()
+        release_first = asyncio.Event()
+
+        async def on_depth(data):
+            price = data["data"]["price"]
+            if not first_started.is_set():
+                first_started.set()
+                await release_first.wait()
+            received.append(price)
+
+        await event_handler.add_callback("market_depth", on_depth)
+        event_handler._loop = asyncio.get_running_loop()
+
+        event_handler._forward_market_depth(*_depth_args("MNQ", 1.0))
+        await asyncio.wait_for(first_started.wait(), timeout=1.0)
+
+        for price in range(2, 42):
+            event_handler._forward_market_depth(*_depth_args("MNQ", float(price)))
+
+        release_first.set()
+        await asyncio.sleep(0.1)
+
+        assert received[0] == 1.0
+        assert received[-1] == 41.0
+        assert len(received) < 10
+        assert event_handler._coalesce_dropped["market_depth"] > 0
+
+    @pytest.mark.asyncio
+    async def test_market_trade_is_never_dropped_during_quote_flood(
+        self, event_handler
+    ):
+        """OHLC/volume ticks must still be scheduled while quotes coalesce."""
+        trades: list[float] = []
+        quote_started = asyncio.Event()
+        hold_quotes = asyncio.Event()
+
+        async def on_quote(data):
+            quote_started.set()
+            await hold_quotes.wait()
+
+        async def on_trade(data):
+            trades.append(data["data"]["price"])
+
+        await event_handler.add_callback("quote_update", on_quote)
+        await event_handler.add_callback("market_trade", on_trade)
+        event_handler._loop = asyncio.get_running_loop()
+
+        event_handler._forward_quote_update(*_quote_args("MNQ", 1.0))
+        await asyncio.wait_for(quote_started.wait(), timeout=1.0)
+
+        for bid in range(2, 102):
+            event_handler._forward_quote_update(*_quote_args("MNQ", float(bid)))
+
+        for price in (100.0, 101.0, 102.0):
+            event_handler._forward_market_trade(*_trade_args("MNQ", price))
+
+        await asyncio.sleep(0.1)
+        hold_quotes.set()
+        await asyncio.sleep(0.05)
+
+        assert trades == [100.0, 101.0, 102.0]
+
+    @pytest.mark.asyncio
+    async def test_user_events_are_never_dropped_during_quote_flood(
+        self, event_handler
+    ):
+        """Orders and positions must not be coalesced or dropped."""
+        orders: list[int] = []
+        positions: list[int] = []
+        quote_started = asyncio.Event()
+        hold_quotes = asyncio.Event()
+
+        async def on_quote(data):
+            quote_started.set()
+            await hold_quotes.wait()
+
+        async def on_order(data):
+            orders.append(data["id"])
+
+        async def on_position(data):
+            positions.append(data["id"])
+
+        await event_handler.add_callback("quote_update", on_quote)
+        await event_handler.add_callback("order_update", on_order)
+        await event_handler.add_callback("position_update", on_position)
+        event_handler._loop = asyncio.get_running_loop()
+
+        event_handler._forward_quote_update(*_quote_args("MNQ", 1.0))
+        await asyncio.wait_for(quote_started.wait(), timeout=1.0)
+
+        for bid in range(2, 52):
+            event_handler._forward_quote_update(*_quote_args("MNQ", float(bid)))
+
+        for i in range(5):
+            event_handler._forward_order_update({"id": i})
+            event_handler._forward_position_update({"id": i})
+
+        await asyncio.sleep(0.1)
+        hold_quotes.set()
+        await asyncio.sleep(0.05)
+
+        assert orders == [0, 1, 2, 3, 4]
+        assert positions == [0, 1, 2, 3, 4]
+
+    @pytest.mark.asyncio
+    async def test_pending_latest_quote_flushes_after_inflight_completes(
+        self, event_handler
+    ):
+        """The latest quote parked while one is in-flight must still be delivered."""
+        received: list[float] = []
+        first_started = asyncio.Event()
+        release_first = asyncio.Event()
+
+        async def on_quote(data):
+            if not first_started.is_set():
+                first_started.set()
+                await release_first.wait()
+            received.append(data["data"]["bid"])
+
+        await event_handler.add_callback("quote_update", on_quote)
+        event_handler._loop = asyncio.get_running_loop()
+
+        event_handler._forward_quote_update(*_quote_args("MNQ", 10.0))
+        await asyncio.wait_for(first_started.wait(), timeout=1.0)
+        event_handler._forward_quote_update(*_quote_args("MNQ", 20.0))
+        event_handler._forward_quote_update(*_quote_args("MNQ", 30.0))
+
+        release_first.set()
+        await asyncio.sleep(0.1)
+
+        assert received == [10.0, 30.0]
+
+    @pytest.mark.asyncio
+    async def test_quote_coalesce_is_per_contract(self, event_handler):
+        """MNQ flood must not overwrite the latest MES quote."""
+        received: dict[str, list[float]] = {"MNQ": [], "MES": []}
+        mnq_started = asyncio.Event()
+        hold_mnq = asyncio.Event()
+
+        async def on_quote(data):
+            contract = data["contract_id"]
+            bid = data["data"]["bid"]
+            if contract == "MNQ" and not mnq_started.is_set():
+                mnq_started.set()
+                await hold_mnq.wait()
+            received[str(contract)].append(bid)
+
+        await event_handler.add_callback("quote_update", on_quote)
+        event_handler._loop = asyncio.get_running_loop()
+
+        event_handler._forward_quote_update(*_quote_args("MNQ", 1.0))
+        await asyncio.wait_for(mnq_started.wait(), timeout=1.0)
+
+        for bid in range(2, 22):
+            event_handler._forward_quote_update(*_quote_args("MNQ", float(bid)))
+
+        event_handler._forward_quote_update(*_quote_args("MES", 5000.0))
+        event_handler._forward_quote_update(*_quote_args("MES", 5001.0))
+
+        hold_mnq.set()
+        await asyncio.sleep(0.15)
+
+        assert received["MNQ"][0] == 1.0
+        assert received["MNQ"][-1] == 21.0
+        assert 5001.0 in received["MES"]
+        assert len(received["MES"]) <= 2
+
+    @pytest.mark.asyncio
+    async def test_slow_quote_callbacks_do_not_starve_market_trade(self, event_handler):
+        """NEW_BAR analogue: a trade scheduled after a quote flood must run promptly."""
+        trade_done = asyncio.Event()
+
+        async def on_quote(data):
+            await asyncio.sleep(0.05)
+
+        async def on_trade(data):
+            trade_done.set()
+
+        await event_handler.add_callback("quote_update", on_quote)
+        await event_handler.add_callback("market_trade", on_trade)
+        event_handler._loop = asyncio.get_running_loop()
+
+        for bid in range(40):
+            event_handler._forward_quote_update(*_quote_args("MNQ", float(bid)))
+
+        event_handler._forward_market_trade(*_trade_args("MNQ", 99.0))
+
+        await asyncio.wait_for(trade_done.wait(), timeout=1.0)
+
+    @pytest.mark.asyncio
+    async def test_batching_quote_path_is_also_coalesced(self, event_handler):
+        """enable_batching() must not schedule one handle_quote task per tick."""
+        handle_calls = {"n": 0}
+        original_enable = event_handler.enable_batching
+        original_enable()
+
+        real_handle = event_handler._batched_handler.handle_quote
+
+        async def counting_handle(data):
+            handle_calls["n"] += 1
+            await asyncio.sleep(0.05)
+            await real_handle(data)
+
+        event_handler._batched_handler.handle_quote = counting_handle
+        event_handler._loop = asyncio.get_running_loop()
+
+        for bid in range(30):
+            event_handler._forward_quote_update(*_quote_args("MNQ", float(bid)))
+
+        await asyncio.sleep(0.2)
+
+        assert handle_calls["n"] < 10
+        assert event_handler._coalesce_dropped["quote_update"] > 0
+
+    @pytest.mark.asyncio
+    async def test_cleanup_clears_coalesce_state(self, event_handler):
+        """After cleanup, a new quote must still be scheduled."""
+        received: list[float] = []
+
+        async def on_quote(data):
+            received.append(data["data"]["bid"])
+
+        await event_handler.add_callback("quote_update", on_quote)
+        event_handler._loop = asyncio.get_running_loop()
+
+        event_handler._forward_quote_update(*_quote_args("MNQ", 1.0))
+        await asyncio.sleep(0.05)
+        await event_handler.cleanup()
+
+        assert event_handler._coalesce_pending == {}
+        assert event_handler._coalesce_inflight == set()
+
+        await event_handler.add_callback("quote_update", on_quote)
+        event_handler._forward_quote_update(*_quote_args("MNQ", 2.0))
+        await asyncio.sleep(0.05)
+
+        assert 2.0 in received

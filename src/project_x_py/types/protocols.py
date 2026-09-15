@@ -637,6 +637,7 @@ class ProjectXRealtimeClientProtocol(Protocol):
     # Batching support (optimized)
     _batched_handler: Any | None  # OptimizedRealtimeHandler
     _use_batching: bool
+    _coalesce_dropped: dict[str, int]
 
     # Health monitoring attributes
     heartbeat_interval: float

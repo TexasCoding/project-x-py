@@ -7,8 +7,8 @@
 
 **project-x-py** is a high-performance **async Python SDK** for the [ProjectX Trading Platform](https://www.projectx.com/) Gateway API. This library enables developers to build sophisticated trading strategies and applications by providing comprehensive async access to futures trading operations, real-time market data, Level 2 orderbook analysis, and 64 named indicators (Polars implementations; **not** a full TA-Lib port).
 
-!!! note "Version 4.3.0"
-    **Latest Release**: TopstepX-only Gateway SDK (`api.topstepx.com` / `rtc.topstepx.com`) with native brackets, risk OCO and entry-order gating, stale-feed watchdog, `OrderSubmissionUncertainError`, and 64 named Polars indicators (not a full TA-Lib port). v4.3.0 adds `aggregate_session_bars()` for CME/TopstepX-aligned daily candles and fixes reconnect health scoring plus leaked HTTP `ConnectTimeout` (#140, #141). See the [v3 → v4 migration guide](migration/v3-to-v4.md).
+!!! note "Version 4.3.1"
+    **Latest Release**: TopstepX-only Gateway SDK (`api.topstepx.com` / `rtc.topstepx.com`) with native brackets, risk OCO and entry-order gating, stale-feed watchdog, `OrderSubmissionUncertainError`, and 64 named Polars indicators (not a full TA-Lib port). v4.3.1 coalesces `quote_update` / `market_depth` forwards so an RTH-open flood cannot starve `NEW_BAR` (#143). v4.3.0 added `aggregate_session_bars()` and reconnect health fixes (#140, #141). See the [v3 → v4 migration guide](migration/v3-to-v4.md).
 
 !!! note "Stable Production Release"
     This project maintains strict semantic versioning. v4.0.0 is a major release with documented breaking changes. Deprecation warnings are provided for at least 2 minor versions before removal.
