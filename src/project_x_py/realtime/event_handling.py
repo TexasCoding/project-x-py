@@ -111,6 +111,7 @@ class EventHandlingMixin(TaskManagerMixin):
         self._coalesce_lock = threading.Lock()
         self._coalesce_pending: dict[tuple[str, str], Any] = {}
         self._coalesce_inflight: set[tuple[str, str]] = set()
+        self._coalesce_generation: dict[tuple[str, str], int] = {}
         self._coalesce_dropped: dict[str, int] = {
             "quote_update": 0,
             "market_depth": 0,
@@ -476,53 +477,80 @@ class EventHandlingMixin(TaskManagerMixin):
 
     @staticmethod
     def _market_contract_id(args: Any) -> str:
-        """Best-effort contract id used as the coalesce key."""
+        """Best-effort contract id used as the coalesce key.
+
+        Live SignalR calls ``handler(*[contract_id, data])`` so ``args`` is
+        ``(contract_id, data)``. Packed ``([contract_id, data],)`` and dict
+        payloads are also accepted.
+        """
         if not args:
             return "unknown"
-        raw = args[0] if isinstance(args, list | tuple) else args
-        if isinstance(raw, list | tuple) and raw:
-            return str(raw[0])
-        if isinstance(raw, dict):
+        if not isinstance(args, list | tuple):
+            if isinstance(args, dict):
+                return str(
+                    args.get("contract_id")
+                    or args.get("symbol")
+                    or args.get("symbolId")
+                    or "unknown"
+                )
+            return "unknown"
+
+        first = args[0]
+        if len(args) >= 2 and isinstance(first, str | int):
+            return str(first)
+        if isinstance(first, list | tuple) and first:
+            return str(first[0])
+        if isinstance(first, dict):
             return str(
-                raw.get("contract_id")
-                or raw.get("symbol")
-                or raw.get("symbolId")
+                first.get("contract_id")
+                or first.get("symbol")
+                or first.get("symbolId")
                 or "unknown"
             )
+        if isinstance(first, str | int):
+            return str(first)
         return "unknown"
 
     def _schedule_coalesced_event(self, event_type: str, data: Any) -> None:
         """Keep one in-flight forward per (event, contract); extras keep latest."""
         key = (event_type, self._market_contract_id(data))
         start_drain = False
+        generation = 0
         with self._coalesce_lock:
-            if key in self._coalesce_pending or key in self._coalesce_inflight:
+            if key in self._coalesce_pending:
                 self._coalesce_dropped[event_type] = (
                     self._coalesce_dropped.get(event_type, 0) + 1
                 )
             self._coalesce_pending[key] = data
             if key not in self._coalesce_inflight:
                 self._coalesce_inflight.add(key)
+                generation = self._coalesce_generation.get(key, 0) + 1
+                self._coalesce_generation[key] = generation
                 start_drain = True
 
         if not start_drain:
             return
 
         scheduled = self._schedule_coroutine_threadsafe(
-            self._drain_coalesced_event(key),
+            self._drain_coalesced_event(key, generation),
             name=f"forward_{event_type}",
         )
         if not scheduled:
             with self._coalesce_lock:
-                self._coalesce_inflight.discard(key)
-                self._coalesce_pending.pop(key, None)
+                if self._coalesce_generation.get(key) == generation:
+                    self._coalesce_inflight.discard(key)
+                    self._coalesce_pending.pop(key, None)
 
-    async def _drain_coalesced_event(self, key: tuple[str, str]) -> None:
+    async def _drain_coalesced_event(
+        self, key: tuple[str, str], generation: int
+    ) -> None:
         """Forward the latest pending payload until the slot is empty."""
         event_type = key[0]
         try:
             while True:
                 with self._coalesce_lock:
+                    if self._coalesce_generation.get(key) != generation:
+                        return
                     data = self._coalesce_pending.pop(key, None)
                     if data is None:
                         self._coalesce_inflight.discard(key)
@@ -530,13 +558,14 @@ class EventHandlingMixin(TaskManagerMixin):
                 await self._dispatch_coalesced_payload(event_type, data)
         except BaseException:
             with self._coalesce_lock:
-                self._coalesce_inflight.discard(key)
+                if self._coalesce_generation.get(key) == generation:
+                    self._coalesce_inflight.discard(key)
             raise
 
     async def _dispatch_coalesced_payload(self, event_type: str, args: Any) -> None:
         """Dispatch a coalesced quote/depth payload, honoring optional batching."""
         if self._use_batching and self._batched_handler and args:
-            payload = args[0]
+            payload: Any = args[0] if len(args) == 1 else args
             if event_type == "quote_update":
                 await self._batched_handler.handle_quote(payload)
                 return
@@ -703,6 +732,8 @@ class EventHandlingMixin(TaskManagerMixin):
         async with self._callback_lock:
             self.callbacks.clear()
         with self._coalesce_lock:
+            for key in list(self._coalesce_generation):
+                self._coalesce_generation[key] += 1
             self._coalesce_pending.clear()
             self._coalesce_inflight.clear()
         self.logger.info("✅ AsyncProjectXRealtimeClient cleanup completed")

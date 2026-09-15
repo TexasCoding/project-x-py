@@ -587,18 +587,19 @@ class TestEventHandlingIntegration:
         assert event_handler._batched_handler is None
 
 
-def _quote_args(contract: str, bid: float) -> tuple[list[object], ...]:
-    return ([contract, {"bid": bid, "ask": bid + 1.0}],)
+def _quote_args(contract: str, bid: float) -> tuple[str, dict[str, float]]:
+    """Live SignalR form: handler(*[contract_id, data_dict])."""
+    return (contract, {"bid": bid, "ask": bid + 1.0})
 
 
 def _trade_args(
     contract: str, price: float, volume: int = 1
-) -> tuple[list[object], ...]:
-    return ([contract, {"price": price, "volume": volume}],)
+) -> tuple[str, dict[str, float | int]]:
+    return (contract, {"price": price, "volume": volume})
 
 
-def _depth_args(contract: str, price: float) -> tuple[list[object], ...]:
-    return ([contract, {"price": price, "volume": 1, "type": 1}],)
+def _depth_args(contract: str, price: float) -> tuple[str, dict[str, float | int]]:
+    return (contract, {"price": price, "volume": 1, "type": 1})
 
 
 class TestCoalescedMarketEventScheduling:
@@ -705,9 +706,11 @@ class TestCoalescedMarketEventScheduling:
     async def test_user_events_are_never_dropped_during_quote_flood(
         self, event_handler
     ):
-        """Orders and positions must not be coalesced or dropped."""
+        """Orders, positions, accounts, and executions must not be coalesced."""
         orders: list[int] = []
         positions: list[int] = []
+        accounts: list[int] = []
+        executions: list[int] = []
         quote_started = asyncio.Event()
         hold_quotes = asyncio.Event()
 
@@ -721,9 +724,17 @@ class TestCoalescedMarketEventScheduling:
         async def on_position(data):
             positions.append(data["id"])
 
+        async def on_account(data):
+            accounts.append(data["id"])
+
+        async def on_execution(data):
+            executions.append(data["id"])
+
         await event_handler.add_callback("quote_update", on_quote)
         await event_handler.add_callback("order_update", on_order)
         await event_handler.add_callback("position_update", on_position)
+        await event_handler.add_callback("account_update", on_account)
+        await event_handler.add_callback("trade_execution", on_execution)
         event_handler._loop = asyncio.get_running_loop()
 
         event_handler._forward_quote_update(*_quote_args("MNQ", 1.0))
@@ -735,6 +746,8 @@ class TestCoalescedMarketEventScheduling:
         for i in range(5):
             event_handler._forward_order_update({"id": i})
             event_handler._forward_position_update({"id": i})
+            event_handler._forward_account_update({"id": i})
+            event_handler._forward_trade_execution({"id": i})
 
         await asyncio.sleep(0.1)
         hold_quotes.set()
@@ -742,6 +755,8 @@ class TestCoalescedMarketEventScheduling:
 
         assert orders == [0, 1, 2, 3, 4]
         assert positions == [0, 1, 2, 3, 4]
+        assert accounts == [0, 1, 2, 3, 4]
+        assert executions == [0, 1, 2, 3, 4]
 
     @pytest.mark.asyncio
     async def test_pending_latest_quote_flushes_after_inflight_completes(
@@ -876,3 +891,50 @@ class TestCoalescedMarketEventScheduling:
         await asyncio.sleep(0.05)
 
         assert 2.0 in received
+
+    def test_market_contract_id_handles_live_and_packed_payloads(self, event_handler):
+        """Live SignalR unpacks [contract, data]; packed list/dict forms still key."""
+        cid = event_handler._market_contract_id
+        assert cid(("MNQ", {"bid": 1.0})) == "MNQ"
+        assert cid(("MES", {"price": 1.0})) == "MES"
+        assert cid((["MNQ", {"bid": 1.0}],)) == "MNQ"
+        assert cid(({"symbol": "MNQ", "bid": 1.0},)) == "MNQ"
+        assert cid(({"contract_id": "CON.F.US.MNQ.H26", "data": {}},)) == (
+            "CON.F.US.MNQ.H26"
+        )
+        assert cid(({"symbolId": "MNQ"},)) == "MNQ"
+        assert cid(()) == "unknown"
+
+    @pytest.mark.asyncio
+    async def test_packed_list_payload_still_coalesces_per_contract(
+        self, event_handler
+    ):
+        """Single-arg [contract, data] payloads (batching/tests) keep per-contract keys."""
+        received: dict[str, list[float]] = {"MNQ": [], "MES": []}
+        mnq_started = asyncio.Event()
+        hold_mnq = asyncio.Event()
+
+        async def on_quote(data):
+            contract = data["contract_id"]
+            bid = data["data"]["bid"]
+            if contract == "MNQ" and not mnq_started.is_set():
+                mnq_started.set()
+                await hold_mnq.wait()
+            received[str(contract)].append(bid)
+
+        await event_handler.add_callback("quote_update", on_quote)
+        event_handler._loop = asyncio.get_running_loop()
+
+        event_handler._forward_quote_update(["MNQ", {"bid": 1.0, "ask": 2.0}])
+        await asyncio.wait_for(mnq_started.wait(), timeout=1.0)
+        for bid in range(2, 12):
+            event_handler._forward_quote_update(
+                ["MNQ", {"bid": float(bid), "ask": float(bid) + 1.0}]
+            )
+        event_handler._forward_quote_update(["MES", {"bid": 5000.0, "ask": 5001.0}])
+        hold_mnq.set()
+        await asyncio.sleep(0.15)
+
+        assert received["MNQ"][0] == 1.0
+        assert received["MNQ"][-1] == 11.0
+        assert 5000.0 in received["MES"]
