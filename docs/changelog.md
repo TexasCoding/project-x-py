@@ -9,11 +9,14 @@ The canonical changelog is the repository root [CHANGELOG.md](https://github.com
 
 ## [Unreleased]
 
+## [4.3.2] - 2026-09-26
+
 `RealtimeDataManager.cleanup()` no longer sweeps bounded-statistics
 counters at teardown. In-session `CleanupScheduler` cleanup is unchanged,
 and `TradingSuite.disconnect()` still joins SignalR hub receive tasks
-before freeing per-instrument data (#98). See the root CHANGELOG for the
-full note.
+before freeing per-instrument data (#98). Lockfile pins anyio 4.14.2
+(#146). CI uses `softprops/action-gh-release` v3 (#139). See the root
+CHANGELOG for the full note.
 
 ## [4.3.1] - 2026-09-14
 

@@ -27,11 +27,9 @@ A **high-performance async Python SDK** for the [ProjectX Trading Platform](http
 
 This Python SDK acts as a bridge between your trading strategies and the ProjectX platform, handling all the complex API interactions, data processing, and real-time connectivity.
 
-## 🚀 v4.3.1 - Coalesced quote/depth forwards so NEW_BAR is not starved
+## 🚀 v4.3.2 - Skip bounded-stats sweep on data manager teardown
 
-**Latest Version**: v4.3.1 — SignalR `quote_update` and `market_depth` forwards keep one in-flight task per contract and replace extras with the latest payload, so an RTH-open quote/depth flood cannot fill the asyncio queue and delay 1-minute `NEW_BAR` (#143). `market_trade` and user-hub events are never dropped. v4.3.0 added `aggregate_session_bars()` for CME/TopstepX session candles (#140) and honest reconnect health (#141).
-
-**Unreleased**: `TradingSuite.disconnect()` still stops both SignalR hubs and joins each hub receive task before per-instrument bars are freed. `RealtimeDataManager.cleanup()` no longer runs a bounded-statistics counter sweep at teardown; in-session `CleanupScheduler` cleanup is unchanged (#98).
+**Latest Version**: v4.3.2 — `RealtimeDataManager.cleanup()` no longer sweeps bounded-statistics counters at teardown. In-session `CleanupScheduler` cleanup is unchanged, and `TradingSuite.disconnect()` still joins SignalR hub receive tasks before freeing per-instrument data (#98). v4.3.1 coalesces `quote_update` / `market_depth` forwards so an RTH-open flood cannot starve `NEW_BAR` (#143). v4.3.0 added `aggregate_session_bars()` for CME/TopstepX session candles (#140) and honest reconnect health (#141).
 
 **Key changes**:
 - Official defaults: `https://api.topstepx.com` and `https://rtc.topstepx.com`

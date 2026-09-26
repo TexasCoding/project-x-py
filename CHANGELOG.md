@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.2] - 2026-09-26
+
 ### Fixed
 
 - `RealtimeDataManager.cleanup()` no longer sweeps bounded-statistics
@@ -27,6 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TradingSuite.disconnect()` already awaits `realtime.disconnect()` —
   which stops both hubs and joins each hub `run()` task — before
   per-instrument data and orderbook cleanup (since v4.0.0).
+
+### Changed
+
+- GitHub release workflow uses `softprops/action-gh-release` v3 (CI only) (#139).
+
+### Dependencies
+
+- Lockfile pins `anyio` 4.14.2 (was 4.10.0, security group) (#146).
 
 ## [4.3.1] - 2026-09-14
 
