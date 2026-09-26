@@ -31,6 +31,8 @@ This Python SDK acts as a bridge between your trading strategies and the Project
 
 **Latest Version**: v4.3.1 — SignalR `quote_update` and `market_depth` forwards keep one in-flight task per contract and replace extras with the latest payload, so an RTH-open quote/depth flood cannot fill the asyncio queue and delay 1-minute `NEW_BAR` (#143). `market_trade` and user-hub events are never dropped. v4.3.0 added `aggregate_session_bars()` for CME/TopstepX session candles (#140) and honest reconnect health (#141).
 
+**Unreleased**: `TradingSuite.disconnect()` still stops both SignalR hubs and joins each hub receive task before per-instrument bars are freed. `RealtimeDataManager.cleanup()` no longer runs a bounded-statistics counter sweep at teardown; in-session `CleanupScheduler` cleanup is unchanged (#98).
+
 **Key changes**:
 - Official defaults: `https://api.topstepx.com` and `https://rtc.topstepx.com`
 - Native Gateway brackets on `place_order()`, plus REST fill reconciliation

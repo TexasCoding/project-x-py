@@ -1141,20 +1141,28 @@ class RealtimeDataManager(
             self.logger.error(f"❌ Error stopping real-time feed: {e}")
 
     async def cleanup(self) -> None:
-        """
-        Clean up resources when shutting down.
+        """Clean up resources when shutting down.
+
+        Stops the feed and the in-session bounded-statistics scheduler, then
+        drops cached bars and ticks. It does not sweep bounded counters.
+        Those counters are discarded with the manager, and a teardown sweep
+        reads shared state for no benefit (#98). Periodic cleanup via
+        ``CleanupScheduler`` is unchanged while the manager is running.
 
         Example:
             >>> await manager.cleanup()
         """
         await self.stop_realtime_feed()
 
-        # Cleanup bounded statistics if enabled
-        if self.use_bounded_statistics:
+        # Stop the periodic scheduler without sweeping counters.
+        # cleanup_bounded_statistics() calls _cleanup_counters() ->
+        # get_statistics(), another concurrent reader during teardown (#98).
+        scheduler = getattr(self, "_cleanup_scheduler", None)
+        if scheduler is not None:
             try:
-                await self.cleanup_bounded_statistics()
+                await scheduler.stop()
             except Exception as e:
-                self.logger.error(f"Error cleaning up bounded statistics: {e}")
+                self.logger.error(f"Error stopping bounded statistics scheduler: {e}")
 
         # Handle both Lock and AsyncRWLock types
         if isinstance(self.data_lock, AsyncRWLock):

@@ -634,6 +634,14 @@ async def order_lifecycle():
 
 ### Lifecycle Management
 
+`disconnect()` awaits `realtime.disconnect()` before it cleans up each
+instrument context. That hub stop cancels and joins the user and market
+`run()` tasks, so per-instrument bar and orderbook cleanup does not race
+the receive loop. Callbacks and subscription lists on the realtime client
+are left in place. Data-manager teardown stops the bounded-statistics
+scheduler without a final counter sweep; periodic in-session cleanup is
+unchanged.
+
 ### Context Manager (Recommended)
 
 ```python

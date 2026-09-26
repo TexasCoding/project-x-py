@@ -814,12 +814,14 @@ class TestCleanupAndResourceManagement:
 
         with (
             patch.object(manager, "stop_realtime_feed") as mock_stop_feed,
-            patch.object(manager, "cleanup_bounded_statistics") as mock_cleanup_stats,
+            patch.object(
+                manager, "_cleanup_counters", new_callable=AsyncMock
+            ) as mock_sweep,
         ):
             await manager.cleanup()
 
             mock_stop_feed.assert_called_once()
-            mock_cleanup_stats.assert_called_once()
+            mock_sweep.assert_not_called()
 
             # Verify data cleared
             assert len(manager.data) == 0
@@ -828,20 +830,18 @@ class TestCleanupAndResourceManagement:
 
     @pytest.mark.asyncio
     async def test_cleanup_bounded_statistics_error(self):
-        """Test handling of bounded statistics cleanup errors."""
+        """Scheduler stop errors are logged and do not abort frame cleanup."""
         project_x = Mock(spec=ProjectXBase)
         realtime_client = Mock(spec=ProjectXRealtimeClient)
 
         manager = RealtimeDataManager("MNQ", project_x, realtime_client)
         manager.use_bounded_statistics = True
+        manager._cleanup_scheduler.stop = AsyncMock(
+            side_effect=Exception("Cleanup failed")
+        )
 
         with (
             patch.object(manager, "stop_realtime_feed"),
-            patch.object(
-                manager,
-                "cleanup_bounded_statistics",
-                side_effect=Exception("Cleanup failed"),
-            ),
             patch.object(manager, "logger") as mock_logger,
         ):
             # Should not raise exception
