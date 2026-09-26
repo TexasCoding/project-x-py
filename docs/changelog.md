@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The canonical changelog is the repository root [CHANGELOG.md](https://github.com/TexasCoding/project-x-py/blob/main/CHANGELOG.md). This page is a docs-site copy.
 
+## [Unreleased]
+
+`RealtimeDataManager.cleanup()` no longer sweeps bounded-statistics
+counters at teardown. In-session `CleanupScheduler` cleanup is unchanged,
+and `TradingSuite.disconnect()` still joins SignalR hub receive tasks
+before freeing per-instrument data (#98). See the root CHANGELOG for the
+full note.
+
 ## [4.3.1] - 2026-09-14
 
 Quote and depth SignalR forwards coalesce to the latest payload per

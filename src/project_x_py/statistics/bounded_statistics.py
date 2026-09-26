@@ -909,11 +909,12 @@ class BoundedStatisticsMixin:
         # Circular buffers automatically handle cleanup through maxlen
 
     async def cleanup_bounded_statistics(self) -> None:
-        """
-        Manually trigger cleanup of all bounded statistics.
+        """Manually sweep bounded statistics and stop the periodic scheduler.
 
-        This method can be called to force immediate cleanup, typically
-        during component shutdown or when memory pressure is detected.
+        Forces an immediate counter sweep, then stops ``CleanupScheduler``.
+        ``RealtimeDataManager.cleanup()`` does not call this: at teardown the
+        counters are discarded, and the sweep is another reader of shared
+        state (#98). Call this for an explicit mid-session sweep.
         """
         try:
             await self._cleanup_counters()

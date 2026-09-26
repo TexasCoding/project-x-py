@@ -511,6 +511,13 @@ latest = data.tail(1)  # May fail if data is None
 
 ### Resource Cleanup
 
+`suite.disconnect()` stops the shared SignalR hubs and joins each hub
+receive task before it frees per-instrument bars. `RealtimeDataManager.cleanup()`
+drops those bars and stops the in-session bounded-statistics scheduler. It
+does not run a final counter sweep; the counters are discarded with the
+manager. While the feed is running, `CleanupScheduler` still expires
+counters on its interval.
+
 ```python
 # ✅ Good: Always cleanup
 try:

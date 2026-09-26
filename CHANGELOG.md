@@ -16,7 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-None.
+### Fixed
+
+- `RealtimeDataManager.cleanup()` no longer sweeps bounded-statistics
+  counters during teardown (#98). That sweep called `get_statistics()` on
+  counters that are about to be discarded and was another concurrent
+  reader of shared state while the manager shut down. The in-session
+  `CleanupScheduler` still runs that sweep on its interval and is stopped,
+  without a final sweep, when the data manager cleans up.
+  `TradingSuite.disconnect()` already awaits `realtime.disconnect()` —
+  which stops both hubs and joins each hub `run()` task — before
+  per-instrument data and orderbook cleanup (since v4.0.0).
 
 ## [4.3.1] - 2026-09-14
 
