@@ -19,16 +19,13 @@ Key Features:
 import gc
 import io
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any
 
 import lz4.frame
 import polars as pl
 from cachetools import TTLCache
 
 from project_x_py.models import Instrument
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +81,8 @@ class CacheMixin:
         """
         self._cache_ttl = value
         # Recreate caches with new TTL
-        self._opt_instrument_cache = TTLCache(maxsize=1000, ttl=value)
-        self._opt_market_data_cache = TTLCache(maxsize=10000, ttl=value)
+        self._opt_instrument_cache = TTLCache[str, Instrument](maxsize=1000, ttl=value)
+        self._opt_market_data_cache = TTLCache[str, bytes](maxsize=10000, ttl=value)
 
     def _serialize_dataframe(self, df: pl.DataFrame) -> bytes:
         """
@@ -174,7 +171,7 @@ class CacheMixin:
             Cached instrument or None if not found or expired.
         """
         cache_key = symbol.upper()
-        instrument = cast(Instrument | None, self._opt_instrument_cache.get(cache_key))
+        instrument = self._opt_instrument_cache.get(cache_key)
         if instrument:
             self.cache_hit_count += 1
             return instrument

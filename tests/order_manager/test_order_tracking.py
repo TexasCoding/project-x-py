@@ -717,8 +717,17 @@ class TestOrderTrackingMixin:
         assert om._order_ttl_seconds == 1800
         assert om._cleanup_interval == 150
 
-        # Should have kept most recent 3 orders
+        # Should have kept most recent 3 orders with typed cache values intact
+        assert isinstance(om.tracked_orders, TTLCache)
+        assert isinstance(om.order_status_cache, TTLCache)
+        assert om.tracked_orders.maxsize == 3
+        assert om.order_status_cache.maxsize == 3
         assert len(om.tracked_orders) <= 3
+        assert len(om.order_status_cache) <= 3
+        assert all(
+            isinstance(order_data, dict) for order_data in om.tracked_orders.values()
+        )
+        assert all(isinstance(status, int) for status in om.order_status_cache.values())
 
     def test_clear_order_tracking(self, mock_order_manager):
         """Test clearing all tracking data."""

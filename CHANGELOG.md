@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Dependencies
+
+- Bump `cachetools` from 6.1.0 to 7.2.0 (requires `>=7.1.7`). Runtime
+  use remains `TTLCache` only; typing updated for cachetools 7 stubs
+  (#119).
+
 ## [4.3.2] - 2026-09-26
 
 ### Fixed
