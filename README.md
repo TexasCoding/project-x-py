@@ -27,9 +27,9 @@ A **high-performance async Python SDK** for the [ProjectX Trading Platform](http
 
 This Python SDK acts as a bridge between your trading strategies and the ProjectX platform, handling all the complex API interactions, data processing, and real-time connectivity.
 
-## 🚀 v4.3.2 - Skip bounded-stats sweep on data manager teardown
+## 🚀 v4.3.3 - cachetools 7 runtime dependency
 
-**Latest Version**: v4.3.2 — `RealtimeDataManager.cleanup()` no longer sweeps bounded-statistics counters at teardown. In-session `CleanupScheduler` cleanup is unchanged, and `TradingSuite.disconnect()` still joins SignalR hub receive tasks before freeing per-instrument data (#98). v4.3.1 coalesces `quote_update` / `market_depth` forwards so an RTH-open flood cannot starve `NEW_BAR` (#143). v4.3.0 added `aggregate_session_bars()` for CME/TopstepX session candles (#140) and honest reconnect health (#141).
+**Latest Version**: v4.3.3 — runtime `cachetools` is 7.2.0 (`>=7.1.7`). Use remains `TTLCache` only, with typing updated for cachetools 7 stubs (#150, #119). v4.3.2 skips the bounded-statistics counter sweep in `RealtimeDataManager.cleanup()` (#98). v4.3.1 coalesces `quote_update` / `market_depth` forwards so an RTH-open flood cannot starve `NEW_BAR` (#143).
 
 **Key changes**:
 - Official defaults: `https://api.topstepx.com` and `https://rtc.topstepx.com`

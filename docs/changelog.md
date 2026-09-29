@@ -9,6 +9,12 @@ The canonical changelog is the repository root [CHANGELOG.md](https://github.com
 
 ## [Unreleased]
 
+## [4.3.3] - 2026-09-29
+
+Runtime `cachetools` is 7.2.0 (`>=7.1.7`). Use remains `TTLCache` only;
+typing updated for cachetools 7 stubs (#150, #119). See the root
+CHANGELOG for the full note.
+
 ## [4.3.2] - 2026-09-26
 
 `RealtimeDataManager.cleanup()` no longer sweeps bounded-statistics
