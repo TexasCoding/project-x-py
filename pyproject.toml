@@ -41,7 +41,7 @@ dependencies = [
     "pyyaml>=6.0.2",
     "orjson>=3.11.6",
     "lz4>=4.4.4",
-    "cachetools>=6.1.0",
+    "cachetools>=7.1.7",
     "deprecated>=1.2.18",
 ]
 

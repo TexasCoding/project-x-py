@@ -1364,18 +1364,20 @@ class OrderTrackingMixin:
                 old_tracked = dict(self.tracked_orders)
                 old_status = dict(self.order_status_cache)
 
-                self.tracked_orders = TTLCache(
+                self.tracked_orders = TTLCache[str, dict[str, Any]](
                     maxsize=max_tracked_orders, ttl=self._order_ttl_seconds
                 )
-                self.order_status_cache = TTLCache(
+                self.order_status_cache = TTLCache[str, int](
                     maxsize=max_tracked_orders, ttl=self._order_ttl_seconds
                 )
 
                 # Restore data up to new limit
-                for key, value in list(old_tracked.items())[-max_tracked_orders:]:
-                    self.tracked_orders[key] = value
-                for key, value in list(old_status.items())[-max_tracked_orders:]:
-                    self.order_status_cache[key] = value
+                for order_id, order_data in list(old_tracked.items())[
+                    -max_tracked_orders:
+                ]:
+                    self.tracked_orders[order_id] = order_data
+                for order_id, status in list(old_status.items())[-max_tracked_orders:]:
+                    self.order_status_cache[order_id] = status
 
             if order_ttl_seconds is not None:
                 self._order_ttl_seconds = order_ttl_seconds
