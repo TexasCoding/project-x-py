@@ -39,7 +39,7 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from types import TracebackType
 from typing import Any, cast
@@ -152,7 +152,7 @@ class InstrumentContext:
         return await self.event_bus.wait_for(event, timeout)
 
 
-class Features(str, Enum):
+class Features(StrEnum):
     """Available feature flags for TradingSuite.
 
     Working flags: ``ORDERBOOK``, ``RISK_MANAGER``.
