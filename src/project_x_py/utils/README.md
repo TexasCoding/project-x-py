@@ -65,8 +65,8 @@ from project_x_py.utils import calculate_tick_value, round_to_tick_size
 # Calculate dollar value of price movement
 tick_value = calculate_tick_value(
     price_change=0.5,  # 5 tick move
-    tick_size=0.1,     # MGC tick size
-    tick_value=1.0     # $1 per tick
+    tick_size=0.1,  # MGC tick size
+    tick_value=1.0,  # $1 per tick
 )  # Returns: 5.0
 
 # Round price to valid tick
@@ -79,10 +79,7 @@ from project_x_py.orderbook import MarketAnalytics
 import polars as pl
 
 # Analyze spread from historical data
-data = pl.DataFrame({
-    "bid": [100.0, 100.1, 100.2],
-    "ask": [100.2, 100.3, 100.4]
-})
+data = pl.DataFrame({"bid": [100.0, 100.1, 100.2], "ask": [100.2, 100.3, 100.4]})
 
 # Use static method for DataFrame analysis
 spread_stats = MarketAnalytics.analyze_dataframe_spread(data)

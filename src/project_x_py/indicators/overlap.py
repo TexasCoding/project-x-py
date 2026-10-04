@@ -381,10 +381,11 @@ class WMA(OverlapIndicator):
         wma = (
             data[column]
             .rolling_map(
-                lambda x: sum(v * w for v, w in zip(x, weights, strict=False))
-                / weight_sum
-                if len(x) == period
-                else None,
+                lambda x: (
+                    sum(v * w for v, w in zip(x, weights, strict=False)) / weight_sum
+                    if len(x) == period
+                    else None
+                ),
                 window_size=period,
             )
             .alias(f"wma_{period}")
