@@ -9,6 +9,14 @@ The canonical changelog is the repository root [CHANGELOG.md](https://github.com
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-10-04
+
+`Features` is now an `enum.StrEnum`. `str()` and f-strings return the
+member value (for example `"orderbook"`) instead of `"Features.ORDERBOOK"`.
+Equality with strings, `.value`, and JSON serialization are unchanged
+(#155). `src/` formats under ruff 0.16. See the root CHANGELOG for the
+full note.
+
 ## [4.3.3] - 2026-09-29
 
 Runtime `cachetools` is 7.2.0 (`>=7.1.7`). Use remains `TTLCache` only;

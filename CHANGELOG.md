@@ -16,13 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-10-04
+
 ### Changed
 
 - `Features` is now an `enum.StrEnum`. `str(Features.X)` and f-strings return
   the value (e.g. `"orderbook"`) instead of `"Features.X"`. Equality with
   strings, `.value`, and JSON serialization are unchanged. `src/` also
   formats under ruff 0.16 (`overlap.py` WMA lambda, Python fences in
-  `utils/README.md`), which unblocks Dependabot #154.
+  `utils/README.md`), which clears the ruff 0.16 lint in Dependabot #154.
 
 ## [4.3.3] - 2026-09-29
 
