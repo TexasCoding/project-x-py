@@ -159,7 +159,7 @@ class HttpMixin:
             verify=True,
             follow_redirects=False,
             headers={
-                "User-Agent": "ProjectX-Python-SDK/4.3.3",
+                "User-Agent": "ProjectX-Python-SDK/4.4.0",
                 "Accept": "application/json",
             },
         )

@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-10-04
+
 ### Changed
 
 - `Features` is now an `enum.StrEnum`. `str(Features.X)` and f-strings return
