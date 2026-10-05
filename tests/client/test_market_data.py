@@ -2,7 +2,7 @@
 
 import datetime
 import time
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import polars as pl
 import pytest
@@ -955,3 +955,87 @@ class TestMarketData:
 
                 assert time_based_key in client._opt_market_data_cache
                 assert days_based_key not in client._opt_market_data_cache
+
+
+class TestGetSessionStatistics:
+    """Session VWAP / volume totals from get_session_statistics."""
+
+    @pytest.mark.asyncio
+    async def test_session_vwap_is_volume_weighted(self, initialized_client):
+        """VWAP is sum(close * volume) / sum(volume), returned as float."""
+        bars = pl.DataFrame(
+            {
+                "timestamp": [
+                    datetime.datetime(
+                        2024, 1, 15, 14, 30, tzinfo=datetime.timezone.utc
+                    ),
+                    datetime.datetime(
+                        2024, 1, 15, 14, 31, tzinfo=datetime.timezone.utc
+                    ),
+                ],
+                "open": [100.0, 200.0],
+                "high": [101.0, 201.0],
+                "low": [99.0, 199.0],
+                "close": [100.0, 200.0],
+                "volume": [1, 3],
+            }
+        )
+        initialized_client.get_session_bars = AsyncMock(return_value=bars)
+
+        stats = await initialized_client.get_session_statistics("MNQ")
+
+        assert stats["session_volume"] == 4
+        assert isinstance(stats["session_volume"], int)
+        assert stats["session_vwap"] == 175.0
+        assert isinstance(stats["session_vwap"], float)
+        assert stats["session_high"] == 201.0
+        assert stats["session_low"] == 99.0
+        assert stats["session_range"] == 102.0
+
+    @pytest.mark.asyncio
+    async def test_session_statistics_empty_bars(self, initialized_client):
+        """Empty session bars return None VWAP and zero volume."""
+        empty = pl.DataFrame(
+            schema={
+                "timestamp": pl.Datetime(time_zone="UTC"),
+                "open": pl.Float64,
+                "high": pl.Float64,
+                "low": pl.Float64,
+                "close": pl.Float64,
+                "volume": pl.Int64,
+            }
+        )
+        initialized_client.get_session_bars = AsyncMock(return_value=empty)
+
+        stats = await initialized_client.get_session_statistics("MNQ")
+
+        assert stats["session_high"] is None
+        assert stats["session_low"] is None
+        assert stats["session_volume"] == 0
+        assert stats["session_vwap"] is None
+        assert stats["session_range"] is None
+
+    @pytest.mark.asyncio
+    async def test_session_vwap_zero_volume_is_none(self, initialized_client):
+        """Zero total volume skips VWAP (None) rather than dividing by zero."""
+        bars = pl.DataFrame(
+            {
+                "timestamp": [
+                    datetime.datetime(2024, 1, 15, 14, 30, tzinfo=datetime.timezone.utc)
+                ],
+                "open": [4900.0],
+                "high": [4910.0],
+                "low": [4895.0],
+                "close": [4905.0],
+                "volume": [0],
+            }
+        )
+        initialized_client.get_session_bars = AsyncMock(return_value=bars)
+
+        stats = await initialized_client.get_session_statistics("MNQ")
+
+        assert stats["session_volume"] == 0
+        assert stats["session_vwap"] is None
+        assert stats["session_high"] == 4910.0
+        assert stats["session_low"] == 4895.0
+        assert stats["session_range"] == 15.0

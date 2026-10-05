@@ -601,6 +601,30 @@ class TestSessionStatisticsEdgeCases:
         # Should return 0.0 to avoid division by zero
         assert result == 0.0
 
+    def test_calculate_vwap_volume_weighted_average(self, stats):
+        """Test _calculate_vwap uses volume weighting, not a simple mean."""
+        data = pl.DataFrame({
+            "close": [100.0, 200.0],
+            "volume": [1, 3],
+        })
+
+        result = stats._calculate_vwap(data)
+
+        # (100*1 + 200*3) / (1+3) = 175; simple mean would be 150
+        assert result == 175.0
+        assert isinstance(result, float)
+
+    def test_calculate_vwap_single_bar_equals_close(self, stats):
+        """Test _calculate_vwap of a single bar equals that bar's close."""
+        data = pl.DataFrame({
+            "close": [4905.25],
+            "volume": [10000],
+        })
+
+        result = stats._calculate_vwap(data)
+        assert result == 4905.25
+        assert isinstance(result, float)
+
     def test_calculate_volume_precision(self, stats):
         """Test _calculate_volume handles large numbers correctly."""
         large_volume_df = pl.DataFrame({

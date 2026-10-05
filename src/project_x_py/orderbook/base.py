@@ -661,12 +661,16 @@ class OrderBookBase(BaseStatisticsTracker):
                     else []
                 )
 
-                # Calculate totals
-                total_bid_volume = bids["volume"].sum() if not bids.is_empty() else 0
-                total_ask_volume = asks["volume"].sum() if not asks.is_empty() else 0
+                # Polars 1.44 types Series.sum() as int | float | Decimal
+                total_bid_volume = (
+                    int(bids["volume"].sum() or 0) if not bids.is_empty() else 0
+                )
+                total_ask_volume = (
+                    int(asks["volume"].sum() or 0) if not asks.is_empty() else 0
+                )
 
                 # Calculate imbalance
-                imbalance = None
+                imbalance: float | None = None
                 if total_bid_volume > 0 or total_ask_volume > 0:
                     imbalance = (total_bid_volume - total_ask_volume) / (
                         total_bid_volume + total_ask_volume

@@ -126,12 +126,13 @@ class SessionStatistics:
             return 0.0
 
         # VWAP = sum(price * volume) / sum(volume)
-        total_volume = data["volume"].sum()
+        # Polars 1.44 types Series.sum() as int | float | Decimal
+        total_volume = float(data["volume"].sum() or 0)
         if total_volume == 0:
             return 0.0
 
-        vwap_numerator = (data["close"] * data["volume"]).sum()
-        return float(vwap_numerator / total_volume)
+        vwap_numerator = float((data["close"] * data["volume"]).sum() or 0)
+        return vwap_numerator / total_volume
 
 
 class SessionAnalytics:
