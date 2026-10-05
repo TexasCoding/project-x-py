@@ -1151,15 +1151,15 @@ class MarketDataMixin:
             if low_val is not None and isinstance(low_val, int | float)
             else 0.0
         )
-        session_volume = int(bars["volume"].sum())
+        session_volume = int(bars["volume"].sum() or 0)
 
-        # Calculate VWAP
+        # Calculate VWAP. Polars 1.44 types Series.sum() as int | float | Decimal.
         bars_with_pv = bars.with_columns(
             [(pl.col("close") * pl.col("volume")).alias("price_volume")]
         )
-        total_pv = bars_with_pv["price_volume"].sum()
-        total_volume = bars_with_pv["volume"].sum()
-        session_vwap = float(total_pv / total_volume) if total_volume > 0 else None
+        total_pv = float(bars_with_pv["price_volume"].sum() or 0)
+        total_volume = float(bars_with_pv["volume"].sum() or 0)
+        session_vwap = total_pv / total_volume if total_volume > 0 else None
 
         return {
             "session_high": session_high,

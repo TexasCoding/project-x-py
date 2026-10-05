@@ -435,6 +435,54 @@ class TestOrderBookDataOperations:
         assert snapshot["total_ask_volume"] == 0
 
     @pytest.mark.asyncio
+    async def test_get_orderbook_snapshot_bids_only(self, orderbook_base):
+        """One-sided book (empty asks) reports full bid imbalance as 1.0."""
+        ob = orderbook_base
+        timestamp = datetime.now(ob.timezone)
+
+        async with ob.orderbook_lock:
+            ob.orderbook_bids = pl.DataFrame({
+                "price": [21000.0, 20999.75],
+                "volume": [10, 5],
+                "timestamp": [timestamp, timestamp],
+            })
+            ob.last_orderbook_update = timestamp
+
+        snapshot = await ob.get_orderbook_snapshot(levels=2)
+
+        assert snapshot["total_bid_volume"] == 15
+        assert snapshot["total_ask_volume"] == 0
+        assert snapshot["asks"] == []
+        assert snapshot["imbalance"] == 1.0
+        assert isinstance(snapshot["total_bid_volume"], int)
+        assert isinstance(snapshot["total_ask_volume"], int)
+        assert isinstance(snapshot["imbalance"], float)
+
+    @pytest.mark.asyncio
+    async def test_get_orderbook_snapshot_asks_only(self, orderbook_base):
+        """One-sided book (empty bids) reports full ask imbalance as -1.0."""
+        ob = orderbook_base
+        timestamp = datetime.now(ob.timezone)
+
+        async with ob.orderbook_lock:
+            ob.orderbook_asks = pl.DataFrame({
+                "price": [21000.25, 21000.50],
+                "volume": [8, 12],
+                "timestamp": [timestamp, timestamp],
+            })
+            ob.last_orderbook_update = timestamp
+
+        snapshot = await ob.get_orderbook_snapshot(levels=2)
+
+        assert snapshot["total_bid_volume"] == 0
+        assert snapshot["total_ask_volume"] == 20
+        assert snapshot["bids"] == []
+        assert snapshot["imbalance"] == -1.0
+        assert isinstance(snapshot["total_bid_volume"], int)
+        assert isinstance(snapshot["total_ask_volume"], int)
+        assert isinstance(snapshot["imbalance"], float)
+
+    @pytest.mark.asyncio
     async def test_get_best_bid_ask(self, orderbook_base):
         """Test getting best bid and ask prices."""
         ob = orderbook_base

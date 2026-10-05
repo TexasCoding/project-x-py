@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- Normalize Polars `Series.sum()` aggregates to `float`/`int` before
+  arithmetic so mypy is clean under polars 1.44 (`sum()` now types as a
+  union that includes `Decimal`). Unblocks Dependabot #154.
+
 ## [4.4.0] - 2026-10-04
 
 ### Changed
