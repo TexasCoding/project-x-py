@@ -592,7 +592,7 @@ class MarketAnalytics:
                 # Optimized: Single pass through data with aggregation
                 trade_stats = self.orderbook.recent_trades.group_by("side").agg(
                     [
-                        pl.count().alias("count"),
+                        pl.len().alias("count"),
                         pl.col("volume").sum().alias("total_volume"),
                     ]
                 )
