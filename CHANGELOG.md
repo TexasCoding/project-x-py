@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Orderbook `get_statistics()` failed with "Analysis failed" under polars 2.0
+  because `pl.count()` no longer accepts zero arguments. Trade-side counts now
+  use `pl.len()` (compatible with polars 1.31+ and 2.0).
+
 ### Internal
 
 - Normalize Polars `Series.sum()` aggregates to `float`/`int` before
