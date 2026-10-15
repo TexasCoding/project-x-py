@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -1072,15 +1072,12 @@ wheels = [
 ]
 
 [[package]]
-name = "griffe"
-version = "1.12.1"
+name = "griffelib"
+version = "2.3.2"
 source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "colorama" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/81/ca/29f36e00c74844ae50d139cf5a8b1751887b2f4d5023af65d460268ad7aa/griffe-1.12.1.tar.gz", hash = "sha256:29f5a6114c0aeda7d9c86a570f736883f8a2c5b38b57323d56b3d1c000565567", size = 411863, upload-time = "2025-08-14T21:08:15.38Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2b/27/b55f1a5278918be765fb2fd8b20966bc72bbdd3f789f031937cceea7834a/griffelib-2.3.2.tar.gz", hash = "sha256:df00c7a0dee3d86268d76788997a1859272cb1fb7b865658e043d2c0c3d52e60", size = 234729, upload-time = "2026-10-06T09:54:37.222Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/13/f2/4fab6c3e5bcaf38a44cc8a974d2752eaad4c129e45d6533d926a30edd133/griffe-1.12.1-py3-none-any.whl", hash = "sha256:2d7c12334de00089c31905424a00abcfd931b45b8b516967f224133903d302cc", size = 138940, upload-time = "2025-08-14T21:08:13.382Z" },
+    { url = "https://files.pythonhosted.org/packages/04/e5/0ae74c83c1cab2c14daadf28bd0143eb14bb81503834af987b66badc7b61/griffelib-2.3.2-py3-none-any.whl", hash = "sha256:8e710afededd5607f95bf3c8ccc175ee306e7084459faf27b9f9f44ef2a7a274", size = 169420, upload-time = "2026-10-06T09:54:32.038Z" },
 ]
 
 [[package]]
@@ -1939,7 +1936,7 @@ wheels = [
 
 [[package]]
 name = "mkdocstrings"
-version = "0.30.0"
+version = "1.0.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jinja2" },
@@ -1949,9 +1946,9 @@ dependencies = [
     { name = "mkdocs-autorefs" },
     { name = "pymdown-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e2/0a/7e4776217d4802009c8238c75c5345e23014a4706a8414a62c0498858183/mkdocstrings-0.30.0.tar.gz", hash = "sha256:5d8019b9c31ddacd780b6784ffcdd6f21c408f34c0bd1103b5351d609d5b4444", size = 106597, upload-time = "2025-07-22T23:48:45.998Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f5/e8/445b19834bf9559ebbbaa76897e965665b83d2861461eed8d8de4d122057/mkdocstrings-1.0.7.tar.gz", hash = "sha256:0951b147f352118a45a3db85f0f3b660833d34cb5120a2751315b8d08dafd159", size = 103739, upload-time = "2026-10-10T13:50:59.957Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/de/b4/3c5eac68f31e124a55d255d318c7445840fa1be55e013f507556d6481913/mkdocstrings-0.30.0-py3-none-any.whl", hash = "sha256:ae9e4a0d8c1789697ac776f2e034e2ddd71054ae1cf2c2bb1433ccfd07c226f2", size = 36579, upload-time = "2025-07-22T23:48:44.152Z" },
+    { url = "https://files.pythonhosted.org/packages/22/c3/9062531735ff1fd27f3a79c353c4cf4d822eeffd062fd90b2c553a96f4bb/mkdocstrings-1.0.7-py3-none-any.whl", hash = "sha256:9563828667eeb35256f87a6b61fe857676ac628ec1abbce9aea9839a502c9cb1", size = 41597, upload-time = "2026-10-10T13:50:58.43Z" },
 ]
 
 [package.optional-dependencies]
@@ -1961,16 +1958,16 @@ python = [
 
 [[package]]
 name = "mkdocstrings-python"
-version = "1.17.0"
+version = "2.0.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "griffe" },
+    { name = "griffelib" },
     { name = "mkdocs-autorefs" },
     { name = "mkdocstrings" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/39/7c/6dfd8ad59c0eebae167168528ed6cad00116f58ef2327686149f7b25d175/mkdocstrings_python-1.17.0.tar.gz", hash = "sha256:c6295962b60542a9c7468a3b515ce8524616ca9f8c1a38c790db4286340ba501", size = 200408, upload-time = "2025-08-14T21:18:14.568Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/96/11/640067d1ad713ea99c233e53e57a4c300d9885f904a61371d7ef90dea549/mkdocstrings_python-2.0.9.tar.gz", hash = "sha256:ae945637dc0618c6beedbee169f10c0234b77f322c53db3fc9fb4c29b3013038", size = 203006, upload-time = "2026-09-22T13:43:27.712Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bd/ac/b1fcc937f4ecd372f3e857162dea67c45c1e2eedbac80447be516e3372bb/mkdocstrings_python-1.17.0-py3-none-any.whl", hash = "sha256:49903fa355dfecc5ad0b891e78ff5d25d30ffd00846952801bbe8331e123d4b0", size = 124778, upload-time = "2025-08-14T21:18:12.821Z" },
+    { url = "https://files.pythonhosted.org/packages/62/0f/f7f926cfa06317bbdbd3cf0ff82f9e3a91767352eb01519c81499fddf575/mkdocstrings_python-2.0.9-py3-none-any.whl", hash = "sha256:c0233eff3f84d78110df50541918e7ec2bcff8e1614faddea34290a90321a416", size = 105698, upload-time = "2026-09-22T13:43:26.345Z" },
 ]
 
 [[package]]
@@ -3375,15 +3372,15 @@ crypto = [
 
 [[package]]
 name = "pymdown-extensions"
-version = "11.0.2"
+version = "12.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markdown" },
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ad/17/2db4b414de89659144488e0d9c6c0bf0c8395841dc12d81d0532cc6ef310/pymdown_extensions-11.0.2.tar.gz", hash = "sha256:9506fcbe66fa355a775b768084334238dd6805020ac4b92bea0c0dda6f8f223d", size = 855419, upload-time = "2026-08-22T19:28:47.236Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9a/0a/d8c8535346f63ff85c8743383438a74b5c0e3394d90e898b2cd1a2fac705/pymdown_extensions-12.2.tar.gz", hash = "sha256:02da896c362b548d85123e7a377a40024ea6ea938b4e45ca064e408afd994b64", size = 870226, upload-time = "2026-10-10T13:01:20.494Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a6/43/9f45ec4d14e596efc32c925a78104934790438b0c0628b70d741016734ad/pymdown_extensions-11.0.2-py3-none-any.whl", hash = "sha256:259910762019732caa1dfd76f3faa62c59f191d46573e80bcb1d13c0f675bbe5", size = 269929, upload-time = "2026-08-22T19:28:45.389Z" },
+    { url = "https://files.pythonhosted.org/packages/79/a5/30b1a3d82219cbe5e6661cd7053791dc3a3743547ebf31f3366429d84516/pymdown_extensions-12.2-py3-none-any.whl", hash = "sha256:caea66e916b4cfe987b5dabb0a78558e3506988f6353812b0b0288be8f976c16", size = 277518, upload-time = "2026-10-10T13:01:18.601Z" },
 ]
 
 [[package]]
