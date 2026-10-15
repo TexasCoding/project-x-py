@@ -608,25 +608,25 @@ class HealthMonitor:
                 "memory_usage_percent", memory_stats.get("usage_percent", 0.0)
             )
 
-            if memory_usage_percent <= self.thresholds.memory_usage_excellent:  # type: ignore[operator]
+            if memory_usage_percent <= self.thresholds.memory_usage_excellent:
                 memory_score = 100.0
-            elif memory_usage_percent <= self.thresholds.memory_usage_good:  # type: ignore[operator]
+            elif memory_usage_percent <= self.thresholds.memory_usage_good:
                 ratio = (
-                    memory_usage_percent - self.thresholds.memory_usage_excellent  # type: ignore[operator]
+                    memory_usage_percent - self.thresholds.memory_usage_excellent
                 ) / (
                     self.thresholds.memory_usage_good
                     - self.thresholds.memory_usage_excellent
                 )
                 memory_score = 100.0 - (ratio * 20.0)
-            elif memory_usage_percent <= self.thresholds.memory_usage_warning:  # type: ignore[operator]
-                ratio = (memory_usage_percent - self.thresholds.memory_usage_good) / (  # type: ignore[operator]
+            elif memory_usage_percent <= self.thresholds.memory_usage_warning:
+                ratio = (memory_usage_percent - self.thresholds.memory_usage_good) / (
                     self.thresholds.memory_usage_warning
                     - self.thresholds.memory_usage_good
                 )
                 memory_score = 80.0 - (ratio * 40.0)
-            elif memory_usage_percent <= self.thresholds.memory_usage_critical:  # type: ignore[operator]
+            elif memory_usage_percent <= self.thresholds.memory_usage_critical:
                 ratio = (
-                    memory_usage_percent - self.thresholds.memory_usage_warning  # type: ignore[operator]
+                    memory_usage_percent - self.thresholds.memory_usage_warning
                 ) / (
                     self.thresholds.memory_usage_critical
                     - self.thresholds.memory_usage_warning
@@ -984,38 +984,38 @@ class HealthMonitor:
                 "memory_usage_percent", memory_stats.get("usage_percent", 0.0)
             )
 
-            if memory_usage_percent >= self.thresholds.memory_usage_critical:  # type: ignore[operator]
+            if memory_usage_percent >= self.thresholds.memory_usage_critical:
                 alerts.append(
                     {
                         "level": AlertLevel.CRITICAL.value,
                         "category": "resources",
                         "message": f"Critical memory usage: {memory_usage_percent:.1f}%",
                         "metric": "memory_usage_percent",
-                        "current_value": memory_usage_percent,  # type: ignore[typeddict-item]
+                        "current_value": memory_usage_percent,
                         "threshold": self.thresholds.memory_usage_critical,
                         "recommendation": "Immediately review memory leaks and restart if necessary",
                     }
                 )
-            elif memory_usage_percent >= self.thresholds.memory_usage_warning:  # type: ignore[operator]
+            elif memory_usage_percent >= self.thresholds.memory_usage_warning:
                 alerts.append(
                     {
                         "level": AlertLevel.DEGRADED.value,
                         "category": "resources",
                         "message": f"High memory usage: {memory_usage_percent:.1f}%",
                         "metric": "memory_usage_percent",
-                        "current_value": memory_usage_percent,  # type: ignore[typeddict-item]
+                        "current_value": memory_usage_percent,
                         "threshold": self.thresholds.memory_usage_warning,
                         "recommendation": "Monitor memory trends and consider implementing cleanup routines",
                     }
                 )
-            elif memory_usage_percent >= self.thresholds.memory_usage_good:  # type: ignore[operator]
+            elif memory_usage_percent >= self.thresholds.memory_usage_good:
                 alerts.append(
                     {
                         "level": AlertLevel.WARNING.value,
                         "category": "resources",
                         "message": f"Elevated memory usage: {memory_usage_percent:.1f}%",
                         "metric": "memory_usage_percent",
-                        "current_value": memory_usage_percent,  # type: ignore[typeddict-item]
+                        "current_value": memory_usage_percent,
                         "threshold": self.thresholds.memory_usage_good,
                         "recommendation": "Review memory usage patterns and optimize data structures",
                     }

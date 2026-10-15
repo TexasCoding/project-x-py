@@ -8,7 +8,7 @@ Author: TDD Implementation
 Date: 2025-08-28
 """
 
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, tzinfo
 from typing import Any
 
 import polars as pl
@@ -34,7 +34,7 @@ class SessionFilterMixin:
     CACHE_TTL_SECONDS = 3600  # Cache time-to-live in seconds
 
     # Cached timezone object for performance
-    _market_tz = None
+    _market_tz: tzinfo | None = None
 
     def __init__(
         self,

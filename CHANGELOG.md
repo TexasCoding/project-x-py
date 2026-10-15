@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- Bump mypy to 2.4.0 and drop now-unused type ignores (supersedes #163).
 - Normalize Polars `Series.sum()` aggregates to `float`/`int` before
   arithmetic so mypy is clean under polars 1.44 (`sum()` now types as a
   union that includes `Decimal`). Unblocks Dependabot #154.
