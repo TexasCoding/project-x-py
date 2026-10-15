@@ -447,6 +447,9 @@ class TestStatisticalSummaries:
         assert result["total_bid_size"] == 100
         assert result["total_ask_size"] == 100
         assert result["total_trades"] == 5
+        # Fixture sides: buy, sell, buy, sell, buy
+        assert result["buy_trades"] == 3
+        assert result["sell_trades"] == 2
 
 
 class TestErrorHandling:
