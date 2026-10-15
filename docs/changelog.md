@@ -9,6 +9,12 @@ The canonical changelog is the repository root [CHANGELOG.md](https://github.com
 
 ## [Unreleased]
 
+## [4.4.1] - 2026-10-15
+
+Orderbook `get_statistics()` uses `pl.len()` for trade-side counts so it
+works under polars 2.0, where `pl.count()` no longer accepts zero
+arguments (#168). See the root CHANGELOG for the full note.
+
 ## [4.4.0] - 2026-10-04
 
 `Features` is now an `enum.StrEnum`. `str()` and f-strings return the

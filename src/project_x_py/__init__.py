@@ -3,7 +3,7 @@ ProjectX Python SDK for Trading Applications
 
 Author: @TexasCoding
 Date: 2026-08-29
-Version: 4.4.0 - Features is a StrEnum (#155)
+Version: 4.4.1 - orderbook get_statistics() uses pl.len() (#168)
 
 Overview:
     A comprehensive Python SDK for the ProjectX Trading Platform Gateway API, providing
@@ -96,7 +96,7 @@ Architecture Benefits:
 It provides the infrastructure to help developers create their own trading applications
 that integrate with the ProjectX platform.
 
-Version: 4.4.0
+Version: 4.4.1
 Author: TexasCoding
 
 See Also:
@@ -109,7 +109,7 @@ See Also:
     - `utils`: Utility functions and calculations
 """
 
-__version__ = "4.4.0"
+__version__ = "4.4.1"
 __author__ = "TexasCoding"
 
 # Core client classes - renamed from Async* to standard names
