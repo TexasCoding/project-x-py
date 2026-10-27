@@ -347,7 +347,7 @@ class TestDataAccessEdgeCases:
         manager = MockDataAccessManager()
 
         # Use a pytz timezone that has localize method
-        est = pytz.timezone("US/Eastern")
+        est = pytz.timezone("America/New_York")
         manager.timezone = est
 
         base_time = est.localize(datetime(2023, 6, 15, 10, 30))

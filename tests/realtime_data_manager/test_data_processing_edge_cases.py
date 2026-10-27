@@ -562,7 +562,7 @@ class TestDataProcessingEdgeCases:
         manager = MockDataProcessingManager()
 
         # Test with pytz timezone (has localize method)
-        manager.timezone = pytz.timezone("US/Eastern")
+        manager.timezone = pytz.timezone("America/New_York")
         naive_timestamp = datetime(2023, 6, 15, 10, 30, 45)
 
         bar_time = manager._calculate_bar_time(naive_timestamp, 5, 2)
