@@ -266,7 +266,7 @@ class ProjectXBase(
             ...     "api_url": "https://api.topstepx.com/api",
             ...     "user_hub_url": "https://rtc.topstepx.com/hubs/user",
             ...     "market_hub_url": "https://rtc.topstepx.com/hubs/market",
-            ...     "timezone": "US/Central",
+            ...     "timezone": "America/Chicago",
             ... }
             >>> with open("config.json", "w") as f:
             ...     json.dump(config, f)
