@@ -648,30 +648,41 @@ class BracketOrderMixin:
                         target_ref.size = size
 
                 elif not is_fully_filled and filled_size == 0:
-                    # Undefined state - recheck once
+                    # Undefined state: order status can lag a real fill by seconds. One
+                    # 1s recheck raised here and left the filled position with no
+                    # stop/target, so poll a bounded window before cancelling.
+                    recheck_attempts = 6
+                    recheck_interval = 1.0
                     logger.warning(
-                        f"Entry order {entry_order_id} in undefined state. Rechecking..."
+                        f"Entry order {entry_order_id} in undefined state. Polling fill "
+                        f"status up to {recheck_attempts}x{recheck_interval:g}s before abandoning..."
                     )
-                    await asyncio.sleep(1)
-
-                    (
-                        is_fully_filled,
-                        filled_size,
-                        remaining_size,
-                    ) = await self._check_order_fill_status(entry_order_id)
+                    for _ in range(recheck_attempts):
+                        await asyncio.sleep(recheck_interval)
+                        (
+                            is_fully_filled,
+                            filled_size,
+                            remaining_size,
+                        ) = await self._check_order_fill_status(entry_order_id)
+                        if filled_size > 0:
+                            break
 
                     if filled_size == 0:
-                        # Still unfilled, cancel and abort
+                        # Still unfilled after the full poll window — genuinely no
+                        # fill; cancel and abort (the safe original behavior).
                         try:
                             await self.cancel_order(entry_order_id, account_id)
                         except Exception as cancel_error:
                             logger.error(f"Failed to cancel order: {cancel_error}")
 
                         raise ProjectXOrderError(
-                            f"Entry order {entry_order_id} failed to fill after recheck."
+                            f"Entry order {entry_order_id} failed to fill after "
+                            f"{recheck_attempts} rechecks."
                         )
                     else:
-                        # Actually partially filled
+                        # Filled (fully or partially) during the poll — size the
+                        # protective orders to the actual filled quantity so the
+                        # bracket attaches to what really filled.
                         size = filled_size
                         if stop_ref:
                             stop_ref.size = size
