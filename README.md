@@ -27,9 +27,9 @@ A **high-performance async Python SDK** for the [ProjectX Trading Platform](http
 
 This Python SDK acts as a bridge between your trading strategies and the ProjectX platform, handling all the complex API interactions, data processing, and real-time connectivity.
 
-## 🚀 v4.4.1 - orderbook statistics on polars 2.0
+## 🚀 v4.4.2 - bracket fill recheck polling
 
-**Latest Version**: v4.4.1 — orderbook `get_statistics()` uses `pl.len()` so trade-side counts work under polars 2.0 (`pl.count()` no longer accepts zero arguments) (#168). v4.4.0 makes `Features` an `enum.StrEnum` (#155). v4.3.3 bumps runtime cachetools to 7.2.0 (#150, #119).
+**Latest Version**: v4.4.2 — `place_bracket_order` polls fill status up to 6 times (1s apart) when the fill wait returns with 0 filled, so a lagging fill still gets its stop/target legs (#179, thanks @blurxy). v4.4.1 orderbook `get_statistics()` uses `pl.len()` so trade-side counts work under polars 2.0 (#168). v4.4.0 makes `Features` an `enum.StrEnum` (#155).
 
 **Key changes**:
 - Official defaults: `https://api.topstepx.com` and `https://rtc.topstepx.com`

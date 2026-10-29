@@ -16,6 +16,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.2] - 2026-10-29
+
+### Fixed
+
+- `place_bracket_order` "undefined state" branch (fill wait returned but
+  fill status reports 0 filled) now polls fill status up to 6 times, 1s
+  apart, instead of a single 1s recheck, so a lagging fill still gets its
+  stop/target legs. A genuinely unfilled entry is still cancelled and
+  raises, now with "failed to fill after 6 rechecks" (thanks @blurxy, #179).
+  Related to #98.
+
+### Internal
+
+- Dev-dependency bumps: python-patch groups (#171, #178), aiohttp (#172),
+  certifi (#173), nltk 3.10.4 (#174), security group (#175).
+- Test-only timezone fix: use canonical IANA names so CI runners without
+  legacy tz aliases pass (#177).
+
 ## [4.4.1] - 2026-10-15
 
 ### Fixed

@@ -9,6 +9,12 @@ The canonical changelog is the repository root [CHANGELOG.md](https://github.com
 
 ## [Unreleased]
 
+## [4.4.2] - 2026-10-29
+
+`place_bracket_order` polls fill status up to 6 times (1s apart) when the
+fill wait returns with 0 filled, so a lagging fill still gets stop/target
+legs (thanks @blurxy, #179). See the root CHANGELOG for the full note.
+
 ## [4.4.1] - 2026-10-15
 
 Orderbook `get_statistics()` uses `pl.len()` for trade-side counts so it
