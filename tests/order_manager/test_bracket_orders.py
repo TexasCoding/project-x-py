@@ -100,6 +100,81 @@ class TestBracketOrderMixin:
         assert result.target_order_id == 3
 
     @pytest.mark.asyncio
+    async def test_bracket_undefined_state_lagging_fill_attaches_bracket(
+        self, mock_order_manager
+    ):
+        """The fill event fires but the status endpoint lags at 0 filled ('undefined
+        state'). A fill that lands on a later recheck must still get its bracket."""
+        mixin = mock_order_manager
+        mixin.place_order.side_effect = [
+            OrderPlaceResponse(
+                orderId=1, success=True, errorCode=0, errorMessage=None
+            ),  # entry
+            OrderPlaceResponse(
+                orderId=2, success=True, errorCode=0, errorMessage=None
+            ),  # stop
+            OrderPlaceResponse(
+                orderId=3, success=True, errorCode=0, errorMessage=None
+            ),  # target
+        ]
+        mixin._wait_for_order_fill.return_value = True  # event fired
+        # initial check + poll attempts: 0, 0, then the lagging fill lands on the 2nd poll
+        mixin._check_order_fill_status.side_effect = [
+            (False, 0, 1),  # initial -> undefined state
+            (False, 0, 1),  # poll 1 -> still lagging
+            (True, 1, 0),  # poll 2 -> fill confirmed
+        ]
+        with patch(
+            "project_x_py.order_manager.bracket_orders.asyncio.sleep", new=AsyncMock()
+        ):
+            result = await mixin.place_bracket_order(
+                contract_id="MNQ",
+                side=0,
+                size=1,
+                entry_type="limit",
+                entry_price=100.0,
+                stop_loss_price=95.0,
+                take_profit_price=105.0,
+            )
+        # Bracket attached — did NOT raise, protective legs placed.
+        assert result.success is True
+        assert result.entry_order_id == 1
+        assert result.stop_order_id == 2
+        assert result.target_order_id == 3
+        mixin.cancel_order.assert_not_called()  # a real fill is never cancelled
+
+    @pytest.mark.asyncio
+    async def test_bracket_undefined_state_genuinely_unfilled_still_raises(
+        self, mock_order_manager
+    ):
+        """The other half: an order that stays 0-filled across the WHOLE poll window is
+        genuinely unfilled — it must still be cancelled and raise (the safe behavior)."""
+        mixin = mock_order_manager
+        mixin.place_order.side_effect = [
+            OrderPlaceResponse(orderId=1, success=True, errorCode=0, errorMessage=None),
+            OrderPlaceResponse(orderId=2, success=True, errorCode=0, errorMessage=None),
+            OrderPlaceResponse(orderId=3, success=True, errorCode=0, errorMessage=None),
+        ]
+        mixin._wait_for_order_fill.return_value = True
+        mixin._check_order_fill_status.return_value = (False, 0, 1)  # never fills
+        with patch(
+            "project_x_py.order_manager.bracket_orders.asyncio.sleep", new=AsyncMock()
+        ):
+            with pytest.raises(
+                ProjectXOrderError, match=r"failed to fill after \d+ rechecks"
+            ):
+                await mixin.place_bracket_order(
+                    contract_id="MNQ",
+                    side=0,
+                    size=1,
+                    entry_type="limit",
+                    entry_price=100.0,
+                    stop_loss_price=95.0,
+                    take_profit_price=105.0,
+                )
+        mixin.cancel_order.assert_called()  # unfilled order IS cancelled
+
+    @pytest.mark.asyncio
     async def test_bracket_order_market_entry(self, mock_order_manager):
         """Test bracket order with market entry."""
         mixin = mock_order_manager
